@@ -16,6 +16,8 @@ class WorkerStateStore:
         self._auth_pending_path = self.root / "auth_pending.json"
         self._submit_pending_path = self.root / "submit_pending.json"
         self._dataset_cursors_path = self.root / "dataset_cursors.json"
+        self._session_path = self.root / "session.json"
+        self._dataset_cooldowns_path = self.root / "dataset_cooldowns.json"
 
     def load_backlog(self) -> list[WorkItem]:
         return [WorkItem.from_dict(item) for item in self._read_list(self._backlog_path)]
@@ -95,6 +97,76 @@ class WorkerStateStore:
         cursors = self._read_object(self._dataset_cursors_path)
         cursors[dataset_id] = {"last_scheduled_at": current}
         self._write_json(self._dataset_cursors_path, cursors)
+
+    def load_session(self) -> dict[str, Any]:
+        session = self._read_object(self._session_path)
+        defaults: dict[str, Any] = {
+            "mining_state": "idle",
+            "selected_dataset_ids": [],
+            "session_totals": {
+                "processed_items": 0,
+                "submitted_items": 0,
+                "failed_items": 0,
+            },
+            "last_summary": {},
+            "last_heartbeat_at": None,
+            "credit_score": None,
+            "credit_tier": None,
+            "epoch_id": None,
+            "epoch_submitted": 0,
+            "epoch_target": 80,
+            "settlement": {},
+        }
+        merged = {**defaults, **session}
+        if not isinstance(merged.get("selected_dataset_ids"), list):
+            merged["selected_dataset_ids"] = []
+        if not isinstance(merged.get("session_totals"), dict):
+            merged["session_totals"] = dict(defaults["session_totals"])
+        if not isinstance(merged.get("last_summary"), dict):
+            merged["last_summary"] = {}
+        if not isinstance(merged.get("settlement"), dict):
+            merged["settlement"] = {}
+        return merged
+
+    def save_session(self, partial: dict[str, Any]) -> dict[str, Any]:
+        session = self.load_session()
+        session.update(partial)
+        self._write_json(self._session_path, session)
+        return session
+
+    def mark_dataset_cooldown(
+        self,
+        dataset_id: str,
+        *,
+        retry_after_seconds: int,
+        reason: str,
+        now: int | None = None,
+    ) -> None:
+        current = int(time.time()) if now is None else now
+        payload = self._read_object(self._dataset_cooldowns_path)
+        payload[dataset_id] = {
+            "available_at": current + max(0, retry_after_seconds),
+            "reason": reason,
+            "updated_at": current,
+        }
+        self._write_json(self._dataset_cooldowns_path, payload)
+
+    def is_dataset_available(self, dataset_id: str, *, now: int | None = None) -> bool:
+        current = int(time.time()) if now is None else now
+        payload = self._read_object(self._dataset_cooldowns_path)
+        entry = payload.get(dataset_id)
+        if not isinstance(entry, dict):
+            return True
+        return int(entry.get("available_at") or 0) <= current
+
+    def active_dataset_cooldowns(self, *, now: int | None = None) -> dict[str, dict[str, Any]]:
+        current = int(time.time()) if now is None else now
+        payload = self._read_object(self._dataset_cooldowns_path)
+        return {
+            dataset_id: dict(entry)
+            for dataset_id, entry in payload.items()
+            if isinstance(entry, dict) and int(entry.get("available_at") or 0) > current
+        }
 
     def _read_list(self, path: Path) -> list[dict[str, Any]]:
         payload = self._read_json(path)

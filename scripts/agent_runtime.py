@@ -301,6 +301,68 @@ class AgentWorker:
             self.state_store,
             retry_after_seconds=config.auth_retry_interval_seconds,
         )
+        self.state_store.save_session({})
+
+    def start_working(self, *, selected_dataset_ids: list[str] | None = None) -> dict[str, Any]:
+        datasets = self.client.list_datasets()
+        session_update: dict[str, Any] = {"mining_state": "running"}
+        if selected_dataset_ids is not None:
+            session_update["selected_dataset_ids"] = list(selected_dataset_ids)
+        session = self.state_store.save_session(session_update)
+        return {
+            "mining_state": session["mining_state"],
+            "selected_dataset_ids": list(session.get("selected_dataset_ids") or []),
+            "datasets": datasets,
+            "message": "start working confirmed",
+        }
+
+    def list_datasets(self) -> dict[str, Any]:
+        session = self.state_store.load_session()
+        datasets = self.client.list_datasets()
+        selected = set(session.get("selected_dataset_ids") or [])
+        cooldowns = self.state_store.active_dataset_cooldowns()
+        annotated: list[dict[str, Any]] = []
+        for dataset in datasets:
+            dataset_id = optional_string(dataset.get("id")) or ""
+            entry = dict(dataset)
+            entry["selected"] = dataset_id in selected if dataset_id else False
+            if dataset_id in cooldowns:
+                entry["cooldown"] = cooldowns[dataset_id]
+            annotated.append(entry)
+        return {"datasets": annotated, "selected_dataset_ids": list(selected)}
+
+    def check_status(self) -> dict[str, Any]:
+        session = self.state_store.load_session()
+        return {
+            "mining_state": session.get("mining_state"),
+            "selected_dataset_ids": list(session.get("selected_dataset_ids") or []),
+            "epoch_id": session.get("epoch_id"),
+            "epoch_submitted": session.get("epoch_submitted"),
+            "epoch_target": session.get("epoch_target"),
+            "credit_score": session.get("credit_score"),
+            "credit_tier": session.get("credit_tier"),
+            "settlement": dict(session.get("settlement") or {}),
+            "queues": {
+                "backlog": len(self.state_store.load_backlog()),
+                "auth_pending": len(self.state_store.load_auth_pending()),
+                "submit_pending": len(self.state_store.load_submit_pending()),
+            },
+            "cooldowns": self.state_store.active_dataset_cooldowns(),
+            "last_summary": dict(session.get("last_summary") or {}),
+            "session_totals": dict(session.get("session_totals") or {}),
+        }
+
+    def pause(self) -> dict[str, Any]:
+        session = self.state_store.save_session({"mining_state": "paused"})
+        return self.check_status() | {"message": "Mining paused.", "mining_state": session["mining_state"]}
+
+    def resume(self) -> dict[str, Any]:
+        session = self.state_store.save_session({"mining_state": "running"})
+        return self.check_status() | {"message": "Mining resumed.", "mining_state": session["mining_state"]}
+
+    def stop(self) -> dict[str, Any]:
+        session = self.state_store.save_session({"mining_state": "stopped"})
+        return self.check_status() | {"message": "Mining session ended.", "mining_state": session["mining_state"]}
 
     def run_once(self) -> str:
         summary = self.run_iteration(1)
@@ -312,6 +374,27 @@ class AgentWorker:
             first = summary["auth_pending"][0]
             return json.dumps(first, ensure_ascii=False)
         return "no task available"
+
+    def check_status(self) -> dict[str, Any]:
+        session = self.state_store.load_session()
+        return {
+            "mining_state": session.get("mining_state", "idle"),
+            "credit_score": session.get("credit_score"),
+            "credit_tier": session.get("credit_tier"),
+            "epoch_id": session.get("epoch_id"),
+            "epoch_submitted": session.get("epoch_submitted", 0),
+            "epoch_target": session.get("epoch_target", 80),
+            "selected_dataset_ids": list(session.get("selected_dataset_ids") or []),
+            "settlement": dict(session.get("settlement") or {}),
+            "queues": {
+                "backlog": len(self.state_store.load_backlog()),
+                "auth_pending": len(self.state_store.load_auth_pending()),
+                "submit_pending": len(self.state_store.load_submit_pending()),
+            },
+            "cooldowns": self.state_store.active_dataset_cooldowns(),
+            "last_summary": dict(session.get("last_summary") or {}),
+            "session_totals": dict(session.get("session_totals") or {}),
+        }
 
     def process_task_payload(self, task_type: str, payload: dict[str, Any]) -> str:
         item = self._work_item_from_payload(task_type, payload)
@@ -331,6 +414,14 @@ class AgentWorker:
 
     def run_iteration(self, iteration: int) -> dict[str, Any]:
         summary = WorkerIterationSummary(iteration=iteration)
+        session = self.state_store.load_session()
+        mining_state = str(session.get("mining_state") or "idle")
+        if mining_state in {"paused", "stopped"}:
+            summary.messages.append(f"worker {mining_state}")
+            payload = summary.to_dict()
+            self._write_iteration_summary(payload)
+            self.state_store.save_session({"last_summary": payload})
+            return payload
         self._send_heartbeats(summary)
         self._drain_submit_pending(summary)
         work_items = self._collect_work_items(summary)
@@ -344,6 +435,7 @@ class AgentWorker:
         summary.retry_pending = len(self.state_store.load_backlog()) + len(self.state_store.load_auth_pending())
         payload = summary.to_dict()
         self._write_iteration_summary(payload)
+        self._update_session_from_summary(payload)
         return payload
 
     def run_loop(self, *, interval: int = 60, max_iterations: int = 0) -> str:
@@ -403,17 +495,25 @@ class AgentWorker:
 
     def _send_heartbeats(self, summary: WorkerIterationSummary) -> None:
         try:
-            self.client.send_unified_heartbeat(client_name=self.config.client_name)
+            unified = self.client.send_unified_heartbeat(client_name=self.config.client_name)
             summary.unified_heartbeat_sent = True
+            self._update_session_from_heartbeat(unified)
         except Exception as exc:
             summary.errors.append(f"unified heartbeat failed: {exc}")
         try:
             self.client.send_miner_heartbeat(client_name=self.config.client_name)
             summary.heartbeat_sent = True
+            self.state_store.save_session({"last_heartbeat_at": int(time.time())})
         except Exception as exc:
             summary.errors.append(f"miner heartbeat failed: {exc}")
 
     def _collect_work_items(self, summary: WorkerIterationSummary) -> list[WorkItem]:
+        session = self.state_store.load_session()
+        selected_dataset_ids = {
+            str(dataset_id)
+            for dataset_id in (session.get("selected_dataset_ids") or [])
+            if str(dataset_id).strip()
+        }
         items: list[WorkItem] = []
         resumed = self.resume_source.collect(limit=self.config.max_parallel)
         summary.resumed_items = len(resumed)
@@ -435,8 +535,17 @@ class AgentWorker:
         items.extend(discoveries)
         merged: dict[str, WorkItem] = {}
         for item in items:
+            if selected_dataset_ids and item.source in {"dataset_discovery", "discovery_followup"} and item.dataset_id not in selected_dataset_ids:
+                continue
+            if item.dataset_id and not self.state_store.is_dataset_available(item.dataset_id):
+                summary.messages.append(f"dataset {item.dataset_id} cooling down; deferred {item.item_id}")
+                if item.source not in {"dataset_discovery"}:
+                    self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=Path(item.output_dir) if item.output_dir else None)])
+                continue
             merged[item.item_id] = item
-        return list(merged.values())[: self.config.max_parallel]
+        filtered = list(merged.values())[: self.config.max_parallel]
+        summary.discovery_items = len([item for item in filtered if item.source == "dataset_discovery"])
+        return filtered
 
     def _process_items(self, items: list[WorkItem], summary: WorkerIterationSummary) -> None:
         with ThreadPoolExecutor(max_workers=max(1, self.config.max_parallel)) as executor:
@@ -515,10 +624,15 @@ class AgentWorker:
         report_result: dict[str, Any] | None = None
         if item.claim_task_id and item.claim_task_type:
             report_payload = build_report_payload(item, record)
-            if item.claim_task_type == "repeat_crawl":
-                report_result = self.client.report_repeat_crawl_task_result(item.claim_task_id, report_payload)
-            elif item.claim_task_type == "refresh":
-                report_result = self.client.report_refresh_task_result(item.claim_task_id, report_payload)
+            try:
+                if item.claim_task_type == "repeat_crawl":
+                    report_result = self.client.report_repeat_crawl_task_result(item.claim_task_id, report_payload)
+                elif item.claim_task_type == "refresh":
+                    report_result = self.client.report_refresh_task_result(item.claim_task_id, report_payload)
+            except httpx.HTTPStatusError as exc:
+                if self._maybe_handle_rate_limit(item, exc, summary, output_dir=result.output_dir):
+                    return
+                raise
 
         if item.dataset_id:
             try:
@@ -533,6 +647,8 @@ class AgentWorker:
                 summary.submitted_items += 1
                 summary.messages.append(f"processed {item.item_id} in {result.output_dir}; exported core submissions to {export_path}")
             except Exception as exc:
+                if isinstance(exc, httpx.HTTPStatusError) and self._maybe_handle_rate_limit(item, exc, summary, output_dir=result.output_dir):
+                    return
                 self.state_store.enqueue_submit_pending(item, {"record": record, "report_result": report_result})
                 summary.errors.append(f"submit deferred for {item.item_id}: {exc}")
         else:
@@ -624,6 +740,52 @@ class AgentWorker:
     def _write_iteration_summary(self, payload: dict[str, Any]) -> None:
         writer = RunArtifactWriter(self.runner.output_root / "_run_once")
         writer.write_json("last-summary.json", payload)
+
+    def _update_session_from_heartbeat(self, payload: dict[str, Any] | None) -> None:
+        if not isinstance(payload, dict):
+            self.state_store.save_session({"last_heartbeat_at": int(time.time())})
+            return
+        data = payload.get("data")
+        source = data if isinstance(data, dict) else payload
+        update: dict[str, Any] = {"last_heartbeat_at": int(time.time())}
+        for key in ("credit_score", "credit_tier", "epoch_id", "epoch_submitted", "epoch_target"):
+            if key in source:
+                update[key] = source.get(key)
+        settlement = source.get("settlement")
+        if isinstance(settlement, dict):
+            update["settlement"] = settlement
+        self.state_store.save_session(update)
+
+    def _update_session_from_summary(self, payload: dict[str, Any]) -> None:
+        session = self.state_store.load_session()
+        totals = dict(session.get("session_totals") or {})
+        totals["processed_items"] = int(totals.get("processed_items") or 0) + int(payload.get("processed_items") or 0)
+        totals["submitted_items"] = int(totals.get("submitted_items") or 0) + int(payload.get("submitted_items") or 0)
+        totals["failed_items"] = int(totals.get("failed_items") or 0) + len(payload.get("errors") or [])
+        self.state_store.save_session({"last_summary": payload, "session_totals": totals})
+
+    def _maybe_handle_rate_limit(
+        self,
+        item: WorkItem,
+        exc: httpx.HTTPStatusError,
+        summary: WorkerIterationSummary,
+        *,
+        output_dir: Path,
+    ) -> bool:
+        if exc.response.status_code != 429 or not item.dataset_id:
+            return False
+        retry_after = _extract_retry_after_seconds(exc, default=self.config.auth_retry_interval_seconds)
+        self.state_store.mark_dataset_cooldown(
+            item.dataset_id,
+            retry_after_seconds=retry_after,
+            reason="429 Rate Limited",
+        )
+        self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=output_dir)])
+        summary.errors.append(f"submit deferred for {item.item_id}: 429 Rate Limited")
+        summary.messages.append(
+            f"{item.dataset_id} cooled down for {retry_after}s after 429 Rate Limited"
+        )
+        return True
 
 
 def build_worker_from_env() -> AgentWorker:
@@ -831,6 +993,14 @@ def _resolve_existing_submission_response(
 def _safe_path_segment(value: str) -> str:
     slug = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in value)
     return slug or "item"
+
+
+def _extract_retry_after_seconds(error: httpx.HTTPStatusError, *, default: int) -> int:
+    header_value = error.response.headers.get("Retry-After", "").strip()
+    try:
+        return max(1, int(header_value))
+    except ValueError:
+        return max(1, default)
 
 
 def _clone_item(item: WorkItem, *, resume: bool, output_dir: Path | None = None) -> WorkItem:

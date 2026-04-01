@@ -9,6 +9,7 @@ OpenClaw-first plugin/skill project for autonomous data-mining workflows backed 
 - a native OpenClaw plugin manifest
 - tool registration for worker-style mining operations
 - a Python bridge that reuses the proven `social-data-crawler` runtime
+- a first-load / dataset-listing / status-summary runtime for guided Mine UX
 - build/install scripts for packaging `dist/openclaw-plugin`
 - a root skill contract for OpenClaw workspace usage
 
@@ -16,6 +17,12 @@ The crawler engine remains in `D:\kaifa\clawtroop\social-data-crawler`. `mine` o
 
 ## Registered OpenClaw tools
 
+- `mine_start_working`
+- `mine_check_status`
+- `mine_list_datasets`
+- `mine_pause`
+- `mine_resume`
+- `mine_stop`
 - `mine_worker`
 - `mine_heartbeat`
 - `mine_run_once`

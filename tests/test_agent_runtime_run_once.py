@@ -58,6 +58,10 @@ class _FakeRunner:
 class _FakeLocalClient(_FakeClient):
     def __init__(self) -> None:
         self.submissions: list[dict] = []
+        self.datasets = [
+            {"id": "dataset-1", "source_domains": ["en.wikipedia.org"]},
+            {"id": "dataset-2", "source_domains": ["arxiv.org"]},
+        ]
 
     def submit_preflight(self, dataset_id: str, epoch_id: str) -> dict:
         return {"data": {"allowed": True}}
@@ -75,9 +79,19 @@ class _FakeLocalClient(_FakeClient):
         self.submissions.append(payload)
         return {"data": [{"id": "submission-1", "payload": payload}]}
 
+    def list_datasets(self) -> list[dict]:
+        return list(self.datasets)
+
 
 class _CaptchaRunner(_FakeRunner):
     pass
+
+
+class _RateLimitedClient(_FakeLocalClient):
+    def submit_core_submissions(self, payload: dict) -> dict:
+        request = httpx.Request("POST", "http://example.test/api/core/v1/submissions")
+        response = httpx.Response(429, request=request, headers={"Retry-After": "300"})
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
 
 
 class _UnauthorizedClient(_FakeClient):
@@ -119,7 +133,7 @@ def test_run_once_returns_explicit_unsolved_challenge_state(workspace_tmp_path, 
 
     result = CrawlerRunResult(
         output_dir=workspace_tmp_path / "crawl-out",
-        records=[{"canonical_url": "https://example.com", "structured": {}, "plain_text": "hello"}],
+        records=[{"canonical_url": "https://example.com", "structured": {}, "plain_text": "hello", "crawl_timestamp": "2026-04-01T00:00:00Z"}],
         errors=[],
         summary={},
         exit_code=0,
@@ -158,7 +172,7 @@ def test_process_task_payload_accepts_local_task_envelope(workspace_tmp_path, mo
 
     result = CrawlerRunResult(
         output_dir=workspace_tmp_path / "crawl-out",
-        records=[{"canonical_url": "https://example.com", "structured": {}, "plain_text": "hello"}],
+        records=[{"canonical_url": "https://example.com", "structured": {}, "plain_text": "hello", "crawl_timestamp": "2026-04-01T00:00:00Z"}],
         errors=[],
         summary={},
         exit_code=0,
@@ -656,3 +670,167 @@ def test_export_and_submit_falls_back_to_create_when_report_submission_is_missin
     assert len(client.submissions) == 1
     response_payload = json.loads(response_path.read_text(encoding="utf-8"))
     assert response_payload["data"][0]["id"] == "submission-1"
+
+
+def test_check_status_returns_session_and_queue_summary(workspace_tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SOCIAL_CRAWLER_ROOT", str(CRAWLER_WORKTREE))
+    from agent_runtime import AgentWorker, _build_test_config
+
+    worker = AgentWorker(
+        client=_FakeLocalClient(),
+        runner=_FakeRunner(
+            CrawlerRunResult(
+                output_dir=workspace_tmp_path / "crawl-out",
+                records=[],
+                errors=[],
+                summary={},
+                exit_code=0,
+                argv=["python", "-m", "crawler"],
+            )
+        ),
+        config=_build_test_config(workspace_tmp_path),
+    )
+    worker.state_store.save_session({"mining_state": "paused", "epoch_submitted": 43, "epoch_target": 80})
+
+    status = worker.check_status()
+
+    assert status["mining_state"] == "paused"
+    assert status["epoch_submitted"] == 43
+    assert status["epoch_target"] == 80
+    assert "queues" in status
+
+
+def test_pause_resume_and_stop_update_session_state(workspace_tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SOCIAL_CRAWLER_ROOT", str(CRAWLER_WORKTREE))
+    from agent_runtime import AgentWorker, _build_test_config
+
+    worker = AgentWorker(
+        client=_FakeLocalClient(),
+        runner=_FakeRunner(
+            CrawlerRunResult(
+                output_dir=workspace_tmp_path / "crawl-out",
+                records=[],
+                errors=[],
+                summary={},
+                exit_code=0,
+                argv=["python", "-m", "crawler"],
+            )
+        ),
+        config=_build_test_config(workspace_tmp_path),
+    )
+
+    paused = worker.pause()
+    resumed = worker.resume()
+    stopped = worker.stop()
+
+    assert paused["mining_state"] == "paused"
+    assert resumed["mining_state"] == "running"
+    assert stopped["mining_state"] == "stopped"
+
+
+def test_run_iteration_respects_paused_session(workspace_tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SOCIAL_CRAWLER_ROOT", str(CRAWLER_WORKTREE))
+    from agent_runtime import AgentWorker, _build_test_config
+
+    worker = AgentWorker(
+        client=_FakeLocalClient(),
+        runner=_FakeRunner(
+            CrawlerRunResult(
+                output_dir=workspace_tmp_path / "crawl-out",
+                records=[],
+                errors=[],
+                summary={},
+                exit_code=0,
+                argv=["python", "-m", "crawler"],
+            )
+        ),
+        config=_build_test_config(workspace_tmp_path),
+    )
+    worker.state_store.save_session({"mining_state": "paused"})
+
+    summary = worker.run_iteration(1)
+
+    assert summary["processed_items"] == 0
+    assert any("paused" in message for message in summary["messages"])
+
+
+def test_start_working_persists_selected_datasets(workspace_tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SOCIAL_CRAWLER_ROOT", str(CRAWLER_WORKTREE))
+    from agent_runtime import AgentWorker, _build_test_config
+
+    worker = AgentWorker(
+        client=_FakeLocalClient(),
+        runner=_FakeRunner(
+            CrawlerRunResult(
+                output_dir=workspace_tmp_path / "crawl-out",
+                records=[],
+                errors=[],
+                summary={},
+                exit_code=0,
+                argv=["python", "-m", "crawler"],
+            )
+        ),
+        config=_build_test_config(workspace_tmp_path),
+    )
+
+    result = worker.start_working(selected_dataset_ids=["dataset-2"])
+
+    assert result["mining_state"] == "running"
+    assert result["selected_dataset_ids"] == ["dataset-2"]
+    assert worker.state_store.load_session()["selected_dataset_ids"] == ["dataset-2"]
+
+
+def test_selected_datasets_filter_discovery_items(workspace_tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SOCIAL_CRAWLER_ROOT", str(CRAWLER_WORKTREE))
+    from agent_runtime import AgentWorker, _build_test_config
+
+    worker = AgentWorker(
+        client=_FakeLocalClient(),
+        runner=_FakeRunner(
+            CrawlerRunResult(
+                output_dir=workspace_tmp_path / "crawl-out",
+                records=[],
+                errors=[],
+                summary={},
+                exit_code=0,
+                argv=["python", "-m", "crawler"],
+            )
+        ),
+        config=replace(_build_test_config(workspace_tmp_path), dataset_refresh_seconds=0),
+    )
+    worker.state_store.save_session({"mining_state": "running", "selected_dataset_ids": ["dataset-2"]})
+
+    summary = worker.run_iteration(1)
+
+    assert summary["discovery_items"] == 1
+
+
+def test_rate_limit_marks_dataset_cooldown_and_defers_item(workspace_tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SOCIAL_CRAWLER_ROOT", str(CRAWLER_WORKTREE))
+    from agent_runtime import AgentWorker, _build_test_config
+
+    result = CrawlerRunResult(
+        output_dir=workspace_tmp_path / "crawl-out",
+        records=[{"canonical_url": "https://example.com", "structured": {}, "plain_text": "hello", "crawl_timestamp": "2026-04-01T00:00:00Z"}],
+        errors=[],
+        summary={},
+        exit_code=0,
+        argv=["python", "-m", "crawler"],
+    )
+    worker = AgentWorker(
+        client=_RateLimitedClient(),
+        runner=_FakeRunner(result),
+        config=_build_test_config(workspace_tmp_path),
+    )
+
+    message = worker.process_task_payload(
+        "local_crawl",
+        {
+            "task_id": "local-429",
+            "url": "https://example.com",
+            "dataset_id": "dataset-1",
+        },
+    )
+
+    assert "429" in message or "cooldown" in message
+    assert worker.state_store.is_dataset_available("dataset-1", now=0) is not True

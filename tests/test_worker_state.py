@@ -44,3 +44,33 @@ def test_worker_state_store_tracks_dataset_schedule(workspace_tmp_path) -> None:
     store.mark_dataset_scheduled("dataset-1", now=1000)
     assert store.should_schedule_dataset("dataset-1", min_interval_seconds=300, now=1100) is False
     assert store.should_schedule_dataset("dataset-1", min_interval_seconds=300, now=1401) is True
+
+
+def test_worker_state_store_persists_session_state(workspace_tmp_path) -> None:
+    store = WorkerStateStore(workspace_tmp_path / "state")
+
+    store.save_session(
+        {
+            "mining_state": "paused",
+            "selected_dataset_ids": ["dataset-1", "dataset-2"],
+            "epoch_submitted": 43,
+        }
+    )
+
+    session = store.load_session()
+
+    assert session["mining_state"] == "paused"
+    assert session["selected_dataset_ids"] == ["dataset-1", "dataset-2"]
+    assert session["epoch_submitted"] == 43
+
+
+def test_worker_state_store_tracks_dataset_cooldown(workspace_tmp_path) -> None:
+    store = WorkerStateStore(workspace_tmp_path / "state")
+
+    assert store.is_dataset_available("dataset-1", now=1000) is True
+    store.mark_dataset_cooldown("dataset-1", retry_after_seconds=300, now=1000, reason="429 Rate Limited")
+
+    assert store.is_dataset_available("dataset-1", now=1100) is False
+    assert store.is_dataset_available("dataset-1", now=1301) is True
+    active = store.active_dataset_cooldowns(now=1100)
+    assert active["dataset-1"]["reason"] == "429 Rate Limited"

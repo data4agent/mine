@@ -85,3 +85,23 @@ def test_archive_source_requires_existing_tarball(workspace_tmp_path: Path) -> N
 
     assert not config_path.exists()
 
+
+def test_plugin_source_registers_guided_session_tools() -> None:
+    index_text = (ROOT / "index.ts").read_text(encoding="utf-8")
+    tools_text = (ROOT / "src" / "tools.ts").read_text(encoding="utf-8")
+
+    for tool_name in (
+        "mine_start_working",
+        "mine_check_status",
+        "mine_list_datasets",
+        "mine_pause",
+        "mine_resume",
+        "mine_stop",
+        "mine_worker",
+    ):
+        assert tool_name in tools_text
+    assert "createStartWorkingTool" in index_text
+    assert "createCheckStatusTool" in index_text
+    assert "createPauseTool" in index_text
+    assert "createResumeTool" in index_text
+    assert "createStopTool" in index_text

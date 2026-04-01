@@ -107,7 +107,7 @@ async function runPythonTool(
 export function createHeartbeatTool(api: OpenClawPluginApi) {
   return {
     name: "mine_heartbeat",
-    label: "Social Crawler Heartbeat",
+    label: "Mine Heartbeat",
     description: "Send one miner heartbeat to Platform Service using the configured crawler worker identity.",
     parameters: Type.Object({}),
     async execute() {
@@ -120,7 +120,7 @@ export function createHeartbeatTool(api: OpenClawPluginApi) {
 export function createRunOnceTool(api: OpenClawPluginApi) {
   return {
     name: "mine_run_once",
-    label: "Social Crawler Run Once",
+    label: "Mine Run Once",
     description: "Send heartbeat, claim one repeat-crawl or refresh task, execute social-data-crawler, and report the result.",
     parameters: Type.Object({}),
     async execute() {
@@ -180,10 +180,97 @@ export function createRunLoopTool(api: OpenClawPluginApi) {
   };
 }
 
+export function createStartWorkingTool(api: OpenClawPluginApi) {
+  return {
+    name: "mine_start_working",
+    label: "Start Working",
+    description: "Initialize a Mine session, optionally persist selected datasets, and mark mining as running.",
+    parameters: Type.Object({
+      selectedDatasetIds: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Optional dataset ids to persist as the active mining selection.",
+        }),
+      ),
+    }),
+    async execute(_id: string, params: Record<string, unknown>) {
+      const ids = Array.isArray(params.selectedDatasetIds)
+        ? params.selectedDatasetIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        : [];
+      const text = await runPythonTool(api, "start-working", ids.length ? [ids.join(",")] : []);
+      return { content: [{ type: "text", text }] };
+    },
+  };
+}
+
+export function createListDatasetsTool(api: OpenClawPluginApi) {
+  return {
+    name: "mine_list_datasets",
+    label: "List Datasets",
+    description: "List active datasets for Mine and show any selected/cooldown context available to the skill.",
+    parameters: Type.Object({}),
+    async execute() {
+      const text = await runPythonTool(api, "list-datasets");
+      return { content: [{ type: "text", text }] };
+    },
+  };
+}
+
+export function createCheckStatusTool(api: OpenClawPluginApi) {
+  return {
+    name: "mine_check_status",
+    label: "Check Status",
+    description: "Show Mine session status, epoch progress, queue counts, cooldowns, and settlement-related state.",
+    parameters: Type.Object({}),
+    async execute() {
+      const text = await runPythonTool(api, "check-status");
+      return { content: [{ type: "text", text }] };
+    },
+  };
+}
+
+export function createPauseTool(api: OpenClawPluginApi) {
+  return {
+    name: "mine_pause",
+    label: "Pause Mining",
+    description: "Pause Mine after the current batch boundary and persist the paused session state.",
+    parameters: Type.Object({}),
+    async execute() {
+      const text = await runPythonTool(api, "pause");
+      return { content: [{ type: "text", text }] };
+    },
+  };
+}
+
+export function createResumeTool(api: OpenClawPluginApi) {
+  return {
+    name: "mine_resume",
+    label: "Resume Mining",
+    description: "Resume Mine from persisted state and continue processing eligible work.",
+    parameters: Type.Object({}),
+    async execute() {
+      const text = await runPythonTool(api, "resume");
+      return { content: [{ type: "text", text }] };
+    },
+  };
+}
+
+export function createStopTool(api: OpenClawPluginApi) {
+  return {
+    name: "mine_stop",
+    label: "Stop Mining",
+    description: "Stop Mine after the current batch boundary and return the session summary state.",
+    parameters: Type.Object({}),
+    async execute() {
+      const text = await runPythonTool(api, "stop");
+      return { content: [{ type: "text", text }] };
+    },
+  };
+}
+
 export function createMainWorkerTool(api: OpenClawPluginApi) {
   return {
     name: "mine_worker",
-    label: "Social Crawler Worker",
+    label: "Mine Worker",
     description:
       "Run the single-entry autonomous worker: heartbeat, task discovery/claim, crawl orchestration, auth handling, report, submit, and resume.",
     parameters: Type.Object({

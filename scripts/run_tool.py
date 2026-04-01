@@ -9,7 +9,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mine")
     parser.add_argument(
         "command",
-        choices=("heartbeat", "run-once", "run-loop", "run-worker", "process-task-file", "export-core-submissions"),
+        choices=(
+            "first-load",
+            "start-working",
+            "check-status",
+            "list-datasets",
+            "pause",
+            "resume",
+            "stop",
+            "heartbeat",
+            "run-once",
+            "run-loop",
+            "run-worker",
+            "process-task-file",
+            "export-core-submissions",
+        ),
     )
     parser.add_argument("args", nargs="*")
     return parser
@@ -18,8 +32,40 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     namespace = build_parser().parse_args()
     from agent_runtime import build_worker_from_env, export_core_submissions
+    from skill_runtime import render_dataset_listing, render_first_load_experience, render_status_summary
+
+    if namespace.command == "first-load":
+        print(render_first_load_experience())
+        return 0
 
     worker = build_worker_from_env()
+
+    if namespace.command == "start-working":
+        selected_dataset_ids = []
+        if namespace.args:
+            selected_dataset_ids = [dataset_id.strip() for dataset_id in namespace.args[0].split(",") if dataset_id.strip()]
+        print(json.dumps(worker.start_working(selected_dataset_ids=selected_dataset_ids or None), ensure_ascii=False, indent=2))
+        return 0
+
+    if namespace.command == "check-status":
+        print(render_status_summary(worker))
+        return 0
+
+    if namespace.command == "list-datasets":
+        print(render_dataset_listing(worker.client))
+        return 0
+
+    if namespace.command == "pause":
+        print(json.dumps(worker.pause(), ensure_ascii=False, indent=2))
+        return 0
+
+    if namespace.command == "resume":
+        print(json.dumps(worker.resume(), ensure_ascii=False, indent=2))
+        return 0
+
+    if namespace.command == "stop":
+        print(json.dumps(worker.stop(), ensure_ascii=False, indent=2))
+        return 0
 
     if namespace.command == "heartbeat":
         worker.client.send_miner_heartbeat(client_name=worker.config.client_name)
