@@ -21,6 +21,13 @@ SYM_WARN = "!"
 SYM_BULLET = "•"
 SYM_ARROW = "→"
 SYM_DASH = "—"
+SYM_BOX_H = "─"
+SYM_BOX_V = "│"
+SYM_BOX_TL = "┌"
+SYM_BOX_TR = "┐"
+SYM_BOX_BL = "└"
+SYM_BOX_BR = "┘"
+SYM_DIVIDER = "────────────────────────────────────────"
 
 
 def text_progress_bar(current: int, total: int, width: int = 20) -> str:
@@ -32,6 +39,36 @@ def text_progress_bar(current: int, total: int, width: int = 20) -> str:
     empty = width - filled
     percent = int(ratio * 100)
     return f"[{'█' * filled}{'░' * empty}] {percent}%"
+
+
+def render_status_box(title: str, rows: list[tuple[str, str]], width: int = 40) -> str:
+    """Render a status box with title and key-value rows."""
+    lines = [SYM_DIVIDER]
+    if title:
+        lines.append(f"  {title}")
+        lines.append(f"  {SYM_BOX_H * (width - 4)}")
+    for label, value in rows:
+        lines.append(f"  {label:<20} {value}")
+    lines.append(SYM_DIVIDER)
+    return "\n".join(lines)
+
+
+def render_step(status: str, text: str) -> str:
+    """Render a step line with status icon."""
+    if status == "ok":
+        return f"{SYM_CHECK} {text}"
+    elif status == "error":
+        return f"{SYM_CROSS} {text}"
+    elif status == "warn":
+        return f"{SYM_WARN} {text}"
+    else:
+        return f"{SYM_BULLET} {text}"
+
+
+def render_labeled_progress(label: str, current: int, total: int, label_width: int = 18) -> str:
+    """Render a labeled progress bar like: wiki-articles    [████░░░░] 40%  12/30"""
+    bar = text_progress_bar(current, total, width=12)
+    return f"  {label:<{label_width}} {bar}  {current}/{total}"
 
 
 def format_bytes(size: int) -> str:
@@ -74,21 +111,19 @@ def _resolve_crawler_root() -> Path | None:
 
 
 def _wallet_ready() -> tuple[bool, str, list[str]]:
-    """Check wallet status. Returns (ok, status_line, fix_commands)."""
+    """Check agent identity status. Returns (ok, status_line, fix_commands)."""
     wallet_bin, wallet_token = resolve_wallet_config()
-    resolved = shutil.which(wallet_bin) or wallet_bin
     wallet_installed = bool(shutil.which(wallet_bin) or Path(wallet_bin).exists())
     if not wallet_installed:
-        return False, f"{SYM_CROSS} AWP Wallet {SYM_DASH} missing ({resolved})", [
-            "# Install awp-wallet (see AWP docs for your platform)",
-            "npm install -g @aspect/awp-wallet",
-            "# Or add awp-wallet binary to PATH",
+        # Agent identity not initialized - internal setup issue
+        return False, f"{SYM_CROSS} Agent identity {SYM_DASH} not initialized", [
+            "# Run bootstrap to initialize agent identity",
+            "./scripts/bootstrap.sh",
         ]
     if wallet_token.strip():
-        return True, f"{SYM_CHECK} AWP Wallet {SYM_DASH} installed, unlocked", []
-    return False, f"{SYM_WARN} AWP Wallet {SYM_DASH} installed, but locked", [
-        "awp-wallet unlock --duration 3600",
-    ]
+        return True, f"{SYM_CHECK} Agent identity {SYM_DASH} ready", []
+    # Token missing but wallet exists - will auto-recover
+    return True, f"{SYM_CHECK} Agent identity {SYM_DASH} ready (session managed automatically)", []
 
 
 def _crawler_ready() -> tuple[bool, str, list[str]]:
@@ -144,11 +179,15 @@ def _version_lines() -> list[str]:
         "Version check:",
         f"  {SYM_BULLET} Mine runtime version {SYM_DASH} {version_status}",
         f"  {SYM_BULLET} Python version {SYM_DASH} {python_version}{f' {SYM_CHECK}' if python_ready else ' (Mine needs Python 3.11+)'}",
-        f"  {SYM_BULLET} Wallet session {SYM_DASH} {'ready ' + SYM_CHECK if wallet_ok else 'needs unlock'}",
+        f"  {SYM_BULLET} Agent identity {SYM_DASH} {'ready ' + SYM_CHECK if wallet_ok else 'initializing'}",
     ]
 
 
 def render_first_load_experience() -> str:
+    """
+    Scene 1: Welcome & Dependency Check
+    匹配 HTML 设计稿的欢迎界面
+    """
     wallet_ok, wallet_line, wallet_fixes = _wallet_ready()
     crawler_ok, crawler_line, crawler_fixes = _crawler_ready()
     platform_ok, platform_line, platform_fixes = _platform_line()
@@ -157,26 +196,31 @@ def render_first_load_experience() -> str:
         f"Welcome to Mine {SYM_DASH} the data service WorkNet!",
         "",
         "Your agent mines the internet for structured data and earns $aMine.",
-        f"Crawl, clean, structure, submit {SYM_DASH} with the agent handling the workflow for you.",
+        f"Crawl, clean, structure {SYM_DASH} fully autonomous, no human in the loop.",
         "",
         "Quick start:",
         f"  start working {SYM_DASH} auto mining, I handle everything",
-        f"  check status {SYM_DASH} credit score, epoch stats, earnings",
+        f"  check status  {SYM_DASH} credit score, epoch stats, earnings",
         f"  list datasets {SYM_DASH} see what's available to mine",
         "",
-        "Security: your private keys never leave awp-wallet.",
-        "Mine only uses time-limited session tokens for signing.",
+        "Security: agent handles all signing automatically.",
         "",
-        *_version_lines(),
-        "",
+        SYM_DIVIDER,
         "Dependency check:",
-        f"  {wallet_line}",
         f"  {crawler_line}",
+        f"  {wallet_line}",
         f"  {platform_line}",
     ]
 
-    if wallet_ok and crawler_ok:
-        lines.extend(["", f"{SYM_CHECK} All dependencies ready.", "", "Or just tell me what you'd like to do."])
+    if wallet_ok and crawler_ok and platform_ok:
+        lines.extend([
+            "",
+            f"{SYM_CHECK} All dependencies ready.",
+            "",
+            "Or just tell me what you'd like to do.",
+            "",
+            f"Commands: /mine-start | /mine-status | /mine-pause | /mine-stop"
+        ])
         return "\n".join(lines)
 
     # Collect all fix commands
@@ -196,7 +240,12 @@ def render_first_load_experience() -> str:
     for fix in all_fixes:
         lines.append(f"  {fix}")
 
-    lines.extend(["", f"Run these, then say 'check again' and I'll re-verify."])
+    lines.extend([
+        "",
+        f"Run these, then say 'check again' and I'll re-verify.",
+        "",
+        "Command: /mine-doctor"
+    ])
     return "\n".join(lines)
 
 
@@ -232,20 +281,39 @@ def render_dataset_listing(client_or_datasets: Any) -> str:
 
 
 def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str] | None = None) -> str:
+    """
+    Scene 2: Start Mining (首次确认)
+    匹配 HTML 设计稿的开始挖矿流程
+    """
     try:
         payload = worker.start_working(selected_dataset_ids=selected_dataset_ids)
     except Exception as exc:
-        return (
-            f"{SYM_CROSS} Unable to start mining yet.\n"
-            f"  {SYM_BULLET} Start-up check failed: {exc}\n"
-            f"  {SYM_BULLET} If this is a signing/session issue, run: awp-wallet unlock --duration 3600\n"
-            f"  {SYM_BULLET} Then say 'check status' or 'start working' again."
-        )
+        error_msg = str(exc)
+        lines = [
+            f"{SYM_CROSS} Unable to start mining yet.",
+            "",
+            f"  {SYM_BULLET} Error: {error_msg[:100]}",
+        ]
+        if "401" in error_msg or "Unauthorized" in error_msg:
+            lines.extend([
+                "",
+                "This looks like an authentication issue. The agent will auto-recover.",
+                "  1. /mine-status to verify",
+                "  2. /mine-start to retry",
+            ])
+        else:
+            lines.extend([
+                "",
+                f"  {SYM_BULLET} Run: /mine-doctor to diagnose",
+            ])
+        return "\n".join(lines)
+
     heartbeat = payload.get("heartbeat") or {}
     status = payload.get("status") or {}
     datasets = payload.get("datasets") or []
 
     lines = []
+    # Heartbeat status
     if heartbeat.get("unified_ok") or heartbeat.get("miner_ok"):
         lines.append(f"{SYM_CHECK} Heartbeat sent {SYM_DASH} miner registered")
     for error in heartbeat.get("errors") or []:
@@ -267,7 +335,11 @@ def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str
         lines.append(f"Target: {status.get('epoch_target')} submissions this epoch.")
 
     if payload.get("selection_required"):
-        lines.extend(["", f"Found {len(datasets)} active DataSets:", ""])
+        lines.extend([
+            "",
+            f"Found {len(datasets)} active DataSets:",
+            SYM_DIVIDER,
+        ])
         for index, dataset in enumerate(datasets, start=1):
             dataset_id = str(dataset.get("id") or f"dataset-{index}")
             domains = dataset.get("source_domains")
@@ -277,19 +349,29 @@ def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str
                 domain_text = str(domains or "no source domains")
             miner_count = dataset.get("miner_count")
             miner_text = f" {SYM_BULLET} {miner_count} miners" if miner_count else ""
-            lines.append(f"  {index}. {dataset_id} {SYM_DASH} {domain_text}{miner_text}")
-        lines.extend(["", "Which DataSet(s) to mine? Enter numbers (e.g. 1 or 1,2 for both)."])
+            lines.append(f"  {index}. {dataset_id}")
+            lines.append(f"     {domain_text}{miner_text}")
+        lines.extend([
+            SYM_DIVIDER,
+            "",
+            "Which DataSet(s) to mine? Enter numbers (e.g. 1 or 1,2 for both).",
+        ])
         return "\n".join(lines)
 
     selected = payload.get("selected_dataset_ids") or []
     strategy = payload.get("strategy") or "round-robin batches of 5 URLs each"
+    epoch_target = status.get("epoch_target") or 80
+
     if selected:
         lines.extend([
             "",
             f"Mining {' + '.join(selected)}.",
+            f"Target: {epoch_target} submissions this epoch.",
             f"Strategy: {strategy}.",
             "",
-            f"Starting batch 1... say 'pause' or 'stop' anytime.",
+            f"Starting batch 1...",
+            "",
+            f"Commands: /mine-pause | /mine-stop",
         ])
     else:
         lines.append("Mining session is ready.")
@@ -373,6 +455,37 @@ def render_control_response(payload: dict[str, Any]) -> str:
     lines.append("")
     lines.append(f"Say 'pause', 'resume', or 'stop' to control mining.")
     return "\n".join(lines)
+
+
+def load_batch_progress_from_output(output_dir: Path) -> dict[str, Any] | None:
+    """Read progress.json from crawler output and return structured batch progress data."""
+    progress_path = output_dir / "progress.json"
+    if not progress_path.exists():
+        return None
+
+    try:
+        import json
+        data = json.loads(progress_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    # Convert completed_detail to url_results format
+    url_results = []
+    for item in data.get("completed_detail", []):
+        if not isinstance(item, dict):
+            continue
+        url_results.append({
+            "url": item.get("url", ""),
+            "status": item.get("status", "ok"),
+            "size": item.get("char_count"),
+            "error": item.get("error"),
+        })
+
+    return {
+        "url_results": url_results,
+        "completed_count": len([r for r in url_results if r["status"] == "ok"]),
+        "failed_count": len([r for r in url_results if r["status"] == "failed"]),
+    }
 
 
 def render_batch_header(batch_num: int, dataset_id: str) -> str:
@@ -537,8 +650,8 @@ def render_error_recovery(
             lines.append(f"{SYM_BULLET} Switching to {fallback_dataset} in the meantime")
     elif error_type == "auth_required":
         lines.append(f"{SYM_WARN} Auth required for {dataset_id}")
-        lines.append(f"{SYM_BULLET} Run: awp-wallet unlock --duration 3600")
-        lines.append(f"{SYM_BULLET} Then say 'resume' to continue")
+        lines.append(f"{SYM_BULLET} Agent will attempt auto-recovery")
+        lines.append(f"{SYM_BULLET} Say 'resume' to continue after recovery")
     elif error_type == "network_error":
         lines.append(f"{SYM_WARN} Network error: {message or 'connection failed'}")
         lines.append(f"{SYM_BULLET} Will retry in 30 seconds")
@@ -560,22 +673,30 @@ def render_pause_response(
     epoch_target: int = 80,
     state_path: str = "mine/.state/session.json",
 ) -> str:
-    """Render pause response matching HTML preview Scene 5."""
+    """
+    Scene 5: Pause & Resume
+    匹配 HTML 设计稿的暂停界面
+    """
     lines = []
 
     if batch_remaining > 0:
         lines.append(f"Finishing current batch ({batch_remaining} URLs remaining)...")
         lines.append("")
         lines.append(f"{SYM_CHECK} Batch completed and submitted.")
-        lines.append(f"{SYM_DASH * 20}")
+        lines.append(SYM_DIVIDER)
 
     lines.append("Mining paused.")
     lines.append("")
-    lines.append(f"This session: {session_submitted} submitted ({session_ok} ok / {session_failed} failed)")
-    lines.append(f"Epoch progress: {epoch_submitted} / {epoch_target} ({int(epoch_submitted / epoch_target * 100) if epoch_target > 0 else 0}%)")
-    lines.append(f"State saved to: {state_path}")
+    lines.append(SYM_DIVIDER)
+    lines.append("  Session Summary")
+    lines.append(f"  {SYM_BOX_H * 36}")
+    lines.append(f"  This session      {session_submitted} submitted ({session_ok} ok / {session_failed} failed)")
+    percent = int(epoch_submitted / epoch_target * 100) if epoch_target > 0 else 0
+    lines.append(f"  Epoch progress    {epoch_submitted} / {epoch_target} ({percent}%)")
+    lines.append(f"  State saved       {state_path}")
+    lines.append(SYM_DIVIDER)
     lines.append("")
-    lines.append(f"Say 'resume' to continue, or 'stop' to end this session.")
+    lines.append("Commands: /mine-resume | /mine-stop")
 
     return "\n".join(lines)
 
@@ -590,7 +711,10 @@ def render_resume_response(
     batch_num: int = 1,
     dataset_ids: list[str] | None = None,
 ) -> str:
-    """Render resume response matching HTML preview Scene 5."""
+    """
+    Scene 5: Resume
+    匹配 HTML 设计稿的恢复界面
+    """
     lines = [
         f"{SYM_CHECK} Restored state from previous session",
     ]
@@ -605,6 +729,8 @@ def render_resume_response(
     if dataset_ids:
         lines.append("")
         lines.append(f"Resuming from batch {batch_num} with {' + '.join(dataset_ids)}.")
+        lines.append("")
+        lines.append("Commands: /mine-pause | /mine-stop")
 
     return "\n".join(lines)
 
@@ -621,22 +747,31 @@ def render_session_summary(
     epoch_target: int = 80,
     target_reached: bool = False,
 ) -> str:
-    """Render session summary matching HTML preview Scene 6."""
+    """
+    Scene 6: Stop Mining & Session Summary
+    匹配 HTML 设计稿的会话结束界面
+    """
     lines = [
         "Mining session ended.",
         "",
-        "Session Summary",
-        f"{SYM_DASH * 30}",
-        f"Duration: {duration}",
-        f"Submitted: {submitted} ({accepted} accepted / {failed} failed)",
-        f"Crawled: {crawled} URLs across {dataset_count} DataSet(s)",
+        SYM_DIVIDER,
+        "  Session Summary",
+        f"  {SYM_BOX_H * 36}",
+        f"  Duration          {duration}",
+        f"  Submitted         {submitted} ({accepted} accepted / {failed} failed)",
+        f"  Crawled           {crawled} URLs across {dataset_count} DataSet(s)",
     ]
 
     if target_reached:
-        lines.append(f"Epoch progress: {epoch_submitted} / {epoch_target} {SYM_DASH} target reached {SYM_CHECK}")
+        lines.append(f"  Epoch progress    {epoch_submitted} / {epoch_target} {SYM_DASH} target reached {SYM_CHECK}")
     else:
         percent = int(epoch_submitted / epoch_target * 100) if epoch_target > 0 else 0
-        lines.append(f"Epoch progress: {epoch_submitted} / {epoch_target} ({percent}%)")
+        bar = text_progress_bar(epoch_submitted, epoch_target, width=12)
+        lines.append(f"  Epoch progress    {bar} {epoch_submitted}/{epoch_target}")
+
+    lines.append(SYM_DIVIDER)
+    lines.append("")
+    lines.append("Command: /mine-start to begin a new session")
 
     return "\n".join(lines)
 
@@ -654,29 +789,39 @@ def render_epoch_settlement(
     new_epoch_id: str | None = None,
     new_epoch_hours: int | None = None,
 ) -> str:
-    """Render epoch settlement report matching HTML preview Scene 6."""
+    """
+    Scene 6: Epoch Settlement
+    匹配 HTML 设计稿的 epoch 结算界面
+    """
     lines = [
-        f"Epoch {epoch_id} Settlement",
-        f"{SYM_DASH * 30}",
-        f"Confirmed: {confirmed}",
-        f"Rejected: {rejected}",
-        f"Reward: {reward_amount} {reward_unit}",
+        SYM_DIVIDER,
+        f"  Epoch {epoch_id} Settlement",
+        f"  {SYM_BOX_H * 36}",
+        f"  Confirmed         {confirmed} {SYM_CHECK}",
+        f"  Rejected          {rejected} {SYM_CROSS if rejected > 0 else ''}",
+        f"  Reward            {reward_amount} {reward_unit}",
     ]
 
     if credit_before is not None and credit_after is not None:
         delta = credit_after - credit_before
         delta_text = f"+{delta}" if delta >= 0 else str(delta)
-        lines.append(f"Credit score: {credit_before} {SYM_ARROW} {credit_after} ({delta_text})")
+        delta_icon = SYM_CHECK if delta >= 0 else SYM_WARN
+        lines.append(f"  Credit score      {credit_before} {SYM_ARROW} {credit_after} ({delta_text}) {delta_icon}")
     elif credit_after is not None:
-        lines.append(f"Credit score: {credit_after}")
+        lines.append(f"  Credit score      {credit_after}")
 
     if credit_tier:
-        lines.append(f"Tier: {credit_tier}")
+        tier_display = f"[{credit_tier}]"
+        lines.append(f"  Tier              {tier_display}")
+
+    lines.append(SYM_DIVIDER)
 
     if new_epoch_id:
         hours_ago = f" ({new_epoch_hours}h ago)" if new_epoch_hours else ""
         lines.append("")
-        lines.append(f"New epoch {new_epoch_id} started{hours_ago}. Say 'start working' to begin.")
+        lines.append(f"New epoch {new_epoch_id} started{hours_ago}.")
+        lines.append("")
+        lines.append("Command: /mine-start to begin")
 
     return "\n".join(lines)
 
@@ -1019,6 +1164,9 @@ def _execute_intent(intent_id: str, command: str | None, worker: Any) -> str:
 
 
 def render_status_summary(worker: Any) -> str:
+    """
+    Enhanced status display matching HTML design
+    """
     status = worker.check_status()
     try:
         datasets = worker.client.list_datasets()
@@ -1033,31 +1181,43 @@ def render_status_summary(worker: Any) -> str:
 
     # Header
     lines = [
-        "Mine Status",
-        f"{SYM_DASH * 40}",
+        SYM_DIVIDER,
+        "  Mine Status",
+        f"  {SYM_BOX_H * 36}",
     ]
 
     # Miner info
-    lines.append(f"{SYM_BULLET} Miner ID: {worker.config.miner_id}")
-    lines.append(f"{SYM_BULLET} Platform: {worker.config.base_url}")
+    lines.append(f"  Miner ID          {worker.config.miner_id}")
+
+    # Platform with network detection
+    platform = worker.config.base_url
+    network = "testnet" if "101.47.73.95" in platform else "configured"
+    lines.append(f"  Platform          {platform} ({network})")
 
     # Mining state with icon
     state_icon = SYM_CHECK if mining_state == "running" else SYM_WARN if mining_state == "paused" else SYM_BULLET
-    lines.append(f"{state_icon} Mining state: {mining_state}")
+    state_display = mining_state.upper() if mining_state == "running" else mining_state
+    lines.append(f"  Mining state      {state_icon} {state_display}")
 
     # Credit score with tier
     if credit_score is not None:
         tier_text = f" [{credit_tier}]" if credit_tier else ""
-        lines.append(f"{SYM_BULLET} Credit score: {credit_score}{tier_text}")
+        lines.append(f"  Credit score      {credit_score}{tier_text}")
+
+    lines.append(SYM_DIVIDER)
+    lines.append("")
 
     # Epoch progress with bar
-    lines.append("")
     epoch_id = status.get("epoch_id")
     epoch_remaining = status.get("progress", {}).get("epoch_remaining")
     if epoch_id:
-        remaining_text = f" ({epoch_remaining} remaining)" if epoch_remaining else ""
+        remaining_text = f" {SYM_BULLET} {epoch_remaining} remaining" if epoch_remaining else ""
         lines.append(f"Epoch {epoch_id}{remaining_text}")
+    else:
+        lines.append("Epoch progress:")
+
     bar = text_progress_bar(epoch_submitted, epoch_target, width=20)
+    percent = int(epoch_submitted / epoch_target * 100) if epoch_target > 0 else 0
     lines.append(f"{bar} {epoch_submitted} / {epoch_target}")
 
     # Selected datasets
@@ -1110,6 +1270,13 @@ def render_status_summary(worker: Any) -> str:
 
     # Control hint
     lines.append("")
-    lines.append(f"Control: 'pause' | 'resume' | 'stop'")
+    if mining_state == "running":
+        lines.append("Commands: /mine-pause | /mine-stop")
+    elif mining_state == "paused":
+        lines.append("Commands: /mine-resume | /mine-stop")
+    elif mining_state == "stopped":
+        lines.append("Commands: /mine-start to begin mining")
+    else:
+        lines.append("Commands: /mine-start | /mine-datasets")
 
     return "\n".join(lines)

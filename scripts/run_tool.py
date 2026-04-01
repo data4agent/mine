@@ -369,10 +369,158 @@ def build_parser() -> argparse.ArgumentParser:
             "intent-help",
             "diagnose",
             "check-env",
+            "agent-status",
+            "agent-run",
         ),
     )
     parser.add_argument("args", nargs="*")
     return parser
+
+
+def render_agent_status() -> str:
+    """Ultra-concise status for AI agents. Single JSON with state + next action."""
+    import shutil
+
+    # Check prerequisites
+    platform_url = os.environ.get("PLATFORM_BASE_URL", "").strip()
+    miner_id = os.environ.get("MINER_ID", "").strip()
+    wallet_token = os.environ.get("AWP_WALLET_TOKEN", "").strip()
+    wallet_bin = os.environ.get("AWP_WALLET_BIN", "awp-wallet").strip()
+    wallet_found = bool(shutil.which(wallet_bin) or Path(wallet_bin).exists())
+
+    # Determine state and next action
+    if not wallet_found:
+        return json.dumps({
+            "ready": False,
+            "state": "agent_not_initialized",
+            "message": "Agent identity not initialized",
+            "next_action": "./scripts/bootstrap.sh",
+            "next_command": None
+        })
+
+    if not platform_url:
+        return json.dumps({
+            "ready": False,
+            "state": "missing_config",
+            "message": "PLATFORM_BASE_URL not set",
+            "next_action": "export PLATFORM_BASE_URL=http://your-platform-url",
+            "next_command": None
+        })
+
+    if not miner_id:
+        return json.dumps({
+            "ready": False,
+            "state": "missing_config",
+            "message": "MINER_ID not set",
+            "next_action": "export MINER_ID=your-miner-id",
+            "next_command": None
+        })
+
+    # Token not set is OK - agent will auto-manage session
+
+    # All prerequisites met - ready to mine
+    return json.dumps({
+        "ready": True,
+        "state": "ready",
+        "message": "Ready to mine",
+        "next_action": "Start mining",
+        "next_command": "python scripts/run_tool.py run-worker 60 1"
+    })
+
+
+def run_agent_loop(max_iterations: int = 1) -> str:
+    """
+    Agent-friendly mining loop with structured progress output.
+    Outputs one JSON per significant event for easy parsing.
+    """
+    import shutil
+    import subprocess as sp
+
+    results = []
+
+    # Step 1: Check prerequisites
+    platform_url = os.environ.get("PLATFORM_BASE_URL", "").strip()
+    miner_id = os.environ.get("MINER_ID", "").strip()
+    wallet_token = os.environ.get("AWP_WALLET_TOKEN", "").strip()
+    wallet_bin = os.environ.get("AWP_WALLET_BIN", "awp-wallet").strip()
+
+    if not platform_url or not miner_id:
+        return json.dumps({
+            "success": False,
+            "error": "missing_config",
+            "message": "Set PLATFORM_BASE_URL and MINER_ID first",
+            "events": []
+        })
+
+    # Step 2: Auto-unlock wallet if needed
+    if not wallet_token:
+        results.append({"event": "wallet_unlock", "status": "attempting"})
+        try:
+            env = os.environ.copy()
+            if not env.get("HOME") and env.get("USERPROFILE"):
+                env["HOME"] = env["USERPROFILE"]
+            proc = sp.run([wallet_bin, "unlock", "--duration", "3600"],
+                         capture_output=True, text=True, timeout=30, env=env)
+            if proc.returncode == 0:
+                data = json.loads(proc.stdout)
+                wallet_token = data.get("sessionToken", "")
+                os.environ["AWP_WALLET_TOKEN"] = wallet_token
+                results.append({"event": "wallet_unlock", "status": "success"})
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "wallet_unlock_failed",
+                    "message": proc.stderr.strip() or "Failed to unlock wallet",
+                    "events": results
+                })
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": "wallet_unlock_error",
+                "message": str(e),
+                "events": results
+            })
+
+    # Step 3: Run worker
+    results.append({"event": "mining_start", "iterations": max_iterations})
+
+    try:
+        from agent_runtime import build_worker_from_env
+        worker = build_worker_from_env()
+
+        for i in range(max_iterations):
+            results.append({"event": "iteration_start", "iteration": i + 1})
+
+            # Heartbeat
+            try:
+                worker.client.send_miner_heartbeat(client_name=worker.config.client_name)
+                results.append({"event": "heartbeat", "status": "ok"})
+            except Exception as e:
+                error_msg = str(e)
+                if "401" in error_msg:
+                    return json.dumps({
+                        "success": False,
+                        "error": "auth_failed",
+                        "message": "401 Unauthorized - check wallet registration",
+                        "events": results
+                    })
+                results.append({"event": "heartbeat", "status": "error", "message": error_msg})
+
+            results.append({"event": "iteration_complete", "iteration": i + 1})
+
+        return json.dumps({
+            "success": True,
+            "message": f"Completed {max_iterations} iteration(s)",
+            "events": results
+        })
+
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": "worker_error",
+            "message": str(e),
+            "events": results
+        })
 
 
 def main() -> int:
@@ -424,6 +572,15 @@ def main() -> int:
 
     if namespace.command == "check-env":
         print(render_env_check())
+        return 0
+
+    if namespace.command == "agent-status":
+        print(render_agent_status())
+        return 0
+
+    if namespace.command == "agent-run":
+        max_iter = int(namespace.args[0]) if namespace.args else 1
+        print(run_agent_loop(max_iterations=max_iter))
         return 0
 
     if namespace.command == "diagnose":
@@ -487,8 +644,8 @@ def main() -> int:
             print("")
             if "401" in error_msg or "Unauthorized" in error_msg:
                 print("This appears to be an authentication issue.")
+                print("The agent will attempt to auto-recover.")
                 print("Try: python scripts/run_tool.py diagnose")
-                print("Or:  awp-wallet unlock --duration 3600")
             else:
                 print("Check your network connection and platform URL.")
             return 1
@@ -516,8 +673,8 @@ def main() -> int:
             print("")
             if "401" in error_msg or "Unauthorized" in error_msg:
                 print("This appears to be an authentication issue.")
+                print("The agent will attempt to auto-recover.")
                 print("Run: python scripts/run_tool.py diagnose")
-                print("Or:  awp-wallet unlock --duration 3600")
             return 1
         return 0
 

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from signer import WalletSigner
 
 from auth_orchestrator import AUTH_ERROR_CODES, AuthOrchestrator
-from canonicalize import normalize_url
+from canonicalize import canonicalize_url as normalize_url
 from common import inject_crawler_root, resolve_wallet_config
 from crawl_mode_planner import CrawlModePlanner
 from lib.platform_client import PlatformClient as ExtractedPlatformClient
@@ -1326,6 +1326,10 @@ def build_worker_from_env() -> AgentWorker:
         auth_retry_interval_seconds=max(30, int(os.environ.get("AUTH_RETRY_INTERVAL_SECONDS", "300"))),
         gateway_enrich_enabled=bool(gateway_model_config),
         gateway_model_config=gateway_model_config,
+        # EIP-712 signature domain parameters from environment
+        eip712_domain_name=os.environ.get("EIP712_DOMAIN_NAME", "Platform Service"),
+        eip712_chain_id=int(os.environ.get("EIP712_CHAIN_ID", "1")),
+        eip712_verifying_contract=os.environ.get("EIP712_VERIFYING_CONTRACT", "0x0000000000000000000000000000000000000000"),
     )
 
     wallet_bin, wallet_token = resolve_wallet_config()
@@ -1338,6 +1342,9 @@ def build_worker_from_env() -> AgentWorker:
         token=config.token,
         miner_id=config.miner_id,
         signer=signer,
+        eip712_chain_id=config.eip712_chain_id,
+        eip712_domain_name=config.eip712_domain_name,
+        eip712_verifying_contract=config.eip712_verifying_contract,
     )
     runner = CrawlerRunner(config)
     return AgentWorker(client=client, runner=runner, config=config)

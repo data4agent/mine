@@ -88,6 +88,10 @@ class WorkerConfig:
     auth_retry_interval_seconds: int = 300
     gateway_enrich_enabled: bool = False
     gateway_model_config: dict[str, Any] = field(default_factory=dict)
+    # EIP-712 signature domain parameters
+    eip712_domain_name: str = "Platform Service"
+    eip712_chain_id: int = 1
+    eip712_verifying_contract: str = "0x0000000000000000000000000000000000000000"
 
 
 @dataclass(frozen=True, slots=True)

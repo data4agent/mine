@@ -5,7 +5,9 @@ bootstrap: ./scripts/bootstrap.sh
 windows_bootstrap: ./scripts/bootstrap.ps1
 smoke_test: ./scripts/smoke_test.py
 requires:
-  skills: []
+  skills:
+    - browse
+    - auto-browser
   bins:
     - python3
     - awp-wallet
@@ -41,11 +43,10 @@ python scripts/run_tool.py setup
 
 This single command:
 1. Checks Python version (needs 3.11+)
-2. Checks Node.js version (needs 20+ for awp-wallet)
-3. Creates virtualenv and installs dependencies
-4. Unlocks wallet and gets session token
-5. Sets environment variables
-6. Returns JSON with status and next command
+2. Creates virtualenv and installs dependencies
+3. Initializes agent identity (automatic)
+4. Sets environment variables
+5. Returns JSON with status and next command
 
 ### Quick Diagnosis
 
@@ -54,7 +55,7 @@ python scripts/run_tool.py doctor
 ```
 
 Returns JSON with:
-- All checks (python, nodejs, awp-wallet, env_vars)
+- All checks (python, env_vars, agent identity)
 - Exact fix commands to copy-paste
 - Next command to run
 
@@ -64,8 +65,7 @@ Example output:
   "status": "error",
   "checks": [...],
   "fix_commands": [
-    "export PLATFORM_BASE_URL=http://101.47.73.95",
-    "awp-wallet unlock --duration 3600"
+    "export PLATFORM_BASE_URL=http://101.47.73.95"
   ],
   "next_command": "export PLATFORM_BASE_URL=http://101.47.73.95"
 }
@@ -78,6 +78,93 @@ python scripts/run_tool.py setup-fix
 ```
 
 Attempts to automatically fix common issues (create venv, install deps, set defaults).
+
+---
+
+## Agent Integration (For Weak Models)
+
+If you are an AI agent with limited context or reasoning capability, use this simplified flow:
+
+### Step 1: Check Status (One Command)
+
+```bash
+python scripts/run_tool.py agent-status
+```
+
+Returns ultra-concise JSON:
+```json
+{"ready": true, "state": "ready", "message": "Ready to mine", "next_action": "Start mining", "next_command": "python scripts/run_tool.py run-worker 60 1"}
+```
+
+Or if not ready:
+```json
+{"ready": false, "state": "env_missing", "message": "PLATFORM_BASE_URL not set", "next_action": "export PLATFORM_BASE_URL=http://101.47.73.95", "next_command": null}
+```
+
+### Step 2: Follow `next_action`
+
+- If `ready` is `false`: execute `next_action` (it's a shell command)
+- If `ready` is `true`: execute `next_command` to start mining
+
+### Step 3: Loop
+
+After each action, run `agent-status` again to check the new state.
+
+### Decision Tree for Weak Agents
+
+```
+START
+  |
+  v
+agent-status --> ready=true? --> YES --> run next_command --> MINING
+                    |
+                    NO
+                    |
+                    v
+              Execute next_action
+                    |
+                    v
+              agent-status (loop back)
+```
+
+### One-Shot Mining (Simplest)
+
+For the simplest possible integration, use `agent-run` which handles everything:
+
+```bash
+python scripts/run_tool.py agent-run 1
+```
+
+This single command:
+1. Auto-unlocks wallet if needed
+2. Sends heartbeat
+3. Returns structured JSON with all events
+
+Example success:
+```json
+{"success": true, "message": "Completed 1 iteration(s)", "events": [...]}
+```
+
+Example failure:
+```json
+{"success": false, "error": "auth_failed", "message": "401 Unauthorized", "events": [...]}
+```
+
+### Key Rules for Agents
+
+1. **Always start with `agent-status`** — never guess the state
+2. **One action at a time** — don't chain multiple commands
+3. **Trust the `next_action`** — it tells you exactly what to do
+4. **Re-check after each action** — state may have changed
+5. **If stuck after 3 retries** — report the error to the user, don't keep trying
+
+### Minimum Agent Requirements
+
+- Must reliably execute shell commands (no hallucinating results)
+- Must parse JSON output correctly
+- Must follow sequential instructions
+
+Models below Haiku/GLM-4 level may struggle. See the review document for detailed capability assessment.
 
 ---
 
@@ -139,9 +226,7 @@ End the first-load message with:
 
 ### Security
 
-**Security:** your private keys never leave awp-wallet.
-Mine only uses time-limited session tokens for signing.
-No seed phrase or private key should be stored in config, environment text output, or sent to the platform.
+**Security:** The agent uses its own wallet for signing requests. Wallet management is automatic — you don't need to configure or unlock anything. All request signing happens locally, and private keys never leave the agent's secure environment.
 
 ---
 
@@ -155,65 +240,58 @@ Always surface version readiness as its own explicit check before long-running m
    - current project checkout is the active runtime surface
 2. `Python version`
    - Mine needs Python 3.11+
-3. `Wallet session freshness`
-   - unlocked session must still be valid for signing
+3. `Agent identity`
+   - agent wallet is initialized and ready for signing
 
 Good version-check tone:
 
 - `Mine runtime version — project checkout ready`
 - `Python version — 3.11+ ready`
-- `Wallet session — ready`
+- `Agent identity — ready`
 
 Always present dependency results in a concrete, actionable way.
 Do not say only “missing dependency” or “please install”.
 
 ### Dependencies to verify
 
-1. **AWP Wallet**
-   - installed
-   - reachable on PATH or explicit config path
-   - unlocked or ready to unlock
-
-2. **Mine runtime**
+1. **Mine runtime**
    - runtime present inside this project
-   - Python runtime available
+   - Python runtime available (3.11+)
    - environment bootstrapped enough to run Mine crawler commands
+
+2. **Agent identity**
+   - agent wallet initialized (automatic, no user action needed)
+   - signing ready
 
 3. **Platform Service base URL**
    - use environment variable `PLATFORM_BASE_URL` when set
-   - if the user is on the test setup, it is acceptable to explain the testnet default
+   - if on testnet, the default URL is acceptable
 
 ### Good dependency-check success tone
 
-- `AWP Wallet — installed, unlocked`
 - `Mine runtime — installed (Python 3.11+ ready)`
-- `Platform Service base URL — configured`
+- `Agent identity — ready`
+- `Platform Service — configured`
 - `All dependencies ready.`
 
 ### Good dependency-check failure tone
 
-When a dependency is missing, give the user the exact next steps.
+When a dependency is missing, give actionable guidance.
 
 For example:
 
-- `AWP Wallet — missing`
-  - suggest install path or binary setup
 - `Mine runtime — not ready`
   - tell the user to bootstrap this project runtime
 - Python too old
   - explicitly say Mine needs Python 3.11+
-- platform base URL missing
-  - explain whether Mine will use the current testnet default or needs explicit config
+- Platform base URL missing
+  - explain that Mine needs `PLATFORM_BASE_URL` configured
 
 Always include a recovery close like:
 
 > Run these commands, then say `check again` and I’ll re-verify.
 
-If wallet renewal is needed, it is valid to instruct:
-
-```bash
-awp-wallet unlock --duration 3600
-```
+Note: Agent wallet issues are handled automatically. If signing fails, the agent will attempt to recover on its own.
 
 ---
 
@@ -251,7 +329,7 @@ When the user expresses an intent, route to the matching action and command.
 `mine` is the primary skill/runtime project.
 
 - crawler runtime root: this repository by default
-- request signing: `awp-wallet`
+- request signing: handled by agent wallet (automatic)
 - platform connectivity: `PLATFORM_BASE_URL`
 - discovery may use `generic` or `generic/page` inputs as compatibility fallbacks when needed
 
@@ -379,16 +457,11 @@ Mine should feel resilient and specific.
 
 ### Token/session recovery
 
-If signing requests fail because the wallet session is stale or expired:
+If signing requests fail because the agent's session is stale or expired:
 
-- explain that the session token likely expired
-- suggest or run:
-
-```bash
-awp-wallet unlock --duration 3600
-```
-
-Do not describe this as just “retry signing”.
+- the agent will automatically attempt to renew the session
+- if auto-renewal fails, report a brief error and retry
+- do not expose wallet commands to the user — signing is the agent's internal concern
 
 ### 429 rate limiting
 
@@ -399,13 +472,70 @@ If the platform returns `429`:
 - continue with other eligible work if available
 - surface the retry window if known
 
-### AUTH_REQUIRED
+### AUTH_REQUIRED (Auto-Login Flow)
 
-If crawler output indicates `AUTH_REQUIRED`:
+When crawler returns `AUTH_REQUIRED`, use the simplified auth helper scripts.
 
-- explicitly say login or browser confirmation is needed
-- move the item into pending/retry state
-- tell the user what needs to be completed before retry
+All dependencies (Xvfb, x11vnc, websockify, icewm, xdotool, agent-browser, Chrome, cloudflared) are auto-installed on first use.
+
+#### Usage
+
+##### Step 1: Request login
+
+```bash
+# Extract domain from failed URL (e.g., "linkedin.com" from "https://www.linkedin.com/...")
+PUBLIC_URL=$(bash auto-browser/scripts/auth_helper.sh <platform_domain>)
+```
+
+This script:
+
+- Tries to import existing cookies (silent)
+- If no cookies: starts VNC stack and opens login page
+- Returns the Cloudflare public URL for user access
+
+Output to user (one line only):
+
+```text
+Login needed: $PUBLIC_URL
+```
+
+##### Step 2: Wait for user to complete login
+
+The user will:
+
+1. Click the PUBLIC_URL link
+2. Log in through the browser
+3. Click "Done" button in the VNC interface, OR say "done" in chat
+
+##### Step 3: Complete login flow
+
+After user says "done" / "finished" / "completed":
+
+```bash
+bash auto-browser/scripts/auth_complete.sh --wait-user
+```
+
+This captures cookies and returns control to the crawler.
+
+**Output:** `Logged in. Resuming.`
+
+Then retry the failed URLs.
+
+#### Cleanup
+
+```bash
+python3 auto-browser/scripts/vrd.py stop
+```
+
+Run this when mining session is complete (not after each login).
+
+#### Rules
+
+- Use helper scripts, not raw commands
+- Never ask user to manually export cookies
+- Never output cookie values or auth details
+- Only output the PUBLIC_URL
+- Auto-retry failed URLs after successful login
 
 ### Occupancy / dedup fallback
 
@@ -428,7 +558,7 @@ Preferred local checks:
 - `python scripts/host_diagnostics.py --json`
 - `python scripts/smoke_test.py --json`
 
-If the user needs environment setup help, guide them toward bootstrapping the local Python runtime and awp-wallet rather than any plugin packaging flow.
+If the user needs environment setup help, guide them toward bootstrapping the local Python runtime. The agent wallet is initialized automatically during bootstrap.
 
 ---
 
@@ -444,30 +574,26 @@ A: No. Data submissions to the Platform Service are off-chain API calls. You do 
 
 A: Reward claiming may require on-chain transactions depending on the platform's settlement mechanism. Check the platform documentation for current settlement details. During testnet, rewards are tracked off-chain.
 
-**Q: Do I need ETH in my wallet to mine?**
+**Q: Do I need ETH or any crypto to mine?**
 
-A: No ETH is required for the mining workflow itself. The wallet is used only for EIP-712 request signing (off-chain). Gas is only needed if you later bridge rewards or perform on-chain operations.
+A: No. The mining workflow is entirely off-chain. The agent handles all request signing automatically. Gas is only needed if you later bridge rewards or perform on-chain operations.
 
-### Wallet address and Miner ID
+### Agent Identity and Miner ID
 
-**Q: What is the relationship between my wallet address and Miner ID?**
+**Q: What is the relationship between agent identity and Miner ID?**
 
 A: They are separate identifiers:
 
-- **Wallet address** (`0x...`) — Your cryptographic identity for request signing. Derived from your private key via awp-wallet. Used to authenticate API requests.
+- **Agent wallet** (`0x...`) — The agent's cryptographic identity for request signing. Managed automatically by the agent.
 - **Miner ID** — A human-readable identifier for your mining client (e.g., `my-miner-001`). Used by the platform to track your submissions, credit score, and rewards.
 
-**Q: Can one wallet address run multiple miners?**
+**Q: Can one agent run multiple miners?**
 
-A: Yes. You can run multiple mining clients with different Miner IDs, all signing with the same wallet address. Each Miner ID maintains its own credit score and submission history.
+A: Yes. You can run multiple mining clients with different Miner IDs. Each Miner ID maintains its own credit score and submission history.
 
-**Q: Can I switch wallet addresses while keeping my Miner ID?**
+**Q: Do I need to manage the agent's wallet?**
 
-A: This depends on platform policy. Generally, Miner IDs are associated with wallet addresses at registration. Contact platform support if you need to migrate a Miner ID to a new wallet.
-
-**Q: Why do I need both?**
-
-A: The wallet address provides cryptographic authentication (proving you control the private key). The Miner ID provides operational flexibility (naming, tracking, multi-client setups).
+A: No. The agent's wallet is initialized and managed automatically during bootstrap. You don't need to configure, unlock, or interact with it directly.
 
 ### PoW challenges
 

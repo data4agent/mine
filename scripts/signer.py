@@ -217,6 +217,8 @@ class WalletSigner:
         content_type: str = "application/json",
         request_id: str | None = None,
         chain_id: int = 1,
+        domain_name: str = "Platform Service",
+        verifying_contract: str = "0x0000000000000000000000000000000000000000",
     ) -> dict[str, str]:
         now = int(time.time())
         nonce = secrets.randbits(52)
@@ -230,6 +232,8 @@ class WalletSigner:
             now=now,
             nonce=nonce,
             chain_id=chain_id,
+            domain_name=domain_name,
+            verifying_contract=verifying_contract,
         )
         signature = self.sign_typed_data(typed_data)
         message = typed_data["message"]

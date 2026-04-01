@@ -18,10 +18,16 @@ class PlatformClient:
         token: str,
         miner_id: str,
         signer: "WalletSigner | None" = None,
+        eip712_chain_id: int = 1,
+        eip712_domain_name: str = "Platform Service",
+        eip712_verifying_contract: str = "0x0000000000000000000000000000000000000000",
     ) -> None:
         self.miner_id = miner_id
         self._base_url = base_url.rstrip("/")
         self._signer = signer
+        self._eip712_chain_id = eip712_chain_id
+        self._eip712_domain_name = eip712_domain_name
+        self._eip712_verifying_contract = eip712_verifying_contract
         self._max_retries = 3
         self._last_wallet_refresh: dict[str, Any] | None = None
         headers = {
@@ -177,6 +183,9 @@ class PlatformClient:
                     request_url,
                     payload,
                     content_type="application/json",
+                    chain_id=self._eip712_chain_id,
+                    domain_name=self._eip712_domain_name,
+                    verifying_contract=self._eip712_verifying_contract,
                 )
             try:
                 response = self._client.request(method, path, **kwargs)

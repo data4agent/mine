@@ -464,7 +464,10 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                     "message": raw_result.fetch_error.message,
                 }
 
-            progress.mark_done(url)
+            # Track progress with char count for real-time UX
+            plain_text = normalized.get("plain_text", "")
+            char_count = len(plain_text) if isinstance(plain_text, str) else 0
+            progress.mark_done(url, char_count=char_count, status="ok")
             return normalized, None
 
         except Exception as exc:
