@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from signer import WalletSigner
 
 from auth_orchestrator import AUTH_ERROR_CODES, AuthOrchestrator
-from canonicalize import canonicalize_url as normalize_url
+from canonicalize import normalize_url
 from common import inject_crawler_root, resolve_wallet_config
 from crawl_mode_planner import CrawlModePlanner
 from lib.platform_client import PlatformClient as ExtractedPlatformClient
