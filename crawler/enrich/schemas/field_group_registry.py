@@ -61,6 +61,8 @@ class FieldGroupSpec:
     requires_vision: bool = False  # 是否需要视觉能力（多模态）
     platform: str = ""  # 适用平台: linkedin, arxiv, wikipedia, amazon, base
     subdataset: str = ""  # 子数据集: profiles, company, jobs, posts, products, reviews, sellers, transactions, addresses, contracts, defi
+    auto_platforms: tuple[str, ...] = field(default_factory=tuple)
+    auto_resource_types: tuple[str, ...] = field(default_factory=tuple)
 
     def source_fields_present(self, record: dict[str, Any]) -> bool:
         """Check if the required source fields are present in the record."""
@@ -68,6 +70,22 @@ class FieldGroupSpec:
             value = record.get(field_name)
             if value is None or value == "" or value == [] or value == {}:
                 return False
+        return True
+
+    def applies_to(self, platform: str, resource_type: str) -> bool:
+        normalized_platform = (platform or "").strip().lower()
+        normalized_resource_type = (resource_type or "").strip().lower()
+
+        if self.platform and normalized_platform and self.platform.lower() != normalized_platform:
+            return False
+        if self.subdataset and normalized_resource_type and self.subdataset.lower() != normalized_resource_type:
+            return False
+        if self.auto_platforms and normalized_platform and normalized_platform not in {value.lower() for value in self.auto_platforms}:
+            return False
+        if self.auto_resource_types and normalized_resource_type and normalized_resource_type not in {
+            value.lower() for value in self.auto_resource_types
+        }:
+            return False
         return True
 
 
@@ -95,6 +113,8 @@ _LEGACY_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             max_tokens=512,
             temperature=0.2,
         ),
+        auto_platforms=("linkedin",),
+        auto_resource_types=("profile", "company"),
     ),
     "standardized_job_title": FieldGroupSpec(
         name="standardized_job_title",
@@ -118,6 +138,8 @@ _LEGACY_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             temperature=0.1,
         ),
         min_extractive_confidence=0.8,
+        auto_platforms=("linkedin",),
+        auto_resource_types=("job",),
     ),
     "skills_extraction": FieldGroupSpec(
         name="skills_extraction",
@@ -140,6 +162,8 @@ _LEGACY_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             temperature=0.2,
         ),
         min_extractive_confidence=0.7,
+        auto_platforms=("linkedin",),
+        auto_resource_types=("profile",),
     ),
     "summaries": FieldGroupSpec(
         name="summaries",
@@ -154,6 +178,8 @@ _LEGACY_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             max_tokens=512,
             temperature=0.2,
         ),
+        auto_platforms=("generic",),
+        auto_resource_types=("page",),
     ),
     "classifications": FieldGroupSpec(
         name="classifications",
@@ -169,6 +195,8 @@ _LEGACY_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             source_field_key="resource_type",
             min_confidence=0.5,
         ),
+        auto_platforms=("generic",),
+        auto_resource_types=("page",),
     ),
     "linkables": FieldGroupSpec(
         name="linkables",
@@ -184,6 +212,7 @@ _LEGACY_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             source_field_key="canonical_url",
             min_confidence=0.9,
         ),
+        auto_platforms=("linkedin", "amazon", "arxiv", "wikipedia", "base"),
     ),
 }
 
@@ -198,6 +227,7 @@ _PASSTHROUGH_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             source_fields=["image_url", "media_url", "thumbnail"],
             output_field="multimodal_signal",
         ),
+        auto_platforms=("linkedin", "amazon", "arxiv", "wikipedia", "base"),
     ),
     "behavior": FieldGroupSpec(
         name="behavior",
@@ -209,6 +239,8 @@ _PASSTHROUGH_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             source_fields=["behavior", "activity", "actions"],
             output_field="behavior_signal",
         ),
+        auto_platforms=("linkedin",),
+        auto_resource_types=("profile", "post"),
     ),
     "risk": FieldGroupSpec(
         name="risk",
@@ -220,6 +252,8 @@ _PASSTHROUGH_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             source_fields=["risk", "severity", "issue"],
             output_field="risk_signal",
         ),
+        auto_platforms=("amazon", "linkedin", "base"),
+        auto_resource_types=("seller", "company", "address", "contract", "defi"),
     ),
     "code": FieldGroupSpec(
         name="code",
@@ -231,6 +265,8 @@ _PASSTHROUGH_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             source_fields=["code_url", "repo", "language", "filename"],
             output_field="code_signal",
         ),
+        auto_platforms=("arxiv", "base"),
+        auto_resource_types=("paper", "contract"),
     ),
     "figures": FieldGroupSpec(
         name="figures",
@@ -242,6 +278,8 @@ _PASSTHROUGH_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             source_fields=["figure_url", "figure_caption", "figure_id"],
             output_field="figure_signal",
         ),
+        auto_platforms=("arxiv", "wikipedia"),
+        auto_resource_types=("paper", "article"),
     ),
 }
 

@@ -166,3 +166,15 @@ def test_flatten_record_for_schema_maps_amazon_review_aliases_and_dedup() -> Non
     assert structured_data["review_text"] == "Great keyboard for travel."
     assert structured_data["dedup_key"] == "R1234567890:US"
     assert structured_data["review_quality_score"] == 0.91
+
+
+def test_linkedin_posts_schema_uses_number_for_trending_topic_relevance() -> None:
+    contract = get_schema_contract({"platform": "linkedin", "resource_type": "post"})
+
+    assert contract.schema["properties"]["trending_topic_relevance"]["type"] == ["number", "null"]
+
+
+def test_amazon_sellers_schema_uses_number_for_dispute_rate_estimated() -> None:
+    contract = get_schema_contract({"platform": "amazon", "resource_type": "seller"})
+
+    assert contract.schema["properties"]["dispute_rate_estimated"]["type"] == ["number", "null"]

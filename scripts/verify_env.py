@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from host_diagnostics import collect_host_diagnostics
+from common import resolve_wallet_config
 
 
 PROFILES: dict[str, list[str]] = {
@@ -50,10 +51,16 @@ def verify_environment(profile: str) -> dict[str, Any]:
             missing.append("playwright browser binaries")
 
     ok = not missing
+    _wallet_bin, wallet_token = resolve_wallet_config()
     payload: dict[str, Any] = {
         "ok": ok,
         "profile": profile,
         "python_version": platform.python_version(),
+        "version_check": {
+            "mine_runtime_version": "project checkout ready" if Path(__file__).resolve().parents[1].exists() else "runtime not ready",
+            "python_ready": sys.version_info >= (3, 11),
+            "wallet_session_ready": bool(wallet_token.strip()),
+        },
         "modules": modules,
         "missing": missing,
         "host_diagnostics": diagnostics,
@@ -75,6 +82,10 @@ def main() -> int:
         return 0 if payload["ok"] else 1
 
     print(f"Mine verify_env ({args.profile})")
+    print("Version check:")
+    print(f"- mine runtime version: {payload['version_check']['mine_runtime_version']}")
+    print(f"- python version: {payload['python_version']}")
+    print(f"- wallet session: {'ready' if payload['version_check']['wallet_session_ready'] else 'needs unlock'}")
     for module_name, available in payload["modules"].items():
         state = "ok" if available else "missing"
         print(f"- {module_name}: {state}")

@@ -15,8 +15,10 @@ if TYPE_CHECKING:
     from signer import WalletSigner
 
 from auth_orchestrator import AUTH_ERROR_CODES, AuthOrchestrator
+from canonicalize import normalize_url
 from common import inject_crawler_root, resolve_wallet_config
 from crawl_mode_planner import CrawlModePlanner
+from lib.platform_client import PlatformClient as ExtractedPlatformClient
 from mine_gateway import resolve_mine_gateway_model_config, write_model_config
 from pow_solver import UnsupportedChallenge, solve_challenge
 from run_artifacts import RunArtifactWriter
@@ -236,6 +238,11 @@ class PlatformClient:
         raise RuntimeError(f"request failed for {method} {path}")
 
 
+# Keep the old implementation in-file for now, but route runtime usage through the
+# extracted module so transport behavior lives under lib/platform_client.py.
+PlatformClient = ExtractedPlatformClient
+
+
 class CrawlerRunner:
     def __init__(self, config: WorkerConfig) -> None:
         self.config = config
@@ -393,6 +400,8 @@ class AgentWorker:
             "selected_dataset_ids": requested_selected,
             "last_control_action": "start-working",
             "last_state_change_at": int(time.time()),
+            "run_started_at": int(time.time()),
+            "stop_reason": None,
         }
         session = self.state_store.save_session(session_update)
         return {
@@ -437,6 +446,8 @@ class AgentWorker:
             "mining_state": "running",
             "last_control_action": "resume",
             "last_state_change_at": int(time.time()),
+            "run_started_at": int(time.time()),
+            "stop_reason": None,
         })
         return self.check_status() | {"message": "Mining resumed.", "mining_state": session["mining_state"]}
 
@@ -466,20 +477,30 @@ class AgentWorker:
         epoch_remaining = max(0, epoch_target - epoch_submitted)
         epoch_completion_percent = 0.0 if epoch_target <= 0 else round(min(100.0, (epoch_submitted / epoch_target) * 100), 2)
         session_totals = dict(session.get("session_totals") or {})
+        reward = self._reward_status_from_session(session)
+        credit = self._credit_status_from_session(session)
+        current_batch = self.state_store.get_current_batch()
+        if not isinstance(current_batch, dict) or not current_batch:
+            current_batch = dict(session.get("current_batch") or {}) if isinstance(session.get("current_batch"), dict) else {}
         return {
             "mining_state": session.get("mining_state", "idle"),
             "credit_score": session.get("credit_score"),
             "credit_tier": session.get("credit_tier"),
+            "credit": credit,
             "epoch_id": session.get("epoch_id"),
             "epoch_submitted": epoch_submitted,
             "epoch_target": epoch_target,
             "selected_dataset_ids": list(session.get("selected_dataset_ids") or []),
+            "reward": reward,
             "settlement": dict(session.get("settlement") or {}),
+            "phase": self._resolve_phase(session=session, current_batch=current_batch, reward=reward),
+            "current_batch": current_batch,
             "last_control_action": session.get("last_control_action"),
             "last_state_change_at": session.get("last_state_change_at"),
             "last_activity_at": session.get("last_activity_at"),
             "last_iteration": session.get("last_iteration", 0),
             "last_wait_seconds": session.get("last_wait_seconds", 0),
+            "stop_reason": optional_string(session.get("stop_reason")),
             "queues": {
                 "backlog": len(self.state_store.load_backlog()),
                 "auth_pending": len(self.state_store.load_auth_pending()),
@@ -519,26 +540,38 @@ class AgentWorker:
         mining_state = str(session.get("mining_state") or "idle")
         if mining_state in {"paused", "stopped"}:
             summary.messages.append(f"worker {mining_state}")
-            payload = summary.to_dict()
-            self._write_iteration_summary(payload)
-            self._update_session_from_summary(payload)
-            return payload
+            batch_state = self._save_current_batch(iteration=iteration, items=[], state=mining_state, summary=summary)
+            return self._finalize_iteration(summary, current_batch=batch_state)
         self._send_heartbeats(summary)
+        stop_reason = self._active_stop_reason()
+        if stop_reason:
+            summary.messages.append(f"stop condition reached: {stop_reason}")
+            self._mark_stop_condition(stop_reason)
+            batch_state = self._save_current_batch(iteration=iteration, items=[], state="settled", summary=summary, stop_reason=stop_reason)
+            return self._finalize_iteration(summary, current_batch=batch_state, stop_reason=stop_reason)
         self._drain_submit_pending(summary)
         work_items = self._collect_work_items(summary)
         if not work_items:
             summary.messages.append("no task available")
             summary.retry_pending = len(self.state_store.load_backlog()) + len(self.state_store.load_auth_pending())
-            payload = summary.to_dict()
-            self._write_iteration_summary(payload)
-            self._update_session_from_summary(payload)
-            return payload
+            batch_state = self._save_current_batch(iteration=iteration, items=[], state="idle", summary=summary)
+            return self._finalize_iteration(summary, current_batch=batch_state)
+        self._save_current_batch(iteration=iteration, items=work_items, state="running")
         self._process_items(work_items, summary)
         summary.retry_pending = len(self.state_store.load_backlog()) + len(self.state_store.load_auth_pending())
-        payload = summary.to_dict()
-        self._write_iteration_summary(payload)
-        self._update_session_from_summary(payload)
-        return payload
+        summary_payload = summary.to_dict()
+        stop_reason = self._active_stop_reason(payload=summary_payload)
+        if stop_reason:
+            summary.messages.append(f"current batch settled; stop condition reached: {stop_reason}")
+            self._mark_stop_condition(stop_reason)
+        batch_state = self._save_current_batch(
+            iteration=iteration,
+            items=work_items,
+            state="settled",
+            summary=summary,
+            stop_reason=stop_reason,
+        )
+        return self._finalize_iteration(summary, current_batch=batch_state, stop_reason=stop_reason)
 
     def run_loop(self, *, interval: int = 60, max_iterations: int = 0) -> str:
         """Run continuous mining loop.
@@ -652,14 +685,21 @@ class AgentWorker:
         items.extend(discoveries)
         merged: dict[str, WorkItem] = {}
         for item in items:
-            if selected_dataset_ids and item.source in {"dataset_discovery", "discovery_followup"} and item.dataset_id not in selected_dataset_ids:
-                continue
-            if item.dataset_id and not self.state_store.is_dataset_available(item.dataset_id):
-                summary.messages.append(f"dataset {item.dataset_id} cooling down; deferred {item.item_id}")
-                if item.source not in {"dataset_discovery"}:
-                    self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=Path(item.output_dir) if item.output_dir else None)])
-                continue
-            merged[item.item_id] = item
+            allowed = self._filter_collectible_item(item, selected_dataset_ids=selected_dataset_ids, summary=summary)
+            if allowed is not None:
+                merged[allowed.item_id] = allowed
+        refill_attempts = 0
+        while len(merged) < self.config.max_parallel and refill_attempts < max(1, self.config.max_parallel * 2):
+            remaining = self.config.max_parallel - len(merged)
+            extra = self.resume_source.collect(limit=remaining)
+            if not extra:
+                break
+            refill_attempts += 1
+            summary.resumed_items += len(extra)
+            for item in extra:
+                allowed = self._filter_collectible_item(item, selected_dataset_ids=selected_dataset_ids, summary=summary)
+                if allowed is not None:
+                    merged[allowed.item_id] = allowed
         filtered = list(merged.values())[: self.config.max_parallel]
         summary.discovery_items = len([item for item in filtered if item.source == "dataset_discovery"])
         return filtered
@@ -718,6 +758,10 @@ class AgentWorker:
         ]
         if retryable_errors:
             self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=result.output_dir)])
+
+        progress_message = self._build_progress_message(item, result)
+        if progress_message:
+            summary.messages.append(progress_message)
 
         command = self.crawl_mode_planner.choose_command(item)
         if command == "discover-crawl":
@@ -868,6 +912,35 @@ class AgentWorker:
         for key in ("credit_score", "credit_tier", "epoch_id", "epoch_submitted", "epoch_target"):
             if key in source:
                 update[key] = source.get(key)
+        credit = source.get("credit")
+        if isinstance(credit, dict):
+            update["credit"] = dict(credit)
+        else:
+            credit_update = {
+                key: source[key]
+                for key in ("credit_score", "credit_tier", "credit_delta", "credit_status")
+                if key in source
+            }
+            if credit_update:
+                update["credit"] = credit_update
+        reward = source.get("reward")
+        if isinstance(reward, dict):
+            update["reward"] = dict(reward)
+        else:
+            reward_update = {
+                key: source[key]
+                for key in (
+                    "pending_rewards",
+                    "settled_rewards",
+                    "claimable_rewards",
+                    "reward_balance",
+                    "reward_total",
+                    "lifetime_rewards",
+                )
+                if key in source
+            }
+            if reward_update:
+                update["reward"] = reward_update
         settlement = source.get("settlement")
         if isinstance(settlement, dict):
             update["settlement"] = settlement
@@ -889,12 +962,26 @@ class AgentWorker:
     def _ensure_wallet_session(self, summary: WorkerIterationSummary) -> None:
         session = self.state_store.load_session()
         expires_at = session.get("token_expires_at")
-        signer = getattr(self.client, "_signer", None)
-        renew_session = getattr(signer, "renew_session", None)
-        if not callable(renew_session) or not isinstance(expires_at, int):
+        if not isinstance(expires_at, int):
             return
         now = int(time.time())
         if expires_at - now > 300:
+            return
+        refresh_if_needed = getattr(self.client, "refresh_wallet_session_if_needed", None)
+        if callable(refresh_if_needed):
+            try:
+                payload = refresh_if_needed(threshold_seconds=300)
+            except TypeError:
+                payload = refresh_if_needed(300)
+            except Exception as exc:
+                summary.errors.append(f"wallet session refresh failed: {exc}")
+                return
+            self._sync_wallet_refresh_state(payload if isinstance(payload, dict) else None)
+            summary.messages.append("wallet session renewed before expiry")
+            return
+        signer = getattr(self.client, "_signer", None)
+        renew_session = getattr(signer, "renew_session", None)
+        if not callable(renew_session):
             return
         try:
             payload = renew_session(duration_seconds=3600)
@@ -921,6 +1008,167 @@ class AgentWorker:
             update["last_wallet_refresh_at"] = issued_at
         if update:
             self.state_store.save_session(update)
+
+    def _filter_collectible_item(
+        self,
+        item: WorkItem,
+        *,
+        selected_dataset_ids: set[str],
+        summary: WorkerIterationSummary,
+    ) -> WorkItem | None:
+        if selected_dataset_ids and item.source in {"dataset_discovery", "discovery_followup"} and item.dataset_id not in selected_dataset_ids:
+            return None
+        if item.dataset_id and not self.state_store.is_dataset_available(item.dataset_id):
+            summary.messages.append(f"dataset {item.dataset_id} cooling down; deferred {item.item_id}")
+            if item.source not in {"dataset_discovery"}:
+                self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=Path(item.output_dir) if item.output_dir else None)])
+            return None
+        return item
+
+    def _save_current_batch(
+        self,
+        *,
+        iteration: int,
+        items: list[WorkItem],
+        state: str,
+        summary: WorkerIterationSummary | None = None,
+        stop_reason: str | None = None,
+    ) -> dict[str, Any]:
+        dataset_ids = sorted({item.dataset_id for item in items if item.dataset_id})
+        payload: dict[str, Any] = {
+            "state": state,
+            "iteration": iteration,
+            "size": len(items),
+            "item_ids": [item.item_id for item in items],
+            "dataset_ids": dataset_ids,
+        }
+        if summary is not None:
+            payload.update({
+                "processed_items": summary.processed_items,
+                "submitted_items": summary.submitted_items,
+                "error_count": len(summary.errors),
+                "message_count": len(summary.messages),
+            })
+        if stop_reason:
+            payload["stop_reason"] = stop_reason
+        self.state_store.save_session({"current_batch": payload})
+        return payload
+
+    def _finalize_iteration(
+        self,
+        summary: WorkerIterationSummary,
+        *,
+        current_batch: dict[str, Any] | None = None,
+        stop_reason: str | None = None,
+    ) -> dict[str, Any]:
+        payload = summary.to_dict()
+        if current_batch:
+            payload["current_batch"] = current_batch
+        if stop_reason:
+            payload["stop_reason"] = stop_reason
+        self._write_iteration_summary(payload)
+        self._update_session_from_summary(payload)
+        return payload
+
+    def _mark_stop_condition(self, reason: str) -> None:
+        self.state_store.save_session({
+            "mining_state": "stopped",
+            "stop_reason": reason,
+            "last_control_action": "stop-condition",
+            "last_state_change_at": int(time.time()),
+        })
+
+    def _active_stop_reason(
+        self,
+        *,
+        payload: dict[str, Any] | None = None,
+    ) -> str | None:
+        session = self.state_store.load_session()
+        conditions = session.get("stop_conditions")
+        if not isinstance(conditions, dict):
+            return None
+        totals = dict(session.get("session_totals") or {})
+        submitted_items = int(totals.get("submitted_items") or 0) + int((payload or {}).get("submitted_items") or 0)
+        failed_items = int(totals.get("failed_items") or 0) + len((payload or {}).get("errors") or [])
+        max_submissions = int(conditions.get("max_submissions") or 0)
+        if max_submissions > 0 and submitted_items >= max_submissions:
+            return "max_submissions"
+        max_errors = int(conditions.get("max_errors") or 0)
+        if max_errors > 0 and failed_items >= max_errors:
+            return "max_errors"
+        if bool(conditions.get("epoch_target_reached")):
+            epoch_target = int(session.get("epoch_target") or 0)
+            epoch_submitted = int(session.get("epoch_submitted") or 0)
+            if epoch_target > 0 and epoch_submitted >= epoch_target:
+                return "epoch_target_reached"
+        max_runtime_minutes = int(conditions.get("max_runtime_minutes") or 0)
+        if max_runtime_minutes > 0:
+            started_at = session.get("run_started_at") or session.get("last_state_change_at")
+            if isinstance(started_at, int) and int(time.time()) - started_at >= max_runtime_minutes * 60:
+                return "max_runtime_minutes"
+        return None
+
+    def _build_progress_message(self, item: WorkItem, result: CrawlerRunResult) -> str | None:
+        details: list[str] = []
+        progress_path = result.output_dir / "_run_artifacts" / "progress.json"
+        progress_payload = read_json_file(progress_path) if progress_path.exists() else {}
+        if not isinstance(progress_payload, dict):
+            progress_payload = {}
+        phase = optional_string(progress_payload.get("phase")) or optional_string(result.summary.get("phase")) or optional_string(result.summary.get("stage"))
+        if phase:
+            details.append(f"phase {phase}")
+        completed_steps = progress_payload.get("completed_steps")
+        total_steps = progress_payload.get("total_steps")
+        if isinstance(completed_steps, int) and isinstance(total_steps, int) and total_steps > 0:
+            details.append(f"step {completed_steps}/{total_steps}")
+        records_emitted = result.summary.get("records_emitted")
+        if isinstance(records_emitted, int):
+            details.append(f"records {records_emitted}")
+        stderr_lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+        if stderr_lines:
+            details.append(stderr_lines[-1])
+        if not details:
+            return None
+        return f"progress {item.item_id}: {'; '.join(details)}"
+
+    def _reward_status_from_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        reward = dict(session.get("reward") or {}) if isinstance(session.get("reward"), dict) else {}
+        settlement = dict(session.get("settlement") or {}) if isinstance(session.get("settlement"), dict) else {}
+        if not reward:
+            for source_key, target_key in (("pending_rewards", "pending_rewards"), ("settled_rewards", "settled_rewards"), ("claimable_rewards", "claimable_rewards")):
+                if source_key in settlement and target_key not in reward:
+                    reward[target_key] = settlement[source_key]
+        return reward
+
+    def _credit_status_from_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        credit = dict(session.get("credit") or {}) if isinstance(session.get("credit"), dict) else {}
+        if session.get("credit_score") is not None:
+            credit["score"] = session.get("credit_score")
+        if session.get("credit_tier"):
+            credit["tier"] = session.get("credit_tier")
+        expires_at = session.get("token_expires_at")
+        if isinstance(expires_at, int):
+            credit["token_expires_at"] = expires_at
+        return credit
+
+    def _resolve_phase(
+        self,
+        *,
+        session: dict[str, Any],
+        current_batch: dict[str, Any],
+        reward: dict[str, Any],
+    ) -> dict[str, Any]:
+        settlement = dict(session.get("settlement") or {}) if isinstance(session.get("settlement"), dict) else {}
+        mining_state = str(session.get("mining_state") or "idle")
+        if (reward or settlement) and mining_state != "running":
+            return {"id": 4, "label": "Phase 4 - Settlement"}
+        if current_batch.get("state") == "running":
+            return {"id": 2, "label": "Phase 2 - Work Loop"}
+        if session.get("epoch_id") or int(session.get("epoch_submitted") or 0) > 0:
+            return {"id": 3, "label": "Phase 3 - Epoch Monitor"}
+        if session.get("last_heartbeat_at"):
+            return {"id": 1, "label": "Phase 1 - Heartbeat"}
+        return {"id": 0, "label": "Phase 0 - Init"}
 
     def _maybe_handle_rate_limit(
         self,
@@ -1045,6 +1293,7 @@ def _export_and_submit_core_submissions_for_task(
     if dataset_id and callable(fetch_dataset):
         dataset = fetch_dataset(dataset_id)
         _augment_submission_payload_for_dataset(payload, dataset=dataset, record=record, item=item)
+        _normalize_entry_urls(payload, dataset=dataset)
         export_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     response_path = output_dir / "core-submissions-response.json"
     submission_id = _extract_submission_id(report_result)
@@ -1056,6 +1305,25 @@ def _export_and_submit_core_submissions_for_task(
     response = client.submit_core_submissions(payload)
     response_path.write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return export_path, response_path
+
+
+def _normalize_entry_urls(payload: dict[str, Any], *, dataset: dict[str, Any]) -> None:
+    """Normalize URLs in submission entries using schema regex if provided."""
+    schema = dataset.get("schema")
+    regex_pattern = None
+    if isinstance(schema, dict):
+        regex_pattern = schema.get("url_normalize_regex")
+        if regex_pattern is not None and not isinstance(regex_pattern, str):
+            regex_pattern = None
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        return
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        url = entry.get("url")
+        if isinstance(url, str) and url:
+            entry["url"] = normalize_url(url, regex_pattern)
 
 
 def _augment_submission_payload_for_dataset(

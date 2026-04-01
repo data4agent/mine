@@ -152,6 +152,39 @@ class TestFieldGroupRegistry:
             if spec.strategy == "passthrough":
                 assert spec.passthrough_config is not None, f"{name} missing passthrough_config"
 
+    def test_auto_scope_restricts_generic_groups_for_wikipedia(self, monkeypatch) -> None:
+        captured: dict[str, object] = {}
+
+        async def fake_enrich(self, document: dict[str, object], field_groups: list[str], parallel: bool = False) -> EnrichedRecord:
+            captured["field_groups"] = tuple(field_groups)
+            return EnrichedRecord(
+                doc_id="doc-1",
+                source_url="https://en.wikipedia.org/wiki/Test",
+                platform="wikipedia",
+                resource_type="article",
+            )
+
+        monkeypatch.setattr(AgentEnrichmentExecutor, "enrich", fake_enrich)
+
+        async def fake_llm(prompt: str, system: str | None = None) -> str:
+            return "{}"
+
+        executor = AgentEnrichmentExecutor(llm_call=fake_llm)
+        asyncio.run(
+            executor.auto_enrich(
+                {
+                    "platform": "wikipedia",
+                    "resource_type": "article",
+                    "canonical_url": "https://en.wikipedia.org/wiki/Test",
+                }
+            )
+        )
+
+        field_groups = set(captured["field_groups"])
+        assert "standardized_job_title" not in field_groups
+        assert "skills_extraction" not in field_groups
+        assert "about_summary" not in field_groups
+
 
 # ─── Lookup Enricher Tests ──────────────────────────────────────────
 

@@ -1,13 +1,29 @@
+# 测试与构建缓存
 .pytest-tmp/
 .pytest_cache/
+pytest-cache-files-*/
 .tmp-openclaw-test/
 dist/
 __pycache__/
 scripts/__pycache__/
 tests/__pycache__/
-pytest-cache-files-*/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# local planning and scratch artifacts
+# 本地虚拟环境
+.venv/
+venv/
+*.egg-info/
+
+# 运行时 / 工具生成（不宜上线）
+output/
+.sessions/
+.omx/
+.tmp-debug*/
+
+# 本地规划与草稿（个人笔记）
 1.md
 my-task
 my-task.md

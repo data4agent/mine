@@ -237,11 +237,7 @@ class AgentEnrichmentExecutor:
         # 自动选择适用的字段组
         field_groups = []
         for name, spec in FIELD_GROUP_REGISTRY.items():
-            # 匹配平台
-            if spec.platform and spec.platform.lower() != platform:
-                continue
-            # 匹配子数据集（如果指定）
-            if spec.subdataset and spec.subdataset.lower() != resource_type:
+            if not spec.applies_to(platform, resource_type):
                 continue
             # 检查视觉能力
             if spec.requires_vision and not self.model_capabilities.get("vision"):

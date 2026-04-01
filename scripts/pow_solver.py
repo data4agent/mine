@@ -2,19 +2,29 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import operator
 from typing import Any
 
+import httpx
+
+from mine_gateway import resolve_mine_gateway_model_config
+
 
 class UnsupportedChallenge(RuntimeError):
-    def __init__(self, challenge_type: str) -> None:
-        super().__init__(f"unsupported challenge type: {challenge_type}")
+    def __init__(self, challenge_type: str, reason: str | None = None) -> None:
+        msg = f"unsupported challenge type: {challenge_type}"
+        if reason:
+            msg = f"{msg} ({reason})"
+        super().__init__(msg)
 
 
 def solve_challenge(challenge: dict[str, Any]) -> str:
     challenge_type = str(challenge.get("question_type") or "unknown")
     if challenge_type == "content_understanding":
-        return str(challenge.get("accepted_answer") or challenge.get("answer") or "accepted")
+        return _solve_content_understanding(challenge)
+    if challenge_type == "structured_extraction":
+        return _solve_structured_extraction(challenge)
     if challenge_type in {"math", "arithmetic"}:
         expression = str(challenge.get("expression") or challenge.get("prompt") or "").strip()
         if not expression:
@@ -23,6 +33,52 @@ def solve_challenge(challenge: dict[str, Any]) -> str:
     if challenge_type in {"sha256_nonce", "hashcash"}:
         return _solve_sha256_nonce(challenge)
     raise UnsupportedChallenge(challenge_type)
+
+
+def _solve_content_understanding(challenge: dict[str, Any]) -> str:
+    accepted = challenge.get("accepted_answer") or challenge.get("answer")
+    if accepted:
+        return str(accepted)
+    prompt = str(challenge.get("prompt") or challenge.get("question") or "").strip()
+    if not prompt:
+        raise UnsupportedChallenge("content_understanding", "no prompt provided")
+    return _llm_answer(prompt)
+
+
+def _solve_structured_extraction(challenge: dict[str, Any]) -> str:
+    content = str(challenge.get("content") or challenge.get("text") or "").strip()
+    schema = challenge.get("schema") or challenge.get("fields")
+    if not content:
+        raise UnsupportedChallenge("structured_extraction", "no content provided")
+    if not schema:
+        raise UnsupportedChallenge("structured_extraction", "no schema provided")
+    schema_str = json.dumps(schema, ensure_ascii=False) if isinstance(schema, (dict, list)) else str(schema)
+    prompt = (
+        f"Extract structured data from the following content according to this schema:\n\n"
+        f"Schema: {schema_str}\n\n"
+        f"Content:\n{content}\n\n"
+        f"Return ONLY valid JSON matching the schema, no explanation."
+    )
+    return _llm_answer(prompt)
+
+
+def _llm_answer(prompt: str) -> str:
+    config = resolve_mine_gateway_model_config()
+    if not config:
+        raise UnsupportedChallenge("llm", "gateway not available")
+    base_url = str(config.get("base_url") or "").rstrip("/")
+    api_key = str(config.get("api_key") or "")
+    model = str(config.get("model") or "")
+    if not base_url or not api_key or not model:
+        raise UnsupportedChallenge("llm", "incomplete gateway config")
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0}
+    if config.get("openclaw_model"):
+        payload["openclaw_model"] = config["openclaw_model"]
+    resp = httpx.post(f"{base_url}/chat/completions", json=payload, headers=headers, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+    return str(data.get("choices", [{}])[0].get("message", {}).get("content", "")).strip()
 
 
 def _solve_sha256_nonce(challenge: dict[str, Any]) -> str:

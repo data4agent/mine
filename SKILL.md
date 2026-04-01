@@ -5,6 +5,7 @@ bootstrap: ./scripts/bootstrap.sh
 windows_bootstrap: ./scripts/bootstrap.ps1
 smoke_test: ./scripts/smoke_test.py
 requires:
+  skills: []
   bins:
     - python3
     - awp-wallet
@@ -87,6 +88,23 @@ No seed phrase or private key should be stored in config, environment text outpu
 
 ## Dependency check
 
+### Version check
+
+Always surface version readiness as its own explicit check before long-running mining work:
+
+1. `Mine runtime version`
+   - current project checkout is the active runtime surface
+2. `Python version`
+   - Mine needs Python 3.11+
+3. `Wallet session freshness`
+   - unlocked session must still be valid for signing
+
+Good version-check tone:
+
+- `Mine runtime version — project checkout ready`
+- `Python version — 3.11+ ready`
+- `Wallet session — ready`
+
 Always present dependency results in a concrete, actionable way.
 Do not say only “missing dependency” or “please install”.
 
@@ -137,6 +155,35 @@ If wallet renewal is needed, it is valid to instruct:
 ```bash
 awp-wallet unlock --duration 3600
 ```
+
+---
+
+## Intent routing
+
+When the user expresses an intent, route to the matching action and command.
+
+| Intent | Action | Command | Confirm? |
+| --- | --- | --- | --- |
+| Start autonomous mining | **A1** | `python scripts/run_tool.py start-working` | First run: yes |
+| Check miner status / credit score | **Q1** | `python scripts/run_tool.py check-status` | No |
+| List active datasets | **Q2** | `python scripts/run_tool.py list-datasets` | No |
+| Check epoch progress | **Q3** | `python scripts/run_tool.py check-status` | No |
+| Check submission history | **Q4** | `python scripts/run_tool.py check-status` | No |
+| Check mining log | **Q5** | read `output/agent-runs/` artifacts | No |
+| Answer PoW challenge | **M1** | handled within `run-worker` / `run-once` | No |
+| Check dedup availability | **M2** | handled within `run-worker` / `run-once` | No |
+| Configure mining preferences | **C1** | environment variables or `mine.json` | — |
+| Pause / resume mining | **A2** | `python scripts/run_tool.py pause` / `resume` | No |
+| Stop mining | **A3** | `python scripts/run_tool.py stop` | Yes |
+
+### Routing rules
+
+- If the user is vague or says "start", route to **A1**.
+- If the user asks about status, credit, epoch, or rewards, route to **Q1**/**Q3**.
+- If the user says "pause", "stop", or "resume", route to **A2**/**A3** directly.
+- **A3** (stop) always requires user confirmation before executing.
+- **M1** and **M2** are internal workflow steps, not user-facing commands. They run automatically during **A1**.
+- For **C1**, guide the user through environment variables (`MINE_CONFIG_PATH`, stop conditions) rather than exposing raw config files.
 
 ---
 

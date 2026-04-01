@@ -4,6 +4,7 @@ import re
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from lib.canonicalize import canonicalize_url
 from run_models import TaskEnvelope, WorkItem
 from worker_state import WorkerStateStore
 
@@ -24,7 +25,7 @@ def claimed_task_from_payload(
     task_id = str(payload.get("id") or "").strip()
     if not task_id:
         raise ValueError("task payload is missing id")
-    url = str(enriched_payload.get("url") or enriched_payload.get("target_url") or "").strip()
+    url = canonicalize_url(str(enriched_payload.get("url") or enriched_payload.get("target_url") or "").strip())
     if not url:
         raise ValueError(f"task {task_id} is missing url")
     platform, resource_type, _ = infer_platform_task(url)
@@ -105,7 +106,8 @@ def infer_platform_task(url: str) -> tuple[str, str, dict[str, str]]:
 
 
 def build_platform_record(url: str, *, platform: str | None = None, resource_type: str | None = None) -> dict[str, Any]:
-    inferred_platform, inferred_resource_type, discovered_fields = infer_platform_task(url)
+    canonical_url = canonicalize_url(url)
+    inferred_platform, inferred_resource_type, discovered_fields = infer_platform_task(canonical_url)
     resolved_platform = platform or inferred_platform
     resolved_resource_type = resource_type or inferred_resource_type
     record: dict[str, Any] = {
@@ -113,7 +115,7 @@ def build_platform_record(url: str, *, platform: str | None = None, resource_typ
         "resource_type": resolved_resource_type,
     }
     if resolved_platform == "generic":
-        record["url"] = url
+        record["url"] = canonical_url
     else:
         record.update(discovered_fields)
     return record
@@ -121,7 +123,7 @@ def build_platform_record(url: str, *, platform: str | None = None, resource_typ
 
 def local_task_from_payload(payload: dict[str, Any]) -> TaskEnvelope:
     metadata = dict(payload)
-    url = str(metadata.pop("url", "") or "").strip()
+    url = canonicalize_url(str(metadata.pop("url", "") or "").strip())
     if not url:
         raise ValueError("local task payload is missing url")
     task_id_value = metadata.pop("task_id", "")
@@ -279,6 +281,7 @@ def build_follow_up_items_from_discovery(parent: WorkItem, records: list[dict[st
         canonical_url = optional_string(record.get("canonical_url"))
         if not canonical_url:
             continue
+        canonical_url = canonicalize_url(canonical_url)
         platform = optional_string(record.get("platform")) or infer_platform_task(canonical_url)[0]
         resource_type = optional_string(record.get("resource_type")) or infer_platform_task(canonical_url)[1]
         items.append(
@@ -313,5 +316,5 @@ def _discovery_seed_url(domain: str) -> str:
     host = (parsed.netloc or parsed.path).lower()
     normalized_path = parsed.path.rstrip("/")
     if host.endswith(".wikipedia.org") and normalized_path in {"", "/"}:
-        return f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page"
-    return seed_url
+        return canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page")
+    return canonicalize_url(seed_url)

@@ -25,6 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
             "run-worker",
             "process-task-file",
             "export-core-submissions",
+            "route-intent",
+            "classify-intent",
+            "intent-help",
         ),
     )
     parser.add_argument("args", nargs="*")
@@ -34,15 +37,47 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     namespace = build_parser().parse_args()
     from skill_runtime import (
+        classify_intent,
         render_control_response,
         render_dataset_listing,
         render_first_load_experience,
+        render_intent_help,
         render_start_working_response,
         render_status_summary,
+        route_and_execute,
     )
 
     if namespace.command in {"first-load", "check-again"}:
         print(render_first_load_experience())
+        return 0
+
+    if namespace.command == "intent-help":
+        print(render_intent_help())
+        return 0
+
+    if namespace.command == "classify-intent":
+        if not namespace.args:
+            print("Usage: classify-intent <user_input>")
+            return 1
+        user_input = " ".join(namespace.args)
+        result = classify_intent(user_input)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if namespace.command == "route-intent":
+        if not namespace.args:
+            print("Usage: route-intent <user_input>")
+            return 1
+        user_input = " ".join(namespace.args)
+        from agent_runtime import build_worker_from_env
+        worker = build_worker_from_env()
+        result = route_and_execute(user_input, worker)
+        if result.get("executed"):
+            print(result.get("output", ""))
+        else:
+            print(result.get("output", ""))
+            if result.get("needs_confirmation"):
+                print("\n(Awaiting confirmation)")
         return 0
 
     from agent_runtime import build_worker_from_env, export_core_submissions

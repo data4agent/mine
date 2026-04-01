@@ -107,3 +107,10 @@ python -m pytest tests -q
 python -m pytest crawler/tests/test_bootstrap_assets.py -q
 python scripts/run_tool.py --help
 ```
+
+## CI and release automation
+
+Repository automation now includes:
+
+- `.github/workflows/ci.yml` for minimal dependency verification, smoke testing, and the Mine test suite
+- `.github/workflows/release.yml` for building a portable `mine-runtime.tar.gz` release artifact on tags or manual dispatch

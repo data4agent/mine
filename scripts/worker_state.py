@@ -19,6 +19,13 @@ class WorkerStateStore:
         self._dataset_cursors_path = self.root / "dataset_cursors.json"
         self._session_path = self.root / "session.json"
         self._dataset_cooldowns_path = self.root / "dataset_cooldowns.json"
+        self._lock_path = self.root / "worker.lock.json"
+        self._session_cache: dict[str, Any] | None = None
+        self._session_dirty = False
+        self._memory_state: dict[str, dict[str, Any] | None] = {
+            "pow_challenge": None,
+            "current_batch": None,
+        }
 
     def load_backlog(self) -> list[WorkItem]:
         return [WorkItem.from_dict(item) for item in self._read_list(self._backlog_path)]
@@ -100,10 +107,104 @@ class WorkerStateStore:
         self._write_json(self._dataset_cursors_path, cursors)
 
     def load_session(self) -> dict[str, Any]:
-        session = self._read_object(self._session_path)
-        defaults: dict[str, Any] = {
+        if self._session_cache is None:
+            self._session_cache = self._normalize_session(self._read_object(self._session_path))
+        return self._normalize_session(self._session_cache)
+
+    def save_session(self, partial: dict[str, Any], *, flush: bool = True) -> dict[str, Any]:
+        session = self.load_session()
+        for key in ("session_totals", "last_summary", "settlement", "reward_summary"):
+            value = partial.get(key)
+            if isinstance(value, dict):
+                merged = dict(session.get(key) or {})
+                merged.update(value)
+                session[key] = merged
+        for key, value in partial.items():
+            if key in {"session_totals", "last_summary", "settlement", "reward_summary"} and isinstance(value, dict):
+                continue
+            session[key] = value
+        self._session_cache = self._normalize_session(session)
+        self._session_dirty = True
+        if flush:
+            return self.flush_session()
+        return self.load_session()
+
+    def flush_session(self) -> dict[str, Any]:
+        session = self.load_session()
+        if self._session_dirty:
+            self._write_json(self._session_path, session)
+            self._session_dirty = False
+        return session
+
+    def load_lock(self) -> dict[str, Any] | None:
+        payload = self._read_object(self._lock_path)
+        owner = payload.get("owner")
+        if not owner:
+            return None
+        return {
+            "owner": str(owner),
+            "acquired_at": int(payload.get("acquired_at") or 0),
+            "updated_at": int(payload.get("updated_at") or 0),
+        }
+
+    def acquire_lock(self, owner: str, *, now: int | None = None, stale_after_seconds: int = 300) -> bool:
+        current = int(time.time()) if now is None else now
+        existing = self.load_lock()
+        if existing is not None:
+            if existing["owner"] != owner and current - int(existing.get("updated_at") or 0) < max(0, stale_after_seconds):
+                return False
+            acquired_at = int(existing.get("acquired_at") or current) if existing["owner"] == owner else current
+        else:
+            acquired_at = current
+        self._write_json(self._lock_path, {
+            "owner": owner,
+            "acquired_at": acquired_at,
+            "updated_at": current,
+        })
+        return True
+
+    def release_lock(self, owner: str | None = None) -> bool:
+        existing = self.load_lock()
+        if existing is None:
+            return False
+        if owner is not None and existing["owner"] != owner:
+            return False
+        try:
+            self._lock_path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
+
+    def set_pow_challenge(self, challenge: dict[str, Any] | None) -> None:
+        self._memory_state["pow_challenge"] = dict(challenge) if isinstance(challenge, dict) else None
+
+    def get_pow_challenge(self) -> dict[str, Any] | None:
+        payload = self._memory_state.get("pow_challenge")
+        return dict(payload) if isinstance(payload, dict) else None
+
+    def clear_pow_challenge(self) -> None:
+        self._memory_state["pow_challenge"] = None
+
+    def set_current_batch(self, batch: dict[str, Any] | None) -> None:
+        self._memory_state["current_batch"] = dict(batch) if isinstance(batch, dict) else None
+
+    def get_current_batch(self) -> dict[str, Any] | None:
+        payload = self._memory_state.get("current_batch")
+        return dict(payload) if isinstance(payload, dict) else None
+
+    def clear_current_batch(self) -> None:
+        self._memory_state["current_batch"] = None
+
+    def _session_defaults(self) -> dict[str, Any]:
+        return {
             "mining_state": "idle",
             "selected_dataset_ids": [],
+            "miner_registered": False,
+            "wallet_addr": None,
+            "active_datasets": [],
+            "reward_summary": {},
+            "stop_conditions": [],
+            "stop_reason": None,
             "session_totals": {
                 "processed_items": 0,
                 "submitted_items": 0,
@@ -124,35 +225,38 @@ class WorkerStateStore:
             "last_iteration": 0,
             "last_wait_seconds": 0,
         }
+
+    def _normalize_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        defaults = self._session_defaults()
         merged = {**defaults, **session}
-        if not isinstance(merged.get("selected_dataset_ids"), list):
-            merged["selected_dataset_ids"] = []
+        for key in ("selected_dataset_ids", "active_datasets"):
+            if not isinstance(merged.get(key), list):
+                merged[key] = []
+            else:
+                merged[key] = list(merged[key])
+        stop_conditions = merged.get("stop_conditions")
+        if isinstance(stop_conditions, list):
+            merged["stop_conditions"] = list(stop_conditions)
+        elif isinstance(stop_conditions, dict):
+            merged["stop_conditions"] = dict(stop_conditions)
+        else:
+            merged["stop_conditions"] = []
+        for key in ("last_summary", "settlement", "reward_summary"):
+            if not isinstance(merged.get(key), dict):
+                merged[key] = {}
+            else:
+                merged[key] = dict(merged[key])
         if isinstance(merged.get("session_totals"), dict):
             merged["session_totals"] = {**defaults["session_totals"], **merged["session_totals"]}
         else:
             merged["session_totals"] = dict(defaults["session_totals"])
-        if not isinstance(merged.get("last_summary"), dict):
-            merged["last_summary"] = {}
-        if isinstance(merged.get("settlement"), dict):
-            merged["settlement"] = dict(merged["settlement"])
-        else:
-            merged["settlement"] = {}
+        if not isinstance(merged.get("miner_registered"), bool):
+            merged["miner_registered"] = bool(merged.get("miner_registered"))
+        wallet_addr = merged.get("wallet_addr")
+        merged["wallet_addr"] = wallet_addr if isinstance(wallet_addr, str) and wallet_addr else None
+        stop_reason = merged.get("stop_reason")
+        merged["stop_reason"] = stop_reason if isinstance(stop_reason, str) and stop_reason else None
         return merged
-
-    def save_session(self, partial: dict[str, Any]) -> dict[str, Any]:
-        session = self.load_session()
-        for key in ("session_totals", "last_summary", "settlement"):
-            value = partial.get(key)
-            if isinstance(value, dict):
-                merged = dict(session.get(key) or {})
-                merged.update(value)
-                session[key] = merged
-        for key, value in partial.items():
-            if key in {"session_totals", "last_summary", "settlement"} and isinstance(value, dict):
-                continue
-            session[key] = value
-        self._write_json(self._session_path, session)
-        return session
 
     def mark_dataset_cooldown(
         self,
