@@ -226,11 +226,129 @@ def run_diagnosis() -> str:
     return "\n".join(lines)
 
 
+def run_doctor() -> str:
+    """Run doctor command - simpler diagnosis with exact fix commands (JSON output)."""
+    import subprocess
+    import time
+
+    result = {
+        "status": "ok",
+        "checks": [],
+        "fix_commands": [],
+        "next_command": None,
+    }
+
+    # Check 1: Python version
+    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+    py_ok = sys.version_info >= (3, 11)
+    result["checks"].append({
+        "name": "python",
+        "ok": py_ok,
+        "value": py_ver,
+        "required": "3.11+",
+    })
+    if not py_ok:
+        result["status"] = "error"
+        result["fix_commands"].append("# Install Python 3.11+ from https://python.org")
+
+    # Check 2: Node.js
+    node_bin = shutil.which("node")
+    node_ok = False
+    node_ver = "not found"
+    if node_bin:
+        try:
+            node_result = subprocess.run([node_bin, "--version"], capture_output=True, text=True, timeout=5)
+            node_ver = node_result.stdout.strip().lstrip("v")
+            node_major = int(node_ver.split(".")[0])
+            node_ok = node_major >= 20
+        except Exception:
+            pass
+    result["checks"].append({
+        "name": "nodejs",
+        "ok": node_ok,
+        "value": node_ver,
+        "required": "20+",
+    })
+    if not node_ok:
+        result["status"] = "error"
+        result["fix_commands"].append("# Install Node.js 20+ from https://nodejs.org")
+
+    # Check 3: awp-wallet
+    wallet_bin = shutil.which("awp-wallet")
+    wallet_ok = bool(wallet_bin)
+    result["checks"].append({
+        "name": "awp-wallet",
+        "ok": wallet_ok,
+        "value": wallet_bin or "not found",
+    })
+    if not wallet_ok:
+        result["status"] = "error"
+        result["fix_commands"].append("npm install -g @aspect/awp-wallet")
+
+    # Check 4: Environment variables
+    platform_url = os.environ.get("PLATFORM_BASE_URL", "").strip()
+    miner_id = os.environ.get("MINER_ID", "").strip()
+    wallet_token = os.environ.get("AWP_WALLET_TOKEN", "").strip()
+
+    env_ok = bool(platform_url and miner_id)
+    result["checks"].append({
+        "name": "env_vars",
+        "ok": env_ok,
+        "PLATFORM_BASE_URL": platform_url or "(not set)",
+        "MINER_ID": miner_id or "(not set)",
+        "AWP_WALLET_TOKEN": (wallet_token[:8] + "...") if wallet_token else "(not set)",
+    })
+
+    if not platform_url:
+        result["status"] = "error"
+        result["fix_commands"].append("export PLATFORM_BASE_URL=http://101.47.73.95")
+    if not miner_id:
+        result["status"] = "error"
+        result["fix_commands"].append("export MINER_ID=my-miner-001")
+    if not wallet_token and wallet_ok:
+        result["fix_commands"].append("awp-wallet unlock --duration 3600")
+
+    # Check 5: Wallet token expiry
+    token_expires = os.environ.get("AWP_WALLET_TOKEN_EXPIRES_AT", "").strip()
+    if token_expires.isdigit():
+        expires_at = int(token_expires)
+        now = int(time.time())
+        if expires_at <= now:
+            result["checks"].append({
+                "name": "token_expiry",
+                "ok": False,
+                "message": "Token expired",
+            })
+            result["status"] = "error"
+            result["fix_commands"].append("awp-wallet unlock --duration 3600")
+        elif expires_at - now < 300:
+            result["checks"].append({
+                "name": "token_expiry",
+                "ok": False,
+                "message": f"Token expires in {expires_at - now}s",
+            })
+            result["fix_commands"].append("awp-wallet unlock --duration 3600")
+
+    # Determine next command
+    if result["status"] == "ok":
+        result["next_command"] = "python scripts/run_tool.py start-working"
+    elif result["fix_commands"]:
+        result["next_command"] = result["fix_commands"][0]
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mine")
     parser.add_argument(
         "command",
         choices=(
+            # Simple setup commands (structured JSON output for weak agents)
+            "setup",           # Full setup wizard
+            "setup-status",    # Check setup status
+            "setup-fix",       # Auto-fix issues
+            "doctor",          # Quick diagnosis with fix commands
+            # Original commands
             "first-load",
             "check-again",
             "start-working",
@@ -259,6 +377,36 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     namespace = build_parser().parse_args()
+
+    # Handle setup commands first (don't need full imports)
+    if namespace.command == "setup":
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "mine_setup.py")],
+            cwd=Path(__file__).parent.parent,
+        )
+        return result.returncode
+
+    if namespace.command == "setup-status":
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "mine_setup.py"), "--status"],
+            cwd=Path(__file__).parent.parent,
+        )
+        return result.returncode
+
+    if namespace.command == "setup-fix":
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "mine_setup.py"), "--fix"],
+            cwd=Path(__file__).parent.parent,
+        )
+        return result.returncode
+
+    if namespace.command == "doctor":
+        print(run_doctor())
+        return 0
+
     from skill_runtime import (
         classify_intent,
         render_control_response,

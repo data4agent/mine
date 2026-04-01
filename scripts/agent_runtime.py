@@ -760,6 +760,13 @@ class AgentWorker:
         return filtered
 
     def _process_items(self, items: list[WorkItem], summary: WorkerIterationSummary) -> None:
+        if self.config.per_dataset_parallel:
+            self._process_items_per_dataset(items, summary)
+        else:
+            self._process_items_mixed(items, summary)
+
+    def _process_items_mixed(self, items: list[WorkItem], summary: WorkerIterationSummary) -> None:
+        """Process all items in a single mixed pool (legacy behavior)."""
         with ThreadPoolExecutor(max_workers=max(1, self.config.max_parallel)) as executor:
             futures = {executor.submit(self._run_item, item): item for item in items}
             for future in as_completed(futures):
@@ -776,6 +783,52 @@ class AgentWorker:
                     self.state_store.enqueue_backlog([retryable_item])
                     continue
                 self._handle_result(item, result, summary)
+
+    def _process_items_per_dataset(self, items: list[WorkItem], summary: WorkerIterationSummary) -> None:
+        """Process items grouped by dataset_id, each group with independent concurrency."""
+        # Group items by dataset_id
+        grouped: dict[str, list[WorkItem]] = {}
+        for item in items:
+            key = item.dataset_id or "_no_dataset"
+            grouped.setdefault(key, []).append(item)
+
+        # Process all dataset groups in parallel, each with its own executor
+        def process_group(group_items: list[WorkItem]) -> list[tuple[WorkItem, CrawlerRunResult | Exception]]:
+            results: list[tuple[WorkItem, CrawlerRunResult | Exception]] = []
+            with ThreadPoolExecutor(max_workers=max(1, self.config.max_parallel)) as executor:
+                futures = {executor.submit(self._run_item, item): item for item in group_items}
+                for future in as_completed(futures):
+                    item = futures[future]
+                    try:
+                        result = future.result()
+                        results.append((item, result))
+                    except Exception as exc:
+                        results.append((item, exc))
+            return results
+
+        # Run all groups concurrently
+        with ThreadPoolExecutor(max_workers=len(grouped)) as group_executor:
+            group_futures = {
+                group_executor.submit(process_group, group_items): dataset_id
+                for dataset_id, group_items in grouped.items()
+            }
+            for group_future in as_completed(group_futures):
+                dataset_id = group_futures[group_future]
+                try:
+                    group_results = group_future.result()
+                except Exception as exc:
+                    summary.errors.append(f"dataset group {dataset_id} failed: {exc}")
+                    continue
+                for item, result in group_results:
+                    if isinstance(result, SkipItemError):
+                        summary.skipped_items += 1
+                        summary.messages.append(f"skipped {item.item_id}: {result}")
+                    elif isinstance(result, Exception):
+                        summary.errors.append(f"{item.item_id}: {result}")
+                        retryable_item = _clone_item(item, resume=True)
+                        self.state_store.enqueue_backlog([retryable_item])
+                    else:
+                        self._handle_result(item, result, summary)
 
     def _run_item(self, item: WorkItem) -> CrawlerRunResult:
         command = self.crawl_mode_planner.choose_command(item)
@@ -1266,6 +1319,7 @@ def build_worker_from_env() -> AgentWorker:
         state_root=state_root,
         default_backend=(os.environ.get("DEFAULT_BACKEND") or None),
         max_parallel=max(1, int(os.environ.get("WORKER_MAX_PARALLEL", "3"))),
+        per_dataset_parallel=os.environ.get("WORKER_PER_DATASET_PARALLEL", "1").lower() in ("1", "true", "yes"),
         dataset_refresh_seconds=max(60, int(os.environ.get("DATASET_REFRESH_SECONDS", "900"))),
         discovery_max_pages=max(1, int(os.environ.get("DISCOVERY_MAX_PAGES", "25"))),
         discovery_max_depth=max(0, int(os.environ.get("DISCOVERY_MAX_DEPTH", "1"))),

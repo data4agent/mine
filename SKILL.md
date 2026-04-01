@@ -29,11 +29,70 @@ Use this skill when the goal is to operate the Mine mining workflow end to end:
 
 ---
 
+## Quick Setup (Recommended for Agents)
+
+The simplest way to get Mine working is to use the setup wizard. All output is structured JSON for easy parsing.
+
+### One-Shot Setup
+
+```bash
+python scripts/run_tool.py setup
+```
+
+This single command:
+1. Checks Python version (needs 3.11+)
+2. Checks Node.js version (needs 20+ for awp-wallet)
+3. Creates virtualenv and installs dependencies
+4. Unlocks wallet and gets session token
+5. Sets environment variables
+6. Returns JSON with status and next command
+
+### Quick Diagnosis
+
+```bash
+python scripts/run_tool.py doctor
+```
+
+Returns JSON with:
+- All checks (python, nodejs, awp-wallet, env_vars)
+- Exact fix commands to copy-paste
+- Next command to run
+
+Example output:
+```json
+{
+  "status": "error",
+  "checks": [...],
+  "fix_commands": [
+    "export PLATFORM_BASE_URL=http://101.47.73.95",
+    "awp-wallet unlock --duration 3600"
+  ],
+  "next_command": "export PLATFORM_BASE_URL=http://101.47.73.95"
+}
+```
+
+### Auto-Fix
+
+```bash
+python scripts/run_tool.py setup-fix
+```
+
+Attempts to automatically fix common issues (create venv, install deps, set defaults).
+
+---
+
 ## Command entrypoint
 
 All runtime actions should go through `scripts/run_tool.py`.
 
-Preferred commands:
+### Setup Commands (JSON output, for agents)
+
+- `python scripts/run_tool.py setup` — Full setup wizard
+- `python scripts/run_tool.py setup-status` — Check setup status
+- `python scripts/run_tool.py setup-fix` — Auto-fix issues
+- `python scripts/run_tool.py doctor` — Quick diagnosis with fix commands
+
+### Main Commands
 
 - `python scripts/run_tool.py first-load`
 - `python scripts/run_tool.py start-working`

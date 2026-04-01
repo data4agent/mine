@@ -110,6 +110,16 @@ def _evaluate_math_expression(expression: str) -> int:
     return int(_eval_node(tree.body))
 
 
+MAX_EXPONENT = 1000  # Prevent memory exhaustion from expressions like 2**999999999
+
+
+def _safe_pow(base: int | float, exp: int | float) -> int | float:
+    """Power operation with exponent limit to prevent memory exhaustion."""
+    if isinstance(exp, (int, float)) and abs(exp) > MAX_EXPONENT:
+        raise ValueError(f"exponent {exp} exceeds maximum allowed ({MAX_EXPONENT})")
+    return operator.pow(base, exp)
+
+
 def _eval_node(node: ast.AST) -> int | float:
     binary_ops = {
         ast.Add: operator.add,
@@ -118,7 +128,7 @@ def _eval_node(node: ast.AST) -> int | float:
         ast.Div: operator.truediv,
         ast.FloorDiv: operator.floordiv,
         ast.Mod: operator.mod,
-        ast.Pow: operator.pow,
+        ast.Pow: _safe_pow,  # Use safe version with exponent limit
     }
     unary_ops = {
         ast.UAdd: operator.pos,

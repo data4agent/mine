@@ -81,6 +81,7 @@ class WorkerConfig:
     default_backend: str | None = None
     client_name: str = "mine/0.2"
     max_parallel: int = 3
+    per_dataset_parallel: bool = True
     dataset_refresh_seconds: int = 900
     discovery_max_pages: int = 25
     discovery_max_depth: int = 1
