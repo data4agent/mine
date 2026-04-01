@@ -7,6 +7,20 @@ import shutil
 import sys
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_ROOT = SCRIPT_DIR.parent
+
+
+def inject_skill_root() -> Path:
+    """Allow direct script execution to import sibling packages like ``lib``."""
+    root_str = str(SKILL_ROOT)
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+    return SKILL_ROOT
+
+
+inject_skill_root()
+
 
 def render_env_check() -> str:
     """Check and display all environment variables needed by Mine."""
