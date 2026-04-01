@@ -1,0 +1,15 @@
+{
+  "name": "mine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw-first mine skill/plugin for orchestrating social-data-crawler mining workflows.",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

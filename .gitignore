@@ -1,0 +1,17 @@
+.pytest-tmp/
+.pytest_cache/
+.tmp-openclaw-test/
+dist/
+__pycache__/
+scripts/__pycache__/
+tests/__pycache__/
+pytest-cache-files-*/
+
+# local planning and scratch artifacts
+1.md
+my-task
+mine-skill-plan-v3(1).md
+mine-skill-review.md
+mine-ux-preview.html
+social-data-crawler-code-review-optimization-2026-04-01.md
+schema(1)/
