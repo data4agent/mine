@@ -85,8 +85,8 @@ class WorkerConfig:
     discovery_max_pages: int = 25
     discovery_max_depth: int = 1
     auth_retry_interval_seconds: int = 300
-    openclaw_enrich_enabled: bool = False
-    openclaw_model_config: dict[str, Any] = field(default_factory=dict)
+    gateway_enrich_enabled: bool = False
+    gateway_model_config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

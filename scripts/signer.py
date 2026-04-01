@@ -81,6 +81,10 @@ class WalletSigner:
         self._token = session_token
         self._signer_address: str | None = None
 
+    @property
+    def session_token(self) -> str:
+        return self._token
+
     def _run(self, *args: str) -> dict[str, Any]:
         cmd = [self._bin, *args]
         env = os.environ.copy()
@@ -92,7 +96,7 @@ class WalletSigner:
             if "Invalid or expired session token" in stderr:
                 raise RuntimeError(
                     "awpWalletToken expired or invalid; rerun "
-                    "`awp-wallet unlock --duration 3600` and update plugin config before retrying. "
+                    "`awp-wallet unlock --duration 3600` and update Mine runtime config before retrying. "
                     f"awp-wallet stderr: {stderr}"
                 )
             raise RuntimeError(f"awp-wallet failed (exit {result.returncode}): {stderr}")
@@ -125,6 +129,22 @@ class WalletSigner:
         if not sig:
             raise RuntimeError("awp-wallet sign-typed-data returned empty signature")
         return sig
+
+    def renew_session(self, *, duration_seconds: int = 3600) -> dict[str, int | str]:
+        issued_at = int(time.time())
+        resp = self._run("unlock", "--duration", str(max(1, duration_seconds)))
+        session_token = str(resp.get("sessionToken") or "").strip()
+        if not session_token:
+            raise RuntimeError("awp-wallet unlock did not return sessionToken")
+        self._token = session_token
+        os.environ["AWP_WALLET_TOKEN"] = session_token
+        expires_at = issued_at + max(1, duration_seconds)
+        os.environ["AWP_WALLET_TOKEN_EXPIRES_AT"] = str(expires_at)
+        return {
+            "session_token": session_token,
+            "issued_at": issued_at,
+            "expires_at": expires_at,
+        }
 
     def build_typed_data(
         self,

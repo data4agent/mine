@@ -7,12 +7,19 @@ from pathlib import Path
 from typing import Any
 
 
-def read_openclaw_config() -> dict[str, Any]:
-    config_path = (
-        Path(os.environ["OPENCLAW_CONFIG_PATH"]).expanduser()
-        if os.environ.get("OPENCLAW_CONFIG_PATH")
-        else Path.home() / ".openclaw" / "openclaw.json"
-    )
+def resolve_mine_config_path() -> Path:
+    if os.environ.get("MINE_CONFIG_PATH"):
+        return Path(os.environ["MINE_CONFIG_PATH"]).expanduser()
+    if os.environ.get("OPENCLAW_CONFIG_PATH"):
+        return Path(os.environ["OPENCLAW_CONFIG_PATH"]).expanduser()
+
+    primary = Path.home() / ".mine" / "mine.json"
+    legacy = Path.home() / ".openclaw" / "openclaw.json"
+    return primary if primary.exists() else legacy
+
+
+def read_mine_config() -> dict[str, Any]:
+    config_path = resolve_mine_config_path()
     if not config_path.exists() or not config_path.is_file():
         return {}
     try:
@@ -119,3 +126,7 @@ def _read_json_pointer(payload: Any, pointer: str) -> Any:
             return None
         current = current[decoded]
     return current
+
+
+def read_openclaw_config() -> dict[str, Any]:
+    return read_mine_config()

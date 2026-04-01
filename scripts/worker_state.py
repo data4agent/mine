@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -116,21 +117,40 @@ class WorkerStateStore:
             "epoch_submitted": 0,
             "epoch_target": 80,
             "settlement": {},
+            "token_expires_at": None,
+            "last_control_action": None,
+            "last_state_change_at": None,
+            "last_activity_at": None,
+            "last_iteration": 0,
+            "last_wait_seconds": 0,
         }
         merged = {**defaults, **session}
         if not isinstance(merged.get("selected_dataset_ids"), list):
             merged["selected_dataset_ids"] = []
-        if not isinstance(merged.get("session_totals"), dict):
+        if isinstance(merged.get("session_totals"), dict):
+            merged["session_totals"] = {**defaults["session_totals"], **merged["session_totals"]}
+        else:
             merged["session_totals"] = dict(defaults["session_totals"])
         if not isinstance(merged.get("last_summary"), dict):
             merged["last_summary"] = {}
-        if not isinstance(merged.get("settlement"), dict):
+        if isinstance(merged.get("settlement"), dict):
+            merged["settlement"] = dict(merged["settlement"])
+        else:
             merged["settlement"] = {}
         return merged
 
     def save_session(self, partial: dict[str, Any]) -> dict[str, Any]:
         session = self.load_session()
-        session.update(partial)
+        for key in ("session_totals", "last_summary", "settlement"):
+            value = partial.get(key)
+            if isinstance(value, dict):
+                merged = dict(session.get(key) or {})
+                merged.update(value)
+                session[key] = merged
+        for key, value in partial.items():
+            if key in {"session_totals", "last_summary", "settlement"} and isinstance(value, dict):
+                continue
+            session[key] = value
         self._write_json(self._session_path, session)
         return session
 
@@ -178,9 +198,24 @@ class WorkerStateStore:
 
     def _read_json(self, path: Path) -> Any:
         if not path.exists():
-            return [] if path.suffix == ".json" and path.name != "dataset_cursors.json" else {}
-        return json.loads(path.read_text(encoding="utf-8"))
+            return self._default_json_payload(path)
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            corrupt_path = path.with_name(f"{path.name}.corrupt-{time.time_ns()}")
+            try:
+                path.replace(corrupt_path)
+            except OSError:
+                pass
+            return self._default_json_payload(path)
 
     def _write_json(self, path: Path, payload: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}-{time.time_ns()}")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(path)
+
+    def _default_json_payload(self, path: Path) -> Any:
+        if path in {self._backlog_path, self._auth_pending_path, self._submit_pending_path}:
+            return []
+        return {}

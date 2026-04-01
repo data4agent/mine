@@ -14,10 +14,14 @@ DEFAULT_TESTNET_PLATFORM_URL = "http://101.47.73.95"
 
 def _resolve_crawler_root() -> Path | None:
     root = os.environ.get("SOCIAL_CRAWLER_ROOT", "").strip()
-    if not root:
-        return None
-    path = Path(root).resolve()
-    return path if path.exists() else None
+    candidates: list[Path] = []
+    if root:
+        candidates.append(Path(root).resolve())
+    candidates.append(Path(__file__).resolve().parents[1])
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
 
 
 def _wallet_ready() -> tuple[bool, str]:
@@ -35,10 +39,10 @@ def _crawler_ready() -> tuple[bool, str]:
     crawler_root = _resolve_crawler_root()
     python_line = f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     if crawler_root is None:
-        return False, f"social-data-crawler — not installed ({python_line})"
+        return False, f"Mine runtime — not ready ({python_line})"
     if sys.version_info < (3, 11):
-        return False, f"social-data-crawler — repository found, but Mine needs Python 3.11+ ({python_line})"
-    return True, f"social-data-crawler — installed ({python_line})"
+        return False, f"Mine runtime — found, but Mine needs Python 3.11+ ({python_line})"
+    return True, f"Mine runtime — installed ({python_line})"
 
 
 def _platform_line() -> tuple[bool, str]:
@@ -93,7 +97,7 @@ def render_first_load_experience() -> str:
     if not crawler_ok:
         lines.extend(
             [
-                "- Clone social-data-crawler and bootstrap it.",
+                "- Bootstrap the Mine runtime in this project.",
                 "- Mine needs Python 3.11+ for crawler execution.",
             ]
         )
@@ -103,12 +107,15 @@ def render_first_load_experience() -> str:
     return "\n".join(lines)
 
 
-def render_dataset_listing(client: Any) -> str:
+def render_dataset_listing(client_or_datasets: Any) -> str:
     datasets = []
-    try:
-        datasets = client.list_datasets()
-    except Exception as exc:  # pragma: no cover - defensive formatting path
-        return f"Active datasets\n- dataset listing failed: {exc}"
+    if isinstance(client_or_datasets, list):
+        datasets = client_or_datasets
+    else:
+        try:
+            datasets = client_or_datasets.list_datasets()
+        except Exception as exc:  # pragma: no cover - defensive formatting path
+            return f"Active datasets\n- dataset listing failed: {exc}"
     if not datasets:
         return "Active datasets\n- none available"
     lines = ["Active datasets"]
@@ -119,7 +126,103 @@ def render_dataset_listing(client: Any) -> str:
             domain_text = ", ".join(str(item) for item in domains[:3])
         else:
             domain_text = str(domains or "no source domains")
-        lines.append(f"- {index}. {dataset_id} — {domain_text}")
+        suffix = []
+        if dataset.get("selected"):
+            suffix.append("selected")
+        if dataset.get("cooldown"):
+            suffix.append("cooldown")
+        suffix_text = f" [{' / '.join(suffix)}]" if suffix else ""
+        lines.append(f"- {index}. {dataset_id} — {domain_text}{suffix_text}")
+    return "\n".join(lines)
+
+
+def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str] | None = None) -> str:
+    try:
+        payload = worker.start_working(selected_dataset_ids=selected_dataset_ids)
+    except Exception as exc:
+        return (
+            "Unable to start mining yet.\n"
+            f"- Start-up check failed: {exc}\n"
+            "- If this is a signing/session issue, run: awp-wallet unlock --duration 3600\n"
+            "- Then say check status or start working again."
+        )
+    heartbeat = payload.get("heartbeat") or {}
+    status = payload.get("status") or {}
+    datasets = payload.get("datasets") or []
+
+    lines = []
+    if heartbeat.get("unified_ok") or heartbeat.get("miner_ok"):
+        lines.append("Heartbeat sent — miner registered")
+    for error in heartbeat.get("errors") or []:
+        lines.append(f"Heartbeat warning: {error}")
+    if status.get("credit_score") is not None:
+        lines.append(f"Credit score: {status.get('credit_score')}")
+    if status.get("credit_tier"):
+        lines.append(f"Credit tier: {status.get('credit_tier')}")
+    if status.get("epoch_id"):
+        lines.append(f"Current epoch: {status.get('epoch_id')}")
+    if status.get("epoch_target"):
+        lines.append(f"Target: {status.get('epoch_target')} submissions this epoch.")
+
+    if payload.get("selection_required"):
+        lines.extend(["", f"Found {len(datasets)} active DataSets:"])
+        for index, dataset in enumerate(datasets, start=1):
+            dataset_id = str(dataset.get("id") or f"dataset-{index}")
+            domains = dataset.get("source_domains")
+            if isinstance(domains, list):
+                domain_text = ", ".join(str(item) for item in domains[:2])
+            else:
+                domain_text = str(domains or "no source domains")
+            lines.append(f"- {index}. {dataset_id} — {domain_text}")
+        lines.extend(
+            [
+                "",
+                "Which DataSet(s) to mine? Enter dataset ids or a comma-separated list.",
+            ]
+        )
+        return "\n".join(lines)
+
+    selected = payload.get("selected_dataset_ids") or []
+    if selected:
+        lines.extend(
+            [
+                "",
+                f"Mining {', '.join(selected)}.",
+                "Say pause or stop anytime.",
+            ]
+        )
+    else:
+        lines.append("Mining session is ready.")
+    return "\n".join(lines)
+
+
+def render_control_response(payload: dict[str, Any]) -> str:
+    lines = [str(payload.get("message") or "State updated.")]
+    lines.append(f"Mining state: {payload.get('mining_state')}")
+    if payload.get("selected_dataset_ids"):
+        lines.append(f"Selected datasets: {', '.join(payload.get('selected_dataset_ids') or [])}")
+    queues = payload.get("queues") or {}
+    if queues:
+        lines.append(
+            "Queues — backlog: {backlog}, auth pending: {auth}, submit pending: {submit}".format(
+                backlog=queues.get("backlog", 0),
+                auth=queues.get("auth_pending", 0),
+                submit=queues.get("submit_pending", 0),
+            )
+        )
+    if payload.get("epoch_target") is not None:
+        lines.append(f"Epoch progress: {payload.get('epoch_submitted')} / {payload.get('epoch_target')}")
+    progress = payload.get("progress")
+    if isinstance(progress, dict):
+        epoch_completion = progress.get("epoch_completion_percent")
+        epoch_remaining = progress.get("epoch_remaining")
+        if epoch_completion is not None:
+            lines.append(f"Epoch completion: {epoch_completion}%")
+        if epoch_remaining is not None:
+            lines.append(f"Remaining this epoch: {epoch_remaining}")
+    if payload.get("last_control_action"):
+        lines.append(f"Last control action: {payload.get('last_control_action')}")
+    lines.append("Current batch control: pause / resume / stop")
     return "\n".join(lines)
 
 
@@ -143,6 +246,23 @@ def render_status_summary(worker: Any) -> str:
         f"- Epoch progress: {status.get('epoch_submitted')} / {status.get('epoch_target')}",
         f"- Current batch control: pause / resume / stop",
     ]
+    if status.get("selected_dataset_ids"):
+        lines.append(f"- Selected datasets: {', '.join(status.get('selected_dataset_ids') or [])}")
+    progress = status.get("progress")
+    if isinstance(progress, dict):
+        if progress.get("epoch_completion_percent") is not None:
+            lines.append(f"- Epoch completion: {progress.get('epoch_completion_percent')}%")
+        if progress.get("epoch_remaining") is not None:
+            lines.append(f"- Remaining this epoch: {progress.get('epoch_remaining')}")
+        lines.append(
+            "- Current session totals: processed {processed}, submitted {submitted}, failed {failed}".format(
+                processed=progress.get("session_processed_items", 0),
+                submitted=progress.get("session_submitted_items", 0),
+                failed=progress.get("session_failed_items", 0),
+            )
+        )
+    if status.get("last_control_action"):
+        lines.append(f"- Last control action: {status.get('last_control_action')}")
     if status.get("credit_score") is not None:
         lines.append(f"- Credit score: {status.get('credit_score')}")
     if status.get("credit_tier"):

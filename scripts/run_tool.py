@@ -11,8 +11,10 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=(
             "first-load",
+            "check-again",
             "start-working",
             "check-status",
+            "status-json",
             "list-datasets",
             "pause",
             "resume",
@@ -31,40 +33,50 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     namespace = build_parser().parse_args()
-    from agent_runtime import build_worker_from_env, export_core_submissions
-    from skill_runtime import render_dataset_listing, render_first_load_experience, render_status_summary
+    from skill_runtime import (
+        render_control_response,
+        render_dataset_listing,
+        render_first_load_experience,
+        render_start_working_response,
+        render_status_summary,
+    )
 
-    if namespace.command == "first-load":
+    if namespace.command in {"first-load", "check-again"}:
         print(render_first_load_experience())
         return 0
 
+    from agent_runtime import build_worker_from_env, export_core_submissions
     worker = build_worker_from_env()
 
     if namespace.command == "start-working":
         selected_dataset_ids = []
         if namespace.args:
             selected_dataset_ids = [dataset_id.strip() for dataset_id in namespace.args[0].split(",") if dataset_id.strip()]
-        print(json.dumps(worker.start_working(selected_dataset_ids=selected_dataset_ids or None), ensure_ascii=False, indent=2))
+        print(render_start_working_response(worker, selected_dataset_ids=selected_dataset_ids or None))
         return 0
 
     if namespace.command == "check-status":
         print(render_status_summary(worker))
         return 0
 
+    if namespace.command == "status-json":
+        print(json.dumps(worker.check_status(), ensure_ascii=False, indent=2))
+        return 0
+
     if namespace.command == "list-datasets":
-        print(render_dataset_listing(worker.client))
+        print(render_dataset_listing(worker.list_datasets()["datasets"] if hasattr(worker, "list_datasets") else worker.client))
         return 0
 
     if namespace.command == "pause":
-        print(json.dumps(worker.pause(), ensure_ascii=False, indent=2))
+        print(render_control_response(worker.pause()))
         return 0
 
     if namespace.command == "resume":
-        print(json.dumps(worker.resume(), ensure_ascii=False, indent=2))
+        print(render_control_response(worker.resume()))
         return 0
 
     if namespace.command == "stop":
-        print(json.dumps(worker.stop(), ensure_ascii=False, indent=2))
+        print(render_control_response(worker.stop()))
         return 0
 
     if namespace.command == "heartbeat":

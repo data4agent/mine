@@ -4,19 +4,23 @@ import json
 import sys
 from pathlib import Path
 
-from secret_refs import read_openclaw_config, resolve_secret_ref
+from secret_refs import read_mine_config, resolve_secret_ref
 
 
 def resolve_crawler_root() -> Path:
     import os
 
-    root = os.environ.get("SOCIAL_CRAWLER_ROOT")
-    if not root:
-        raise RuntimeError("SOCIAL_CRAWLER_ROOT is required")
-    path = Path(root).resolve()
-    if not path.exists():
-        raise RuntimeError(f"SOCIAL_CRAWLER_ROOT does not exist: {path}")
-    return path
+    root = os.environ.get("SOCIAL_CRAWLER_ROOT", "").strip()
+    candidates: list[Path] = []
+    if root:
+        candidates.append(Path(root).resolve())
+    candidates.append(Path(__file__).resolve().parents[1])
+    for path in candidates:
+        if path.exists():
+            return path
+    if root:
+        raise RuntimeError(f"SOCIAL_CRAWLER_ROOT does not exist: {Path(root).resolve()}")
+    raise RuntimeError("SOCIAL_CRAWLER_ROOT does not exist and the local Mine runtime root could not be resolved")
 
 
 def inject_crawler_root() -> Path:
@@ -32,7 +36,7 @@ def resolve_wallet_config() -> tuple[str, str]:
 
     * ``AWP_WALLET_BIN``   – path to awp-wallet CLI (default ``"awp-wallet"``)
     * ``AWP_WALLET_TOKEN`` – session token from ``awp-wallet unlock --duration 3600``
-    * ``AWP_WALLET_TOKEN_SECRET_REF`` – JSON SecretRef resolved against OpenClaw config providers
+    * ``AWP_WALLET_TOKEN_SECRET_REF`` – JSON SecretRef resolved against Mine config providers
     """
     import os
 
@@ -45,7 +49,7 @@ def resolve_wallet_config() -> tuple[str, str]:
             except json.JSONDecodeError:
                 ref = None
             if ref is not None:
-                wallet_token = resolve_secret_ref(ref, read_openclaw_config())
+                wallet_token = resolve_secret_ref(ref, read_mine_config())
 
     return (
         os.environ.get("AWP_WALLET_BIN", "awp-wallet"),

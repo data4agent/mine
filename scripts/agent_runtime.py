@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from auth_orchestrator import AUTH_ERROR_CODES, AuthOrchestrator
 from common import inject_crawler_root, resolve_wallet_config
 from crawl_mode_planner import CrawlModePlanner
-from openclaw_enrich import resolve_openclaw_enrich_model_config, write_model_config
+from mine_gateway import resolve_mine_gateway_model_config, write_model_config
 from pow_solver import UnsupportedChallenge, solve_challenge
 from run_artifacts import RunArtifactWriter
 from run_models import CrawlerRunResult, WorkItem, WorkerConfig, WorkerIterationSummary
@@ -57,18 +57,25 @@ class PlatformClient:
         signer: "WalletSigner | None" = None,
     ) -> None:
         self.miner_id = miner_id
+        self._base_url = base_url.rstrip("/")
         self._signer = signer
         self._max_retries = 3
+        self._last_wallet_refresh: dict[str, Any] | None = None
         headers = {
             "Content-Type": "application/json",
         }
         if token.strip():
             headers["Authorization"] = f"Bearer {token}"
         self._client = httpx.Client(
-            base_url=base_url.rstrip("/"),
+            base_url=self._base_url,
             timeout=30.0,
             headers=headers,
         )
+
+    def consume_wallet_refresh(self) -> dict[str, Any] | None:
+        payload = self._last_wallet_refresh
+        self._last_wallet_refresh = None
+        return payload
 
     def send_miner_heartbeat(self, *, client_name: str) -> None:
         self._request("POST", "/api/mining/v1/miners/heartbeat", {"client": client_name})
@@ -133,11 +140,16 @@ class PlatformClient:
     def check_url_occupancy(self, dataset_id: str, url: str) -> dict[str, Any]:
         from urllib.parse import quote
         encoded_url = quote(url, safe="")
-        resp = self._request(
-            "GET",
-            f"/api/core/v1/url-occupancies/check?dataset_id={dataset_id}&url={encoded_url}",
-            None,
-        )
+        try:
+            resp = self._request(
+                "GET",
+                f"/api/core/v1/url-occupancies/check?dataset_id={dataset_id}&url={encoded_url}",
+                None,
+            )
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 404:
+                return {}
+            raise
         data = resp.get("data")
         return data if isinstance(data, dict) else {}
 
@@ -156,20 +168,23 @@ class PlatformClient:
         return data
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {}
-        if payload is not None:
-            kwargs["json"] = payload
-        if self._signer is not None:
-            base_url = str(self._client.base_url)
-            request_url = urljoin(base_url if base_url.endswith("/") else f"{base_url}/", path.lstrip("/"))
-            kwargs["headers"] = self._signer.build_auth_headers(
-                method,
-                request_url,
-                payload,
-                content_type="application/json",
-            )
         last_error: Exception | None = None
+        renewed_session = False
         for attempt in range(1, self._max_retries + 1):
+            kwargs: dict[str, Any] = {}
+            if payload is not None:
+                kwargs["json"] = payload
+            if self._signer is not None:
+                request_url = urljoin(
+                    self._base_url if self._base_url.endswith("/") else f"{self._base_url}/",
+                    path.lstrip("/"),
+                )
+                kwargs["headers"] = self._signer.build_auth_headers(
+                    method,
+                    request_url,
+                    payload,
+                    content_type="application/json",
+                )
             try:
                 response = self._client.request(method, path, **kwargs)
                 response.raise_for_status()
@@ -184,6 +199,7 @@ class PlatformClient:
                 status_code = error.response.status_code
                 if status_code == 401:
                     error_code = ""
+                    error_message = ""
                     try:
                         error_payload = error.response.json()
                     except ValueError:
@@ -192,11 +208,26 @@ class PlatformClient:
                         error_body = error_payload.get("error")
                         if isinstance(error_body, dict):
                             error_code = str(error_body.get("code") or "")
+                            error_message = str(error_body.get("message") or "")
                     if error_code == "MISSING_HEADERS":
                         raise RuntimeError(
                             "Platform Service requires Web3 signature headers; configure plugin config "
-                            "`awpWalletToken` (from `awp-wallet unlock --duration 3600`) or provide equivalent signed requests."
+                            "`awpWalletToken` or `AWP_WALLET_TOKEN` (from `awp-wallet unlock --duration 3600`) "
+                            "or provide equivalent signed requests."
                         ) from error
+                    if (
+                        self._signer is not None
+                        and not renewed_session
+                        and (
+                            error_code in {"UNAUTHORIZED", "TOKEN_EXPIRED", "SESSION_EXPIRED"}
+                            or "expired session token" in error_message.lower()
+                        )
+                    ):
+                        renew_session = getattr(self._signer, "renew_session", None)
+                        if callable(renew_session):
+                            self._last_wallet_refresh = renew_session(duration_seconds=3600)
+                            renewed_session = True
+                            continue
                 if status_code < 500 or attempt >= self._max_retries:
                     raise
                 time.sleep(0.5 * attempt)
@@ -254,9 +285,9 @@ class CrawlerRunner:
     def _prepare_model_config_path(self, *, command: str, output_dir: Path) -> Path | None:
         if command not in {"run", "enrich"}:
             return None
-        if not self.config.openclaw_enrich_enabled or not self.config.openclaw_model_config:
+        if not self.config.gateway_enrich_enabled or not self.config.gateway_model_config:
             return None
-        return write_model_config(output_dir / "_runtime" / "openclaw-model-config.json", self.config.openclaw_model_config)
+        return write_model_config(output_dir / "_runtime" / "mine-model-config.json", self.config.gateway_model_config)
 
 
 def _solve_pow_challenge(challenge: dict[str, Any]) -> str:
@@ -278,8 +309,8 @@ def _build_test_config(root: Path) -> WorkerConfig:
         crawler_root=CRAWLER_ROOT,
         python_bin="python",
         state_root=root / "state",
-        openclaw_enrich_enabled=False,
-        openclaw_model_config={},
+        gateway_enrich_enabled=False,
+        gateway_model_config={},
     )
 
 
@@ -301,18 +332,80 @@ class AgentWorker:
             self.state_store,
             retry_after_seconds=config.auth_retry_interval_seconds,
         )
-        self.state_store.save_session({})
+        seed: dict[str, Any] = {}
+        token_expires_at = os.environ.get("AWP_WALLET_TOKEN_EXPIRES_AT", "").strip()
+        if token_expires_at.isdigit():
+            seed["token_expires_at"] = int(token_expires_at)
+        self.state_store.save_session(seed)
 
     def start_working(self, *, selected_dataset_ids: list[str] | None = None) -> dict[str, Any]:
         datasets = self.client.list_datasets()
-        session_update: dict[str, Any] = {"mining_state": "running"}
-        if selected_dataset_ids is not None:
-            session_update["selected_dataset_ids"] = list(selected_dataset_ids)
+        dataset_ids = [str(dataset.get("id") or "").strip() for dataset in datasets if str(dataset.get("id") or "").strip()]
+        session = self.state_store.load_session()
+        current_selected = [str(dataset_id) for dataset_id in (session.get("selected_dataset_ids") or []) if str(dataset_id).strip()]
+        requested_selected = (
+            [dataset_id for dataset_id in (selected_dataset_ids or []) if dataset_id in dataset_ids]
+            if selected_dataset_ids is not None
+            else current_selected
+        )
+
+        unified_ok = False
+        miner_ok = False
+        heartbeat_errors: list[str] = []
+        try:
+            unified = self.client.send_unified_heartbeat(client_name=self.config.client_name)
+            unified_ok = True
+            self._update_session_from_heartbeat(unified)
+        except Exception as exc:
+            heartbeat_errors.append(f"unified heartbeat failed: {exc}")
+        try:
+            self.client.send_miner_heartbeat(client_name=self.config.client_name)
+            miner_ok = True
+            self.state_store.save_session({"last_heartbeat_at": int(time.time())})
+        except Exception as exc:
+            heartbeat_errors.append(f"miner heartbeat failed: {exc}")
+
+        if not requested_selected and len(dataset_ids) == 1:
+            requested_selected = [dataset_ids[0]]
+
+        if not requested_selected and len(dataset_ids) > 1:
+            self.state_store.save_session({
+                "mining_state": "idle",
+                "last_control_action": "start-working",
+                "last_state_change_at": int(time.time()),
+            })
+            return {
+                "mining_state": "idle",
+                "selection_required": True,
+                "selected_dataset_ids": [],
+                "datasets": self.list_datasets()["datasets"],
+                "heartbeat": {
+                    "unified_ok": unified_ok,
+                    "miner_ok": miner_ok,
+                    "errors": heartbeat_errors,
+                },
+                "status": self.check_status(),
+                "message": "dataset selection required",
+            }
+
+        session_update: dict[str, Any] = {
+            "mining_state": "running",
+            "selected_dataset_ids": requested_selected,
+            "last_control_action": "start-working",
+            "last_state_change_at": int(time.time()),
+        }
         session = self.state_store.save_session(session_update)
         return {
             "mining_state": session["mining_state"],
+            "selection_required": False,
             "selected_dataset_ids": list(session.get("selected_dataset_ids") or []),
-            "datasets": datasets,
+            "datasets": self.list_datasets()["datasets"],
+            "heartbeat": {
+                "unified_ok": unified_ok,
+                "miner_ok": miner_ok,
+                "errors": heartbeat_errors,
+            },
+            "status": self.check_status(),
             "message": "start working confirmed",
         }
 
@@ -331,37 +424,28 @@ class AgentWorker:
             annotated.append(entry)
         return {"datasets": annotated, "selected_dataset_ids": list(selected)}
 
-    def check_status(self) -> dict[str, Any]:
-        session = self.state_store.load_session()
-        return {
-            "mining_state": session.get("mining_state"),
-            "selected_dataset_ids": list(session.get("selected_dataset_ids") or []),
-            "epoch_id": session.get("epoch_id"),
-            "epoch_submitted": session.get("epoch_submitted"),
-            "epoch_target": session.get("epoch_target"),
-            "credit_score": session.get("credit_score"),
-            "credit_tier": session.get("credit_tier"),
-            "settlement": dict(session.get("settlement") or {}),
-            "queues": {
-                "backlog": len(self.state_store.load_backlog()),
-                "auth_pending": len(self.state_store.load_auth_pending()),
-                "submit_pending": len(self.state_store.load_submit_pending()),
-            },
-            "cooldowns": self.state_store.active_dataset_cooldowns(),
-            "last_summary": dict(session.get("last_summary") or {}),
-            "session_totals": dict(session.get("session_totals") or {}),
-        }
-
     def pause(self) -> dict[str, Any]:
-        session = self.state_store.save_session({"mining_state": "paused"})
+        session = self.state_store.save_session({
+            "mining_state": "paused",
+            "last_control_action": "pause",
+            "last_state_change_at": int(time.time()),
+        })
         return self.check_status() | {"message": "Mining paused.", "mining_state": session["mining_state"]}
 
     def resume(self) -> dict[str, Any]:
-        session = self.state_store.save_session({"mining_state": "running"})
+        session = self.state_store.save_session({
+            "mining_state": "running",
+            "last_control_action": "resume",
+            "last_state_change_at": int(time.time()),
+        })
         return self.check_status() | {"message": "Mining resumed.", "mining_state": session["mining_state"]}
 
     def stop(self) -> dict[str, Any]:
-        session = self.state_store.save_session({"mining_state": "stopped"})
+        session = self.state_store.save_session({
+            "mining_state": "stopped",
+            "last_control_action": "stop",
+            "last_state_change_at": int(time.time()),
+        })
         return self.check_status() | {"message": "Mining session ended.", "mining_state": session["mining_state"]}
 
     def run_once(self) -> str:
@@ -377,15 +461,25 @@ class AgentWorker:
 
     def check_status(self) -> dict[str, Any]:
         session = self.state_store.load_session()
+        epoch_submitted = int(session.get("epoch_submitted") or 0)
+        epoch_target = int(session.get("epoch_target") or 80)
+        epoch_remaining = max(0, epoch_target - epoch_submitted)
+        epoch_completion_percent = 0.0 if epoch_target <= 0 else round(min(100.0, (epoch_submitted / epoch_target) * 100), 2)
+        session_totals = dict(session.get("session_totals") or {})
         return {
             "mining_state": session.get("mining_state", "idle"),
             "credit_score": session.get("credit_score"),
             "credit_tier": session.get("credit_tier"),
             "epoch_id": session.get("epoch_id"),
-            "epoch_submitted": session.get("epoch_submitted", 0),
-            "epoch_target": session.get("epoch_target", 80),
+            "epoch_submitted": epoch_submitted,
+            "epoch_target": epoch_target,
             "selected_dataset_ids": list(session.get("selected_dataset_ids") or []),
             "settlement": dict(session.get("settlement") or {}),
+            "last_control_action": session.get("last_control_action"),
+            "last_state_change_at": session.get("last_state_change_at"),
+            "last_activity_at": session.get("last_activity_at"),
+            "last_iteration": session.get("last_iteration", 0),
+            "last_wait_seconds": session.get("last_wait_seconds", 0),
             "queues": {
                 "backlog": len(self.state_store.load_backlog()),
                 "auth_pending": len(self.state_store.load_auth_pending()),
@@ -393,7 +487,14 @@ class AgentWorker:
             },
             "cooldowns": self.state_store.active_dataset_cooldowns(),
             "last_summary": dict(session.get("last_summary") or {}),
-            "session_totals": dict(session.get("session_totals") or {}),
+            "session_totals": session_totals,
+            "progress": {
+                "epoch_completion_percent": epoch_completion_percent,
+                "epoch_remaining": epoch_remaining,
+                "session_processed_items": int(session_totals.get("processed_items") or 0),
+                "session_submitted_items": int(session_totals.get("submitted_items") or 0),
+                "session_failed_items": int(session_totals.get("failed_items") or 0),
+            },
         }
 
     def process_task_payload(self, task_type: str, payload: dict[str, Any]) -> str:
@@ -420,7 +521,7 @@ class AgentWorker:
             summary.messages.append(f"worker {mining_state}")
             payload = summary.to_dict()
             self._write_iteration_summary(payload)
-            self.state_store.save_session({"last_summary": payload})
+            self._update_session_from_summary(payload)
             return payload
         self._send_heartbeats(summary)
         self._drain_submit_pending(summary)
@@ -430,6 +531,7 @@ class AgentWorker:
             summary.retry_pending = len(self.state_store.load_backlog()) + len(self.state_store.load_auth_pending())
             payload = summary.to_dict()
             self._write_iteration_summary(payload)
+            self._update_session_from_summary(payload)
             return payload
         self._process_items(work_items, summary)
         summary.retry_pending = len(self.state_store.load_backlog()) + len(self.state_store.load_auth_pending())
@@ -452,12 +554,17 @@ class AgentWorker:
             try:
                 summary = self.run_iteration(iteration)
                 result = json.dumps(summary, ensure_ascii=False)
+                current_state = str(self.state_store.load_session().get("mining_state") or "idle")
+                if current_state == "stopped":
+                    print(f"[worker] stopped after {iteration} iterations")
+                    return f"stopped after {iteration} iterations"
                 if not summary["processed_items"] and not summary["discovery_items"] and not summary["claimed_items"] and not summary["resumed_items"]:
                     consecutive_empty += 1
                     wait = min(interval * (2 ** min(consecutive_empty, 3)), 300)
                 else:
                     consecutive_empty = 0
                     wait = interval
+                self.state_store.save_session({"last_wait_seconds": wait})
                 print(f"[worker] iteration {iteration}: {result}")
             except KeyboardInterrupt:
                 print(f"[worker] stopped after {iteration} iterations")
@@ -465,6 +572,10 @@ class AgentWorker:
             except Exception as e:
                 print(f"[worker] iteration {iteration} error: {e}")
                 wait = min(interval * 2, 120)
+                self.state_store.save_session({"last_wait_seconds": wait})
+
+            if max_iterations != 0 and iteration >= max_iterations:
+                break
 
             try:
                 time.sleep(wait)
@@ -480,12 +591,16 @@ class AgentWorker:
         while max_iterations == 0 or iteration < max_iterations:
             iteration += 1
             iterations.append(self.run_iteration(iteration))
-            if max_iterations == 1:
+            if str(self.state_store.load_session().get("mining_state") or "idle") == "stopped":
                 break
+            if max_iterations == 1 or (max_iterations != 0 and iteration >= max_iterations):
+                break
+            self.state_store.save_session({"last_wait_seconds": interval})
             time.sleep(interval)
         return {
             "completed_iterations": iteration,
             "iterations": iterations,
+            "status": self.check_status(),
             "state": {
                 "backlog": len(self.state_store.load_backlog()),
                 "auth_pending": self.state_store.load_auth_pending(),
@@ -494,6 +609,7 @@ class AgentWorker:
         }
 
     def _send_heartbeats(self, summary: WorkerIterationSummary) -> None:
+        self._ensure_wallet_session(summary)
         try:
             unified = self.client.send_unified_heartbeat(client_name=self.config.client_name)
             summary.unified_heartbeat_sent = True
@@ -506,6 +622,7 @@ class AgentWorker:
             self.state_store.save_session({"last_heartbeat_at": int(time.time())})
         except Exception as exc:
             summary.errors.append(f"miner heartbeat failed: {exc}")
+        self._sync_wallet_refresh_state()
 
     def _collect_work_items(self, summary: WorkerIterationSummary) -> list[WorkItem]:
         session = self.state_store.load_session()
@@ -762,7 +879,48 @@ class AgentWorker:
         totals["processed_items"] = int(totals.get("processed_items") or 0) + int(payload.get("processed_items") or 0)
         totals["submitted_items"] = int(totals.get("submitted_items") or 0) + int(payload.get("submitted_items") or 0)
         totals["failed_items"] = int(totals.get("failed_items") or 0) + len(payload.get("errors") or [])
-        self.state_store.save_session({"last_summary": payload, "session_totals": totals})
+        self.state_store.save_session({
+            "last_summary": payload,
+            "session_totals": totals,
+            "last_activity_at": int(time.time()),
+            "last_iteration": int(payload.get("iteration") or 0),
+        })
+
+    def _ensure_wallet_session(self, summary: WorkerIterationSummary) -> None:
+        session = self.state_store.load_session()
+        expires_at = session.get("token_expires_at")
+        signer = getattr(self.client, "_signer", None)
+        renew_session = getattr(signer, "renew_session", None)
+        if not callable(renew_session) or not isinstance(expires_at, int):
+            return
+        now = int(time.time())
+        if expires_at - now > 300:
+            return
+        try:
+            payload = renew_session(duration_seconds=3600)
+        except Exception as exc:
+            summary.errors.append(f"wallet session refresh failed: {exc}")
+            return
+        self._sync_wallet_refresh_state(payload)
+        summary.messages.append("wallet session renewed before expiry")
+
+    def _sync_wallet_refresh_state(self, payload: dict[str, Any] | None = None) -> None:
+        if isinstance(payload, dict):
+            refresh = payload
+        else:
+            consume_refresh = getattr(self.client, "consume_wallet_refresh", None)
+            refresh = consume_refresh() if callable(consume_refresh) else None
+        if not isinstance(refresh, dict):
+            return
+        update: dict[str, Any] = {}
+        expires_at = refresh.get("expires_at")
+        issued_at = refresh.get("issued_at")
+        if isinstance(expires_at, int):
+            update["token_expires_at"] = expires_at
+        if isinstance(issued_at, int):
+            update["last_wallet_refresh_at"] = issued_at
+        if update:
+            self.state_store.save_session(update)
 
     def _maybe_handle_rate_limit(
         self,
@@ -794,7 +952,7 @@ def build_worker_from_env() -> AgentWorker:
     output_root = Path(os.environ.get("CRAWLER_OUTPUT_ROOT", str(CRAWLER_ROOT / "output" / "agent-runs"))).resolve()
     python_bin = os.environ.get("PYTHON_BIN") or os.environ.get("PLUGIN_PYTHON_BIN") or "python"
     state_root = Path(os.environ.get("WORKER_STATE_ROOT", str(output_root / "_worker_state"))).resolve()
-    openclaw_model_config = resolve_openclaw_enrich_model_config()
+    gateway_model_config = resolve_mine_gateway_model_config()
     config = WorkerConfig(
         base_url=os.environ["PLATFORM_BASE_URL"],
         token=os.environ.get("PLATFORM_TOKEN", ""),
@@ -809,8 +967,8 @@ def build_worker_from_env() -> AgentWorker:
         discovery_max_pages=max(1, int(os.environ.get("DISCOVERY_MAX_PAGES", "25"))),
         discovery_max_depth=max(0, int(os.environ.get("DISCOVERY_MAX_DEPTH", "1"))),
         auth_retry_interval_seconds=max(30, int(os.environ.get("AUTH_RETRY_INTERVAL_SECONDS", "300"))),
-        openclaw_enrich_enabled=bool(openclaw_model_config),
-        openclaw_model_config=openclaw_model_config,
+        gateway_enrich_enabled=bool(gateway_model_config),
+        gateway_model_config=gateway_model_config,
     )
 
     wallet_bin, wallet_token = resolve_wallet_config()
@@ -862,7 +1020,10 @@ def _export_core_submissions_for_task(output_dir: Path, record: dict[str, Any], 
         manifest = read_json_file(manifest_path)
         if isinstance(manifest, dict):
             generated_at = optional_string(manifest.get("generated_at"))
-    payload = build_submission_request([record], dataset_id=dataset_id, generated_at=generated_at)
+    export_record = dict(record)
+    export_record.setdefault("platform", item.platform)
+    export_record.setdefault("resource_type", item.resource_type)
+    payload = build_submission_request([export_record], dataset_id=dataset_id, generated_at=generated_at)
     export_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return export_path
 
@@ -914,50 +1075,12 @@ def _augment_submission_payload_for_dataset(
         original_structured_data = entry.get("structured_data")
         if not isinstance(original_structured_data, dict):
             original_structured_data = {}
-        structured_data: dict[str, Any] = {}
-        for field_name, spec in schema.items():
-            if field_name in original_structured_data and original_structured_data[field_name] not in (None, ""):
-                structured_data[field_name] = original_structured_data[field_name]
-                continue
-            if isinstance(spec, dict) and not bool(spec.get("required")) and field_name not in original_structured_data:
-                continue
-            value = _resolve_schema_field_value(
-                field_name,
-                entry=entry,
-                record=record,
-                item=item,
-                structured_data=original_structured_data,
-            )
-            if value not in (None, ""):
-                structured_data[field_name] = value
+        structured_data: dict[str, Any] = {
+            field_name: original_structured_data[field_name]
+            for field_name in schema
+            if field_name in original_structured_data and original_structured_data[field_name] not in (None, "")
+        }
         entry["structured_data"] = structured_data
-
-
-def _resolve_schema_field_value(
-    field_name: str,
-    *,
-    entry: dict[str, Any],
-    record: dict[str, Any],
-    item: WorkItem,
-    structured_data: dict[str, Any],
-) -> Any:
-    record_metadata = record.get("metadata")
-    metadata = record_metadata if isinstance(record_metadata, dict) else {}
-    cleaned_data = entry.get("cleaned_data") or record.get("plain_text") or record.get("cleaned_data") or record.get("markdown")
-    candidate_values = {
-        "url": entry.get("url") or record.get("canonical_url") or record.get("url") or item.url,
-        "title": structured_data.get("title") or record.get("title") or metadata.get("title") or metadata.get("page_title"),
-        "content": structured_data.get("content") or cleaned_data,
-        "cleaned_data": cleaned_data,
-        "canonical_url": record.get("canonical_url") or item.url,
-    }
-    if field_name in candidate_values:
-        return candidate_values[field_name]
-    if field_name in structured_data:
-        return structured_data[field_name]
-    if field_name in metadata:
-        return metadata[field_name]
-    return record.get(field_name)
 
 
 def _extract_submission_id(report_result: dict[str, Any] | None) -> str | None:

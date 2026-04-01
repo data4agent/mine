@@ -1,22 +1,50 @@
 ---
 name: mine
-description: OpenClaw-first autonomous mining skill for Data Mining WorkNet. Delegates crawling and extraction to social-data-crawler, signs Platform Service requests through awp-wallet, and exposes a guided mining workflow with clear status updates, recovery hints, and OpenClaw tool priorities.
-metadata:
-  openclaw:
-    install:
-      script_windows: ./scripts/install_openclaw_integration.ps1
-      script_unix: ./scripts/install_openclaw_integration.sh
+description: Agent-first autonomous mining skill for Data Mining WorkNet. Uses the built-in Mine runtime for crawling, enrichment, schema handling, and submission signing through awp-wallet, and exposes a guided mining workflow with clear status updates, recovery hints, and portable command entrypoints that work across agents.
+bootstrap: ./scripts/bootstrap.sh
+windows_bootstrap: ./scripts/bootstrap.ps1
+smoke_test: ./scripts/smoke_test.py
+requires:
+  bins:
+    - python3
+    - awp-wallet
+  anyBins:
+    - python
+    - py
+  env:
+    - PLATFORM_BASE_URL
+    - MINER_ID
 ---
 
 # Mine
 
-Use this skill when the goal is to operate the OpenClaw-facing mining workflow end to end:
+Use this skill when the goal is to operate the Mine mining workflow end to end:
 
 - start autonomous mining work
 - check mining status, epoch progress, or reward state
 - process task payload files
 - export or submit Core payloads
-- install, package, or verify the Mine OpenClaw plugin
+- bootstrap or verify the local Mine runtime
+
+---
+
+## Command entrypoint
+
+All runtime actions should go through `scripts/run_tool.py`.
+
+Preferred commands:
+
+- `python scripts/run_tool.py first-load`
+- `python scripts/run_tool.py start-working`
+- `python scripts/run_tool.py check-status`
+- `python scripts/run_tool.py list-datasets`
+- `python scripts/run_tool.py run-worker`
+- `python scripts/run_tool.py run-once`
+- `python scripts/run_tool.py heartbeat`
+- `python scripts/run_tool.py process-task-file <taskType> <taskJsonPath>`
+- `python scripts/run_tool.py export-core-submissions <inputPath> <outputPath> <datasetId>`
+
+This keeps `mine` portable across agents without requiring a plugin host.
 
 ---
 
@@ -69,19 +97,19 @@ Do not say only “missing dependency” or “please install”.
    - reachable on PATH or explicit config path
    - unlocked or ready to unlock
 
-2. **social-data-crawler**
-   - repository present
+2. **Mine runtime**
+   - runtime present inside this project
    - Python runtime available
-   - environment bootstrapped enough to run crawler commands
+   - environment bootstrapped enough to run Mine crawler commands
 
 3. **Platform Service base URL**
-   - use plugin config `platformBaseUrl` when set
+   - use environment variable `PLATFORM_BASE_URL` when set
    - if the user is on the test setup, it is acceptable to explain the testnet default
 
 ### Good dependency-check success tone
 
 - `AWP Wallet — installed, unlocked`
-- `social-data-crawler — installed (Python 3.11+ ready)`
+- `Mine runtime — installed (Python 3.11+ ready)`
 - `Platform Service base URL — configured`
 - `All dependencies ready.`
 
@@ -93,8 +121,8 @@ For example:
 
 - `AWP Wallet — missing`
   - suggest install path or binary setup
-- `social-data-crawler — not installed`
-  - tell the user to clone the repo and bootstrap it
+- `Mine runtime — not ready`
+  - tell the user to bootstrap this project runtime
 - Python too old
   - explicitly say Mine needs Python 3.11+
 - platform base URL missing
@@ -103,15 +131,6 @@ For example:
 Always include a recovery close like:
 
 > Run these commands, then say `check again` and I’ll re-verify.
-
-### Required concrete guidance phrases
-
-The skill should be able to guide with language like:
-
-- `AWP Wallet`
-- `social-data-crawler`
-- `Platform Service base URL`
-- `check again`
 
 If wallet renewal is needed, it is valid to instruct:
 
@@ -123,44 +142,44 @@ awp-wallet unlock --duration 3600
 
 ## Runtime model
 
-`mine` is the OpenClaw product layer.
+`mine` is the primary skill/runtime project.
 
-- OpenClaw plugin root: this repository
-- crawler runtime root: `D:\kaifa\clawtroop\social-data-crawler` by default
+- crawler runtime root: this repository by default
 - request signing: `awp-wallet`
-- platform connectivity: plugin config `platformBaseUrl`
+- platform connectivity: `PLATFORM_BASE_URL`
+- discovery may use `generic` or `generic/page` inputs as compatibility fallbacks when needed
 
 Mine should feel like a guided product, not a loose collection of tools.
 
 ---
 
-## OpenClaw tool priority
+## Command priority
 
-When choosing tools, prefer this order:
+When choosing runtime commands, prefer this order:
 
-1. **`mine_worker`** — recommended default
+1. `python scripts/run_tool.py run-worker`
    - primary autonomous worker
    - best choice for normal mining work
 
-2. **`mine_run_once`**
+2. `python scripts/run_tool.py run-once`
    - debug or single-pass execution
    - good when validating one cycle
 
-3. **`mine_process_task_file`**
+3. `python scripts/run_tool.py process-task-file`
    - use when a local payload JSON is already available
    - useful for offline or claim-bypassed execution
 
-4. **`mine_heartbeat`**
+4. `python scripts/run_tool.py heartbeat`
    - use when only heartbeat verification is needed
 
-5. **`mine_run_loop`**
-   - use when the caller explicitly wants repeated loop execution
+5. `python scripts/run_tool.py run-loop`
+   - use when repeated loop execution is explicitly requested
 
-6. **`mine_export_core_submissions`**
+6. `python scripts/run_tool.py export-core-submissions`
    - use for conversion/export workflows only
 
 Do not make the user infer this order.
-If the user is vague, prefer `mine_worker`.
+If the user is vague, prefer `python scripts/run_tool.py run-worker`.
 
 ---
 
@@ -292,39 +311,14 @@ If the occupancy check endpoint is unavailable:
 
 ---
 
-## Status and settlement language
+## Bootstrap and verification
 
-`check status` should aim to surface:
+Preferred local checks:
 
-- miner health
-- epoch id
-- submitted count
-- target count
-- credit score / tier
-- pending auth work
-- pending submit work
-- reward or settlement state if available
+- `./scripts/bootstrap.sh`
+- `./scripts/bootstrap.cmd`
+- `python scripts/verify_env.py --profile minimal --json`
+- `python scripts/host_diagnostics.py --json`
+- `python scripts/smoke_test.py --json`
 
-At epoch end, the preferred settlement UX includes:
-
-- confirmed count
-- rejected count
-- reward amount
-- credit-score movement
-
----
-
-## Installation and packaging
-
-Preferred install entrypoints:
-
-- Windows: `./scripts/install_openclaw_integration.ps1`
-- Unix-like: `./scripts/install_openclaw_integration.sh`
-
-Preferred packaging entrypoint:
-
-```bash
-python scripts/build_openclaw_plugin.py
-```
-
-If the user is installing the plugin, guide them toward the installer rather than asking them to wire config by hand unless they explicitly want manual setup.
+If the user needs environment setup help, guide them toward bootstrapping the local Python runtime and awp-wallet rather than any plugin packaging flow.

@@ -1,98 +1,109 @@
 # Mine
 
-OpenClaw-first plugin/skill project for autonomous data-mining workflows backed by `social-data-crawler`.
+Agent-first skill project for autonomous data-mining workflows powered by the built-in `mine` runtime.
 
 ## What this project is
 
-`mine` is the OpenClaw-facing product layer. It provides:
+`mine` is the primary **skill + Python runtime** project. It provides:
 
-- a native OpenClaw plugin manifest
-- tool registration for worker-style mining operations
-- a Python bridge that reuses the proven `social-data-crawler` runtime
+- an internal Python crawler/enrichment runtime under `crawler/`
 - a first-load / dataset-listing / status-summary runtime for guided Mine UX
-- build/install scripts for packaging `dist/openclaw-plugin`
-- a root skill contract for OpenClaw workspace usage
+- a single CLI entrypoint via `scripts/run_tool.py`
+- bootstrap and verification scripts for one-repo setup
+- references, runtime helpers, and schema support files
+- a root skill contract that can be reused across agent hosts
 
-The crawler engine remains in `D:\kaifa\clawtroop\social-data-crawler`. `mine` orchestrates it.
+The crawler engine now lives inside this repository. `mine` owns the runtime, schemas, references, and skill workflow.
 
-## Registered OpenClaw tools
+## Primary entrypoint
 
-- `mine_start_working`
-- `mine_check_status`
-- `mine_list_datasets`
-- `mine_pause`
-- `mine_resume`
-- `mine_stop`
-- `mine_worker`
-- `mine_heartbeat`
-- `mine_run_once`
-- `mine_run_loop`
-- `mine_process_task_file`
-- `mine_export_core_submissions`
-
-## Required plugin config
-
-- `crawlerRoot`
-- `platformBaseUrl`
-- `minerId`
-
-Important optional config:
-
-- `pythonBin`
-- `platformToken`
-- `outputRoot`
-- `awpWalletBin`
-- `awpWalletToken`
-- `awpWalletTokenRef`
-- `workerStateRoot`
-- `workerMaxParallel`
-
-## Build
+Use `scripts/run_tool.py` as the only public command surface:
 
 ```bash
-python scripts/build_openclaw_plugin.py
+python scripts/run_tool.py first-load
+python scripts/run_tool.py start-working
+python scripts/run_tool.py check-status
+python scripts/run_tool.py list-datasets
+python scripts/run_tool.py run-worker
+python scripts/run_tool.py run-once
+python scripts/run_tool.py process-task-file <taskType> <taskJsonPath>
+python scripts/run_tool.py export-core-submissions <inputPath> <outputPath> <datasetId>
 ```
 
-Outputs:
-
-- `dist/openclaw-plugin`
-- `dist/mine-openclaw-plugin.zip`
-- `dist/mine-openclaw-plugin.tar.gz`
-
-## Install into OpenClaw
-
-### Windows
-
-```powershell
-./scripts/install_openclaw_integration.ps1 --platform-base-url http://101.47.73.95 --miner-id miner-001
-```
+## Bootstrap and verification
 
 ### Unix-like
 
 ```bash
-./scripts/install_openclaw_integration.sh --platform-base-url http://101.47.73.95 --miner-id miner-001
+./scripts/bootstrap.sh
+python scripts/verify_env.py --profile minimal --json
+python scripts/host_diagnostics.py --json
+python scripts/smoke_test.py --json
 ```
 
-The installer:
+### Windows
 
-- builds `dist/openclaw-plugin`
-- optionally builds the archive bundle
-- updates `~/.openclaw/openclaw.json` or `OPENCLAW_CONFIG_PATH`
-- installs a workspace skill wrapper under `~/.openclaw/workspace/skills/mine`
-- uses `awpWalletTokenRef` when no direct token is available
+```powershell
+./scripts/bootstrap.ps1
+./scripts/bootstrap.cmd
+python scripts/verify_env.py --profile minimal --json
+python scripts/host_diagnostics.py --json
+python scripts/smoke_test.py --json
+```
 
-Archive installs are guarded: if `plugin-source=archive` is selected but `dist/mine-openclaw-plugin.tar.gz` does not exist, the installer fails before writing config.
+The bootstrap flow creates or reuses a virtualenv, installs layered requirements, runs host diagnostics, verifies the environment, and finishes with a smoke test.
 
-## Config example
+## Runtime environment
 
-See [`openclaw.config.example.jsonc`](./openclaw.config.example.jsonc).
+Required:
 
-This project uses the current OpenClaw `plugins.installs` schema, not the legacy `plugins.entries` format.
+- `PLATFORM_BASE_URL`
+- `MINER_ID`
+
+Important optional variables:
+
+- `SOCIAL_CRAWLER_ROOT`
+- `PYTHON_BIN`
+- `PLATFORM_TOKEN`
+- `CRAWLER_OUTPUT_ROOT`
+- `MINE_CONFIG_PATH`
+- `MINE_GATEWAY_TOKEN`
+- `MINE_GATEWAY_BASE_URL`
+- `MINE_ENRICH_MODEL`
+- `MINE_UPSTREAM_MODEL`
+- `AWP_WALLET_BIN`
+- `AWP_WALLET_TOKEN`
+- `AWP_WALLET_TOKEN_SECRET_REF`
+- `WORKER_STATE_ROOT`
+- `WORKER_MAX_PARALLEL`
+
+`SOCIAL_CRAWLER_ROOT` defaults to the current `mine` project root, so most agents can run without extra path configuration. `MINE_CONFIG_PATH` defaults to `~/.mine/mine.json`.
+
+## Generic payload compatibility
+
+Mine can process compatibility inputs like `generic/page` and `generic` task payloads when a local task file or platform item uses a generic web extraction flow.
+
+## Why skill-only
+
+- one runtime entrypoint for all agents
+- no host-specific install wrapper layer
+- easier portability across Cursor, Codex, Claude, OpenAI-style agents, and plain shell execution
+- clearer separation: `SKILL.md` explains behavior, `scripts/run_tool.py` executes it
+
+## awp-wallet
+
+Mine uses `awp-wallet` for time-limited signing sessions. A typical recovery command is:
+
+```bash
+awp-wallet unlock --duration 3600
+```
+
+Do not store seed phrases or private keys in repository files, config dumps, or logs.
 
 ## Local verification
 
 ```bash
-python scripts/build_openclaw_plugin.py --no-archive
-python -m pytest tests/test_openclaw_plugin_contract.py -q
+python -m pytest tests -q
+python -m pytest crawler/tests/test_bootstrap_assets.py -q
 python scripts/run_tool.py --help
 ```
