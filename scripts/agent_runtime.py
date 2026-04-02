@@ -1317,7 +1317,7 @@ def build_worker_from_env(*, auto_register_awp: bool = False) -> AgentWorker:
     from signer import WalletSigner
 
     output_root = Path(os.environ.get("CRAWLER_OUTPUT_ROOT", str(CRAWLER_ROOT / "output" / "agent-runs"))).resolve()
-    # 默认用当前解释器，避免 Windows 上子进程的 `python` 指向非 venv、缺 httpx 等依赖
+    # Prefer the current interpreter so the child process does not use a bare `python` outside the venv on Windows.
     python_bin = os.environ.get("PYTHON_BIN") or os.environ.get("PLUGIN_PYTHON_BIN") or sys.executable
     state_root = Path(os.environ.get("WORKER_STATE_ROOT", str(output_root / "_worker_state"))).resolve()
     gateway_model_config = resolve_mine_gateway_model_config()
@@ -1339,7 +1339,7 @@ def build_worker_from_env(*, auto_register_awp: bool = False) -> AgentWorker:
         auth_retry_interval_seconds=max(30, int(os.environ.get("AUTH_RETRY_INTERVAL_SECONDS", "300"))),
         gateway_enrich_enabled=bool(gateway_model_config),
         gateway_model_config=gateway_model_config,
-        # 签名参数统一走平台自动发现/缓存链路，再按需被环境变量覆盖。
+        # Signature params follow platform discovery/cache; env vars override when set.
         eip712_domain_name=str(signature_config.get("domain_name") or DEFAULT_EIP712_DOMAIN_NAME),
         eip712_chain_id=int(signature_config.get("chain_id") or DEFAULT_EIP712_CHAIN_ID),
         eip712_verifying_contract=str(

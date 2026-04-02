@@ -10,13 +10,13 @@ from worker_state import WorkerStateStore
 
 
 class SkipClaimedTask(Exception):
-    """平台下发的 claim 任务无法落地（占位 submission、缺失 URL 等），非本机配置错误。"""
+    """Claimed task cannot be materialized (placeholder submission, missing URL, etc.); not a local config fault."""
 
     pass
 
 
 def _is_placeholder_submission_id(submission_id: str) -> bool:
-    """识别测试/占位 submission，避免无意义请求与误报为 worker 错误。"""
+    """Detect test/placeholder submissions to avoid useless requests and false worker errors."""
     s = submission_id.strip().lower()
     if not s:
         return True
@@ -46,7 +46,7 @@ def claimed_task_from_payload(
     url = canonicalize_url(str(enriched_payload.get("url") or enriched_payload.get("target_url") or "").strip())
     if not url:
         if task_type == "repeat_crawl":
-            raise SkipClaimedTask(f"repeat_crawl 任务 {task_id} 在补全后仍无有效 url")
+            raise SkipClaimedTask(f"repeat_crawl task {task_id} still has no valid url after enrichment")
         raise ValueError(f"task {task_id} is missing url")
     platform, resource_type, _ = infer_platform_task(url)
     metadata = dict(enriched_payload)
@@ -73,13 +73,13 @@ def enrich_task_payload(task_type: str, payload: dict[str, Any], *, client: Any 
     if task_type == "repeat_crawl" and submission_id and client is not None:
         if _is_placeholder_submission_id(submission_id):
             raise SkipClaimedTask(
-                f"repeat_crawl 跳过占位 submission_id={submission_id!r}（payload 无 url）"
+                f"repeat_crawl skipping placeholder submission_id={submission_id!r} (payload has no url)"
             )
         try:
             submission = client.fetch_core_submission(submission_id)
         except Exception as exc:
             raise SkipClaimedTask(
-                f"repeat_crawl 无法解析：submission {submission_id} 拉取失败且 payload 无 url"
+                f"repeat_crawl cannot resolve: submission {submission_id} fetch failed and payload has no url"
             ) from exc
         enriched.setdefault("dataset_id", submission.get("dataset_id"))
         enriched.setdefault("url", submission.get("original_url") or submission.get("normalized_url"))
@@ -261,7 +261,7 @@ class BackendClaimSource:
             return claimed_task_to_work_item(task)
         except SkipClaimedTask as exc:
             task_id = optional_string(payload.get("id")) or "unknown"
-            self.last_skips.append(f"claim 跳过 {task_type} task {task_id}: {exc}")
+            self.last_skips.append(f"claim skipped {task_type} task {task_id}: {exc}")
             return None
         except Exception as exc:
             task_id = optional_string(payload.get("id")) or "unknown"

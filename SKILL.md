@@ -20,9 +20,26 @@ requires:
 
 Agent-facing entrypoint for the local mining runtime. OpenClaw and other **plugin host**s load this skill from the repo root; crawler tasks may use `"platform":"generic"` or backtick form `generic` in operator docs.
 
-## Commands (6 canonical)
+## Quick Start (One Command)
 
 ```bash
+python scripts/run_tool.py init          # Auto-configure everything and start mining
+python scripts/run_tool.py init --mainnet  # Use mainnet (requires AWP tokens)
+```
+
+The `init` command automatically:
+- Installs dependencies
+- Sets up awp-wallet
+- Detects and configures API endpoint (testnet/mainnet)
+- Attempts registration
+- Starts mining
+
+**For agents**: Just run `init` once and everything is ready.
+
+## Commands (7 canonical)
+
+```bash
+python scripts/run_tool.py init                      # One-command initialization
 python scripts/run_tool.py agent-status              # Check readiness
 python scripts/run_tool.py agent-start               # Start background mining
 python scripts/run_tool.py agent-control status      # Check mining status

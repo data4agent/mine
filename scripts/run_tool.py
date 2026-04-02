@@ -433,6 +433,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=(
             # Simple setup commands (structured JSON output for weak agents)
+            "init",            # One-command initialization
             "setup",           # Full setup wizard
             "setup-status",    # Check setup status
             "setup-fix",       # Auto-fix issues
@@ -910,6 +911,15 @@ def main() -> int:
     if namespace.command == "doctor":
         print(run_doctor())
         return 0
+
+    if namespace.command == "init":
+        import subprocess
+        init_args = ["--mainnet"] if "--mainnet" in namespace.args else []
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "init_agent.py")] + init_args,
+            cwd=Path(__file__).parent.parent,
+        )
+        return result.returncode
 
     from skill_runtime import (
         classify_intent,

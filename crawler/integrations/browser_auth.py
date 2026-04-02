@@ -35,7 +35,7 @@ def get_platform_login_guide_text(platform: str) -> str:
     platform_name = platform.capitalize()
     if platform == "linkedin":
         platform_name = "LinkedIn"
-    return f"请在远程浏览器中完成 {platform_name} 登录，完成后点击“已完成，继续”"
+    return f"Complete {platform_name} login in the remote browser, then click Done / Continue."
 
 
 def _is_local_browser_mode(state: dict[str, Any]) -> bool:
@@ -128,7 +128,7 @@ class AutoBrowserAuthBridge:
         switch_token = str(state.get("SWITCH_TOKEN", "")).strip()
         if not switch_token or (not public_url and not local_browser_mode):
             raise AutoBrowserAuthError(
-                "auto-browser 已启动，但未拿到 PUBLIC_URL 或 SWITCH_TOKEN",
+                "auto-browser started but PUBLIC_URL or SWITCH_TOKEN is missing",
                 error_code="AUTH_AUTO_LOGIN_FAILED",
                 agent_hint="inspect_auto_browser_state",
                 retryable=False,
@@ -181,7 +181,7 @@ class AutoBrowserAuthBridge:
 
     def _ensure_script_exists(self) -> None:
         if not self.script_path.exists():
-            raise RuntimeError(f"auto-browser 脚本不存在: {self.script_path}")
+            raise RuntimeError(f"auto-browser script not found: {self.script_path}")
 
     def _base_env(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         env = os.environ.copy()
@@ -222,14 +222,14 @@ class AutoBrowserAuthBridge:
         start = self._run_vrd("start", extra_env=extra_env)
         if start.returncode != 0:
             raise RuntimeError(
-                "auto-browser 启动失败: "
-                + (start.stderr.strip() or start.stdout.strip() or "未知错误")
+                "auto-browser failed to start: "
+                + (start.stderr.strip() or start.stdout.strip() or "unknown error")
             )
 
     def _wait_for_state(self) -> dict[str, Any]:
         state_path = self.workdir / "state.json"
         deadline = time.time() + 45
-        last_error = "状态文件不存在"
+        last_error = "state file missing"
         while time.time() < deadline:
             try:
                 if state_path.exists():
@@ -239,7 +239,7 @@ class AutoBrowserAuthBridge:
             except Exception as exc:  # pragma: no cover - defensive runtime path
                 last_error = str(exc)
             time.sleep(1)
-        raise RuntimeError(f"等待 auto-browser 状态超时: {last_error}")
+        raise RuntimeError(f"Timed out waiting for auto-browser state: {last_error}")
 
     def _request_json(
         self,
@@ -263,10 +263,10 @@ class AutoBrowserAuthBridge:
             with urlopen(request, timeout=timeout) as response:
                 payload = response.read().decode("utf-8")
         except URLError as exc:  # pragma: no cover - runtime network path
-            raise RuntimeError(f"调用 auto-browser 控制面失败: {exc}") from exc
+            raise RuntimeError(f"auto-browser control plane request failed: {exc}") from exc
         parsed = json.loads(payload)
         if not isinstance(parsed, dict):
-            raise RuntimeError("auto-browser 控制面返回了非法 JSON")
+            raise RuntimeError("auto-browser control plane returned invalid JSON")
         return parsed
 
     def _open_login_page(self, login_url: str) -> None:
@@ -275,14 +275,14 @@ class AutoBrowserAuthBridge:
         opened = self._run_agent_browser("open", login_url)
         if opened.returncode != 0:
             raise AutoBrowserAuthError(
-                "auto-browser 打开登录页失败: "
-                + (opened.stderr.strip() or opened.stdout.strip() or "未知错误"),
+                "auto-browser failed to open login page: "
+                + (opened.stderr.strip() or opened.stdout.strip() or "unknown error"),
                 error_code="AUTH_AUTO_LOGIN_FAILED",
                 agent_hint="inspect_agent_browser",
                 retryable=False,
                 login_url=login_url,
             )
-        # LinkedIn 登录页在某些环境下可能长时间无法进入 networkidle，这里只做尽力等待。
+        # LinkedIn login may never reach networkidle; best-effort wait only.
         try:
             subprocess.run(
                 [
@@ -321,10 +321,10 @@ class AutoBrowserAuthBridge:
         )
         print(f"[AUTH] {guide_text}")
         if public_url:
-            print("[AUTH] 请打开以下地址继续：")
+            print("[AUTH] Open this URL to continue:")
             print(public_url)
         else:
-            print("[AUTH] 已打开本地浏览器，请完成登录。")
+            print("[AUTH] Local browser opened; complete login there.")
         try:
             if public_url:
                 self._poll_continue_signal(
@@ -367,7 +367,7 @@ class AutoBrowserAuthBridge:
                 pass
             time.sleep(2)
         raise AutoBrowserAuthError(
-            "等待本地浏览器完成登录超时",
+            "Timed out waiting for local browser login",
             error_code="AUTH_INTERACTIVE_TIMEOUT",
             agent_hint="open_local_browser_and_complete_login",
             retryable=True,
@@ -399,7 +399,7 @@ class AutoBrowserAuthBridge:
                 self._try_export_existing_session(platform, session_path)
                 return
         raise AutoBrowserAuthError(
-            "等待用户完成登录超时",
+            "Timed out waiting for user to finish login",
             error_code="AUTH_INTERACTIVE_TIMEOUT",
             agent_hint="open_public_url_and_complete_login",
             retryable=True,
@@ -411,6 +411,6 @@ class AutoBrowserAuthBridge:
         export = self._run_vrd("export-session", platform, str(session_path))
         if export.returncode != 0:
             raise RuntimeError(
-                f"导出 {platform} 会话失败: "
-                + (export.stderr.strip() or export.stdout.strip() or "未知错误")
+                f"Failed to export {platform} session: "
+                + (export.stderr.strip() or export.stdout.strip() or "unknown error")
             )

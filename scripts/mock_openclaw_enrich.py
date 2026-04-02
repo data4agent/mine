@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 """
-在不启动 OpenClaw Gateway 的情况下，复现与线上相同的 enrich 收尾路径：
+Reproduce the same enrich completion path as production **without** starting OpenClaw Gateway:
 
-1) OpenClaw Gateway 走的是 LLMClient 的 ``/responses``（provider=openclaw）。
-2) 本脚本改为使用 **OpenAI 兼容** 的 ``POST {base_url}/chat/completions``，
-   与 LLMClient 在非 openclaw 分支一致，然后调用与 ``fill-enrichment`` 相同的
-   ``EnrichPipeline.fill_pending_agent_result`` 写回记录。
+1) OpenClaw Gateway uses LLMClient ``/responses`` (provider=openclaw).
+2) This script uses **OpenAI-compatible** ``POST {base_url}/chat/completions`` (same as LLMClient’s
+   non-openclaw branch), then calls ``EnrichPipeline.fill_pending_agent_result`` like ``fill-enrichment``.
 
-典型用法（先保证记录里是 pending_agent，或对本脚本使用 --recover-failed）::
+Typical usage (ensure records are ``pending_agent``, or use ``recover-pending`` first)::
 
-    # 仅导出 prompt，便于外接任意 LLM
+    # Export prompts only (wire to any LLM)
     python scripts/mock_openclaw_enrich.py export-pending --records output/x/records.jsonl
 
-    # 将失败于 Gateway 的 enrich 先重算为 pending_agent（无 LLM）
+    # Re-run enrich without LLM so failed groups become pending_agent (with prompt)
     python scripts/mock_openclaw_enrich.py recover-pending --records output/x/records.jsonl --in-place
 
-    # 用 Chat Completions 补全（模仿非 Gateway 的 enrich 调用链）
+    # Chat Completions fill (same chain as non-Gateway enrich)
     python scripts/mock_openclaw_enrich.py chat-complete --records output/x/records.jsonl \\
         --model-config references/model_config_chat_completions.example.json --output output/x/records.filled.jsonl
 
-环境变量可覆盖配置文件中的 api_key：OPENAI_API_KEY（或 MINE_CHAT_API_KEY）。
+Environment variables override API keys in config: ``OPENAI_API_KEY`` or ``MINE_CHAT_API_KEY``.
 """
 from __future__ import annotations
 
@@ -31,7 +30,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# 允许从 mine 根目录直接运行
+# Allow running from mine repo root
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _MINE_ROOT = _SCRIPT_DIR.parent
 if str(_MINE_ROOT) not in sys.path:
@@ -51,7 +50,7 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
 
 
 def _extract_chat_content(data: dict[str, Any]) -> str:
-    """与 crawler.enrich.generative.llm_client.LLMClient._extract_content 行为一致（chat completions）。"""
+    """Match ``LLMClient._extract_content`` for chat completions responses."""
     choices = data.get("choices", [])
     if not choices:
         return ""
@@ -66,7 +65,7 @@ def _extract_chat_content(data: dict[str, Any]) -> str:
 
 
 async def _recover_pending(record: dict[str, Any]) -> dict[str, Any]:
-    """对单条记录重新跑一遍无 LLM 的 enrich，使生成类组变为 pending_agent（带 prompt）。"""
+    """Re-run enrich without LLM so generative groups become pending_agent (with prompt)."""
     from crawler.enrich.pipeline import EnrichPipeline
     from crawler.platforms.registry import get_platform_adapter
 
@@ -119,7 +118,7 @@ async def cmd_recover_pending(args: argparse.Namespace) -> int:
         else:
             out.append(rec)
     _write_jsonl(out_path, out)
-    print(f"已写入 {len(out)} 条 -> {out_path}")
+    print(f"Wrote {len(out)} records -> {out_path}")
     return 0
 
 
@@ -196,7 +195,7 @@ async def cmd_chat_complete(args: argparse.Namespace) -> int:
         or str(cfg.get("api_key", "")).strip()
     )
     if not api_key or api_key.startswith("REPLACE"):
-        print("错误: 请在 model_config 中配置 api_key，或设置环境变量 OPENAI_API_KEY / MINE_CHAT_API_KEY", file=sys.stderr)
+        print("Error: set api_key in model_config or OPENAI_API_KEY / MINE_CHAT_API_KEY", file=sys.stderr)
         return 1
 
     base_url = str(cfg.get("base_url", "https://api.openai.com/v1")).strip()
@@ -222,7 +221,7 @@ async def cmd_chat_complete(args: argparse.Namespace) -> int:
         )
     out_path = Path(args.output)
     _write_jsonl(out_path, updated)
-    print(f"已补全并写入 {len(updated)} 条 -> {out_path}")
+    print(f"Wrote {len(updated)} filled records -> {out_path}")
     return 0
 
 
@@ -255,7 +254,7 @@ def cmd_export_pending(args: argparse.Namespace) -> int:
             )
     out = Path(args.output)
     out.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"已导出 {len(rows)} 条 pending prompt -> {out}")
+    print(f"Exported {len(rows)} pending prompts -> {out}")
     return 0
 
 
@@ -270,28 +269,28 @@ def _dispatch(ns: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="模仿非 Gateway 的 LinkedIn enrich（Chat Completions + fill_pending）")
+    parser = argparse.ArgumentParser(description="LinkedIn-style enrich without Gateway (Chat Completions + fill_pending)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_rec = sub.add_parser("recover-pending", help="将 LLM 失败的组重算为 pending_agent（不调用外部 LLM）")
-    p_rec.add_argument("--records", required=True, help="records.jsonl 路径")
-    p_rec.add_argument("--output", default="", help="输出路径（与 --in-place 二选一）")
-    p_rec.add_argument("--in-place", action="store_true", help="覆盖原 records 文件")
-    p_rec.add_argument("--all", action="store_true", help="无论是否失败都重算 enrich")
+    p_rec = sub.add_parser("recover-pending", help="Recompute failed groups to pending_agent (no external LLM)")
+    p_rec.add_argument("--records", required=True, help="Path to records.jsonl")
+    p_rec.add_argument("--output", default="", help="Output path (unless --in-place)")
+    p_rec.add_argument("--in-place", action="store_true", help="Overwrite the records file")
+    p_rec.add_argument("--all", action="store_true", help="Re-run enrich for all records, not only failures")
 
-    p_chat = sub.add_parser("chat-complete", help="对 pending_agent 组走 Chat Completions 并写回（等同手动 fill-enrichment）")
+    p_chat = sub.add_parser("chat-complete", help="Run Chat Completions for pending_agent groups (like fill-enrichment)")
     p_chat.add_argument("--records", required=True)
     p_chat.add_argument("--output", required=True)
-    p_chat.add_argument("--model-config", required=True, help="OpenAI 兼容配置 JSON，见 references/model_config_chat_completions.example.json")
+    p_chat.add_argument("--model-config", required=True, help="OpenAI-compatible JSON; see references/model_config_chat_completions.example.json")
 
-    p_exp = sub.add_parser("export-pending", help="导出 pending_agent 的 prompt 列表 JSON")
+    p_exp = sub.add_parser("export-pending", help="Export pending_agent prompts as JSON")
     p_exp.add_argument("--records", required=True)
     p_exp.add_argument("--output", required=True)
 
     ns = parser.parse_args()
     if ns.command == "recover-pending":
         if not ns.in_place and not ns.output:
-            print("错误: 请指定 --output 或使用 --in-place", file=sys.stderr)
+            print("Error: specify --output or --in-place", file=sys.stderr)
             return 1
     return _dispatch(ns)
 

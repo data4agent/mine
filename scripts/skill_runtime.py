@@ -186,7 +186,7 @@ def _version_lines() -> list[str]:
 def render_first_load_experience() -> str:
     """
     Scene 1: Welcome & Dependency Check
-    匹配 HTML 设计稿的欢迎界面
+    Matches the HTML mock welcome screen.
     """
     wallet_ok, wallet_line, wallet_fixes = _wallet_ready()
     crawler_ok, crawler_line, crawler_fixes = _crawler_ready()
@@ -199,7 +199,7 @@ def render_first_load_experience() -> str:
         "",
     ]
 
-    # 添加版本检查信息
+    # Version check block
     lines.extend(_version_lines())
 
     lines.extend([
@@ -286,8 +286,8 @@ def render_dataset_listing(client_or_datasets: Any) -> str:
 
 def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str] | None = None) -> str:
     """
-    Scene 2: Start Mining (首次确认)
-    匹配 HTML 设计稿的开始挖矿流程
+    Scene 2: Start Mining (first confirmation)
+    Matches the HTML mock start-mining flow.
     """
     try:
         payload = worker.start_working(selected_dataset_ids=selected_dataset_ids)
@@ -696,7 +696,7 @@ def render_pause_response(
 ) -> str:
     """
     Scene 5: Pause & Resume
-    匹配 HTML 设计稿的暂停界面
+    Matches the HTML mock pause screen.
     """
     lines = []
 
@@ -734,7 +734,7 @@ def render_resume_response(
 ) -> str:
     """
     Scene 5: Resume
-    匹配 HTML 设计稿的恢复界面
+    Matches the HTML mock resume screen.
     """
     lines = [
         f"{SYM_CHECK} Restored state from previous session",
@@ -770,7 +770,7 @@ def render_session_summary(
 ) -> str:
     """
     Scene 6: Stop Mining & Session Summary
-    匹配 HTML 设计稿的会话结束界面
+    Matches the HTML mock session-end screen.
     """
     lines = [
         "Mining session ended.",
@@ -812,7 +812,7 @@ def render_epoch_settlement(
 ) -> str:
     """
     Scene 6: Epoch Settlement
-    匹配 HTML 设计稿的 epoch 结算界面
+    Matches the HTML mock epoch settlement screen.
     """
     lines = [
         SYM_DIVIDER,

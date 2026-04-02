@@ -290,6 +290,7 @@ def normalize_date_text(date_str: str | None) -> str | None:
 
     cleaned = str(date_str).strip().replace("‎", "").replace("‏", "")
 
+    # Chinese-locale date (e.g. Amazon.cn product detail)
     cn_match = re.search(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日", cleaned)
     if cn_match:
         year, month, day = cn_match.groups()

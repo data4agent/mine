@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# LinkedIn adapter: regexes and literals may include non-English UI text for localized pages.
+
 import json
 import re
 from datetime import datetime, timezone

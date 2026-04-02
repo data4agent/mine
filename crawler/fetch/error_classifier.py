@@ -74,6 +74,7 @@ def classify_content(html: str | None, final_url: str) -> FetchError | None:
     """Detect content-level issues in a fetched page."""
     lower_final_url = final_url.lower()
     lower = (html or "").lower()
+    # LinkedIn China flow: phone + real-name verification (CN UI strings)
     if "/check/china/add-phone" in lower_final_url or (
         "添加电话号码" in (html or "")
         and "实名认证" in (html or "")

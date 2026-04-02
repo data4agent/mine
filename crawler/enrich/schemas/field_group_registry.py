@@ -57,10 +57,10 @@ class FieldGroupSpec:
     generative_config: GenerativeConfig | None = None
     passthrough_config: PassthroughConfig | None = None
     min_extractive_confidence: float = 0.8
-    # 新增字段
-    requires_vision: bool = False  # 是否需要视觉能力（多模态）
-    platform: str = ""  # 适用平台: linkedin, arxiv, wikipedia, amazon, base
-    subdataset: str = ""  # 子数据集: profiles, company, jobs, posts, products, reviews, sellers, transactions, addresses, contracts, defi
+    # Optional flags
+    requires_vision: bool = False  # Whether the model needs vision (multimodal)
+    platform: str = ""  # Target platform: linkedin, arxiv, wikipedia, amazon, base
+    subdataset: str = ""  # Sub-dataset: profiles, company, jobs, posts, products, reviews, sellers, transactions, addresses, contracts, defi
     auto_platforms: tuple[str, ...] = field(default_factory=tuple)
     auto_resource_types: tuple[str, ...] = field(default_factory=tuple)
 

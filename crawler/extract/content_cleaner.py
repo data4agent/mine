@@ -44,8 +44,8 @@ def _load_platform_selectors() -> dict[str, list[str]]:
     return _platform_selectors_cache
 
 
-# 规范上应为 void 的标签若被子节点错误嵌套（常见于畸形 HTML + html.parser），
-# 会导致正文挂在 img 等标签下；后续再按 display:none 整棵删除会误删主内容。
+# Void elements must not wrap element children; broken HTML (often html.parser) can nest
+# content under img etc., so later display:none pruning would strip real body text.
 _VOID_TAGS = frozenset(
     {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 )
@@ -64,7 +64,7 @@ def _matches_noise_pattern(tag: Tag) -> bool:
 
 
 def _unwrap_void_with_element_children(tag: Tag) -> bool:
-    """void 标签不应包含元素子节点；若存在则展开标签，把子树提升到父级。"""
+    """Unwrap void tags that incorrectly contain element children (hoist subtree to parent)."""
     if tag.name not in _VOID_TAGS:
         return False
     has_element_child = any(isinstance(c, Tag) for c in tag.children)
@@ -96,7 +96,7 @@ class ContentCleaner:
         soup = parse_html(html)
         noise_removed = 0
 
-        # 0. 修复 void 标签错误嵌套（在删除隐藏节点之前）
+        # 0. Fix void-tag mis-nesting before hidden-node removal
         for tag in list(soup.find_all(True)):
             if isinstance(tag, Tag) and _unwrap_void_with_element_children(tag):
                 noise_removed += 1
@@ -128,7 +128,7 @@ class ContentCleaner:
             except Exception:
                 pass
 
-        # 5. 删除隐藏节点。void 误嵌套已在步骤 0 展开，这里保持隐藏内容不泄漏到正文。
+        # 5. Drop hidden nodes (void mis-nesting already fixed in step 0)
         for tag in _collect_hidden_candidates(soup):
             if not isinstance(tag, Tag) or tag.parent is None:
                 continue

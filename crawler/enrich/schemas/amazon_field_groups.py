@@ -16,7 +16,7 @@ from crawler.enrich.schemas.field_group_registry import (
 # 4.1 Amazon Products Dataset  (15 field groups)
 # ---------------------------------------------------------------------------
 
-_products_identity = FieldGroupSpec(  # 产品身份和品牌标准化
+_products_identity = FieldGroupSpec(
     name="amazon_products_identity",
     description="Product identity and brand standardization",
     required_source_fields=["title", "brand"],
@@ -31,7 +31,7 @@ _products_identity = FieldGroupSpec(  # 产品身份和品牌标准化
     subdataset="products",
 )
 
-_products_pricing = FieldGroupSpec(  # 价格分析、等级分类和交易质量评分
+_products_pricing = FieldGroupSpec(
     name="amazon_products_pricing",
     description="Price analysis, tier classification, and deal quality scoring",
     required_source_fields=["price", "category"],
@@ -48,7 +48,7 @@ _products_pricing = FieldGroupSpec(  # 价格分析、等级分类和交易质�
     subdataset="products",
 )
 
-_products_description = FieldGroupSpec(  # 结构化特征提取、规格表、使用案例和目标受众推断
+_products_description = FieldGroupSpec(
     name="amazon_products_description",
     description="Structured feature extraction, spec table, use cases, and target audience inference",
     required_source_fields=["description", "bullet_points"],
@@ -64,7 +64,7 @@ _products_description = FieldGroupSpec(  # 结构化特征提取、规格表、�
     subdataset="products",
 )
 
-_products_category = FieldGroupSpec(  # 类别标准化、 niche 标签和季节相关性
+_products_category = FieldGroupSpec(
     name="amazon_products_category",
     description="Category standardization, niche tagging, and seasonal relevance",
     required_source_fields=["category", "title"],

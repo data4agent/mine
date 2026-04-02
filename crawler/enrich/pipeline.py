@@ -202,7 +202,7 @@ class EnrichPipeline:
             return FieldGroupResult(
                 field_group=spec.name,
                 status="skipped",
-                error="需要视觉能力但当前模型不支持 (requires_vision=True but model lacks vision capability)",
+                error="Vision required but model lacks vision capability (requires_vision=True)",
                 latency_ms=int((time.monotonic() - start) * 1000),
             )
 

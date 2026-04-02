@@ -135,7 +135,7 @@ def extract_html_with_crawl4ai(
     platform: str = "",
     resource_type: str = "",
 ) -> Crawl4AIExtractionResult:
-    del url  # 仅保留函数签名一致性，当前 raw HTML 模式不需要原始 URL。
+    del url  # Signature parity; raw HTML path does not use the URL.
 
     if not html.strip():
         return Crawl4AIExtractionResult(

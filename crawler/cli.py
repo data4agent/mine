@@ -15,7 +15,7 @@ from .output.jsonl_writer import write_jsonl
 from .output.summary_writer import build_summary, write_manifest, write_summary
 
 
-def _parse_command(value: str) -> CrawlCommand: #->表示返回值的类型，CrawlCommand是枚举类型，value是字符串，枚举类型只能取枚举值中的一个
+def _parse_command(value: str) -> CrawlCommand:  # Parse CLI string into CrawlCommand enum
     try:
         return CrawlCommand(value)
     except ValueError as exc:
@@ -51,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparser.add_argument(
             "--auto-login",
             action="store_true",
-            help="对需要认证的平台自动调用内建浏览器登录流程并导出会话",
+            help="For auth-gated platforms, run the built-in browser login flow and export session state",
         )
         subparser.add_argument("--platform")
         subparser.add_argument("--backend")

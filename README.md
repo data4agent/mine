@@ -54,23 +54,23 @@ Defaults now cover the normal OpenClaw happy path:
 
 Required for authenticated mining:
 
-- 默认情况下不需要手动设置；Mine 会优先从本地状态恢复钱包会话，必要时自动 `init + unlock`
-- 只有在接入外部 Secret 管理或自定义宿主时，才需要 `AWP_WALLET_TOKEN` 或 `AWP_WALLET_TOKEN_SECRET_REF`
+- Usually nothing manual: Mine restores wallet sessions from local state first and runs `init + unlock` when needed.
+- Set `AWP_WALLET_TOKEN` or `AWP_WALLET_TOKEN_SECRET_REF` only when using external secret stores or custom hosts.
 
-Signature configuration is also auto-managed now:
+Signature configuration is also auto-managed:
 
-- Mine 会优先尝试从平台拉取 `GET /api/public/v1/signature-config`
-- 拉取成功后会覆盖本地默认值，并写入本地 worker state 缓存
-- 如果平台暂时不可达，才回退到内置 aDATA 默认值
-- `doctor` / `bootstrap` 会明确显示当前签名配置来源是 `platform` 还是 `fallback`
-- 只有在特殊兼容场景下，才需要手动覆盖 `EIP712_*`
+- Mine fetches `GET /api/public/v1/signature-config` from the platform when possible.
+- On success, values override local defaults and are cached under worker state.
+- If the platform is unreachable, built-in aDATA defaults apply.
+- `doctor` / `bootstrap` show whether config came from `platform` or `fallback`.
+- Override `EIP712_*` only for special compatibility cases.
 
-Registration is also auto-managed now:
+Registration is also auto-managed:
 
-- Mine 会在启动链路检查当前钱包是否已经在 AWP 注册
-- 若未注册，会自动尝试 gasless 自注册，本质是 `setRecipient(self)`
-- 自动注册成功后继续启动；若仍未完成，`doctor` 会显示当前注册状态
-- 如需切换 AWP 接口，可通过 `AWP_API_URL` 覆盖默认 `https://api.awp.sh/api`
+- On startup, Mine checks whether the wallet is registered with AWP.
+- If not, it attempts a gasless self-registration (`setRecipient(self)`).
+- After success, startup continues; otherwise `doctor` shows registration status.
+- Override the AWP API with `AWP_API_URL` (default `https://api.awp.sh/api`) when switching endpoints.
 
 Important nuance: low-level platform status calls derive the miner identity from the wallet address. `MINER_ID` is now just a helper-layer compatibility default and does not need to be configured manually in the common case.
 
