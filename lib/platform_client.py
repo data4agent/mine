@@ -68,7 +68,7 @@ class PlatformClient:
         return payload
 
     def send_miner_heartbeat(self, *, client_name: str) -> None:
-        self._request("POST", "/api/mining/v1/miners/heartbeat", {"client": client_name})
+        self.send_unified_heartbeat(client_name=client_name)
 
     def claim_repeat_crawl_task(self) -> dict[str, Any] | None:
         return self._claim("/api/mining/v1/repeat-crawl-tasks/claim")
@@ -139,7 +139,26 @@ class PlatformClient:
             },
         )
 
-    def check_url_occupancy(self, dataset_id: str, url: str) -> dict[str, Any]:
+    def check_url_occupancy(
+        self,
+        dataset_id: str,
+        url: str,
+        *,
+        structured_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        dedup_payload = {
+            "dataset_id": dataset_id,
+            "structured_data": self._build_occupancy_structured_data(url, structured_data),
+        }
+        try:
+            resp = self._request("POST", "/api/core/v1/dedup-occupancies/check", dedup_payload)
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code != 404:
+                raise
+        else:
+            data = resp.get("data")
+            return data if isinstance(data, dict) else {}
+
         encoded_url = quote(url, safe="")
         try:
             resp = self._request(
@@ -153,6 +172,17 @@ class PlatformClient:
             raise
         data = resp.get("data")
         return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def _build_occupancy_structured_data(url: str, structured_data: dict[str, Any] | None) -> dict[str, Any]:
+        payload = dict(structured_data or {})
+        payload.setdefault("canonical_url", url)
+        payload.setdefault("url", url)
+        return {
+            key: value
+            for key, value in payload.items()
+            if value not in (None, "", [], {})
+        }
 
     def fetch_miner_status(self) -> dict[str, Any]:
         miner_id = self._signer.get_address() if self._signer else ""

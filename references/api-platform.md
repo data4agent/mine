@@ -16,7 +16,7 @@ Known values in current project docs:
 When a wallet signer is available, requests include:
 
 | Header | Purpose |
-|---|---|
+| --- | --- |
 | `Content-Type` | Request body type |
 | `X-Request-ID` | Request correlation ID |
 | `X-Signer` | Wallet address from `awp-wallet receive` |
@@ -47,10 +47,9 @@ Runtime priority is:
 
 ```text
 POST /api/mining/v1/heartbeat
-POST /api/mining/v1/miners/heartbeat
 ```
 
-Used to confirm registration state, credit score, and epoch status.
+Current Swagger exposes the unified heartbeat route only. `send_miner_heartbeat()` in Mine now maps to the unified route.
 
 ### Dataset listing
 
@@ -71,10 +70,19 @@ POST /api/mining/v1/refresh-tasks/{taskId}/report
 ### Occupancy and submission
 
 ```text
-GET /api/core/v1/url-occupancies/check?dataset_id={id}&url={encodedUrl}
+POST /api/core/v1/dedup-occupancies/check
+GET /api/core/v1/dedup-occupancies/{datasetId}/{dedupHash}
 POST /api/core/v1/submissions
 GET /api/core/v1/submissions/{submissionId}
 ```
+
+Note: the current runtime still contains a legacy URL-occupancy probe path:
+
+```text
+GET /api/core/v1/url-occupancies/check?dataset_id={id}&url={encodedUrl}
+```
+
+On the current test platform this legacy route returns `404`, while Swagger documents the newer dedup-occupancy APIs above.
 
 ### Preflight and PoW
 
@@ -96,7 +104,7 @@ GET /api/mining/v1/miners/{walletAddress}/reward-summary
 ## Runtime behavior by status code
 
 | Status | Meaning | Runtime behavior |
-|---|---|---|
+| --- | --- | --- |
 | `401` + `MISSING_HEADERS` | Signed headers missing | Fail fast with setup guidance |
 | `401` + `UNAUTHORIZED` / `TOKEN_EXPIRED` / `SESSION_EXPIRED` | Wallet session expired | Renew wallet session once, then retry |
 | `401` + `UNTRUSTED_HOST` | Wallet not allowed on current host/platform | Surface to operator; no auto-fix |
