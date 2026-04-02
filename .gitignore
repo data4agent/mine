@@ -1,4 +1,4 @@
-# 测试与构建缓存
+# Test and build caches
 .pytest-tmp/
 .pytest_cache/
 pytest-cache-files-*/
@@ -11,28 +11,28 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# 本地虚拟环境
+# Local virtualenvs
 .venv/
 venv/
 *.egg-info/
 .mine-setup.json
 
-# 本地密钥与配置（勿提交；模板见 .env.example）
+# Secrets and local config (do not commit; see .env.example)
 .env
 .env.*
 !.env.example
 
-# 运行时 / 工具生成（不宜上线）
+# Runtime / tool-generated output
 output/
 .sessions/
 .omx/
 .tmp-debug*/
 
-# 本地目录不纳入版本库（测试在本地维护）
+# Local-only directories (maintain tests locally)
 tests/
 crawler/tests/
 
-# 本地规划与草稿（个人笔记）
+# Local planning drafts (personal notes)
 1.md
 my-task
 my-task.md
@@ -43,14 +43,14 @@ social-data-crawler-code-review-optimization-2026-04-01.md
 会议记录.md
 schema(1)/
 
-# 开发调试脚本（临时测试文件）
+# Ad-hoc debug scripts
 test_*.py
 diagnose_*.py
 scripts/test_*.py
 scripts/test_*.sh
 scripts/test_*.cmd
 
-# 临时文档（开发过程）
+# Temporary docs during development
 AUTHENTICATION_DIAGNOSIS.md
 BATCH_PROGRESS_STATUS.md
 CHANGES_EIP712.md
@@ -67,7 +67,7 @@ docs/AWP_WALLET_AUTO_INSTALL.md
 docs/PLATFORM_REGISTRATION.md
 docs/superpowers/
 
-# 本地分析与测试产物（不入库）
+# Local analysis artifacts
 docs/amazon-extract-normalize-gap-analysis.md
 docs/amazon-phase1-implementation-complete.md
 docs/schema-coverage-gap.md
