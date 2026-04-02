@@ -253,6 +253,20 @@ class JsonExtractor:
                 return
             set_field(name, value, source)
 
+        # Extract ASIN and marketplace from URL (REQUIRED fields for schema compliance)
+        asin = self._extract_asin_from_url(canonical_url)
+        marketplace = self._extract_marketplace_from_url(canonical_url)
+
+        if asin:
+            set_field("asin", asin, "amazon_url:asin")
+            set_field("marketplace", marketplace, "amazon_url:marketplace")
+            set_field("dedup_key", f"{asin}_{marketplace}", "computed:asin+marketplace")
+            # Canonical URL: normalized format https://www.amazon.{marketplace}/dp/{asin}
+            set_field("canonical_url", f"https://www.amazon.{marketplace}/dp/{asin}", "computed:canonical")
+
+        # Store original URL if different from canonical
+        set_field("URL", canonical_url, "fetch:original_url")
+
         title_node = soup.select_one("#productTitle")
         if title_node is not None:
             set_field("title", title_node.get_text(" ", strip=True), "amazon_html:#productTitle")
@@ -343,6 +357,14 @@ class JsonExtractor:
                 if absolute not in images:
                     images.append(absolute)
             set_field("images", images, "amazon_html:images")
+            # Set main_image as first image
+            if images:
+                set_field("main_image", images[0], "amazon_html:images[0]")
+
+        # Check for A+ content presence
+        aplus_modules = soup.select(".aplus-module, #aplus")
+        if aplus_modules:
+            set_field("a_plus_content_present", True, "amazon_html:.aplus-module")
 
         description_node = soup.select_one("#productDescription, #productDescription_feature_div, #bookDescription_feature_div")
         if description_node is not None:
@@ -486,6 +508,28 @@ class JsonExtractor:
         if match:
             return match.group(2).strip()
         return None
+
+    def _extract_asin_from_url(self, url: str) -> str | None:
+        """Extract ASIN from Amazon URL.
+
+        Supports patterns:
+        - /dp/B0ABCD1234
+        - /gp/product/B0ABCD1234
+        - /dp/B0ABCD1234/ref=...
+        """
+        match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?#]|$)', url)
+        return match.group(1) if match else None
+
+    def _extract_marketplace_from_url(self, url: str) -> str:
+        """Extract marketplace code from Amazon URL.
+
+        Examples:
+        - amazon.com → 'com'
+        - amazon.co.uk → 'co.uk'
+        - amazon.de → 'de'
+        """
+        match = re.search(r'amazon\.([a-z.]+)', url, re.IGNORECASE)
+        return match.group(1) if match else 'com'
 
     def _extract_amazon_embedded_json_objects(self, soup: BeautifulSoup) -> list[dict[str, Any]]:
         objects: list[dict[str, Any]] = []

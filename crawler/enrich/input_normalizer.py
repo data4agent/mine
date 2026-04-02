@@ -114,6 +114,10 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
     if platform == "linkedin" and resource_type == "profile":
         _setdefault_from_candidates(document, "name", "title")
         _setdefault_from_candidates(document, "profile_url", "canonical_url")
+        _setdefault_from_candidates(document, "avatar_url", "avatar", "avatar_url")
+        _setdefault_from_candidates(document, "follower_count", "followers")
+        _setdefault_from_candidates(document, "connection_count", "connections")
+        _setdefault_from_candidates(document, "posts", "featured_content", "posts_count")
         return
 
     if platform == "linkedin" and resource_type == "company":
@@ -121,12 +125,32 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
         _setdefault_from_candidates(document, "about", "description", "summary", "plain_text")
         _setdefault_from_candidates(document, "employee_count", "staff_count")
         _setdefault_from_candidates(document, "company_url", "canonical_url")
+        _setdefault_from_candidates(document, "company_posts", "posts_recent")
+        _setdefault_from_candidates(document, "job_postings", "jobs", "open_jobs")
         return
 
     if platform == "linkedin" and resource_type == "job":
         _setdefault_from_candidates(document, "job_title", "title", "headline")
         _setdefault_from_candidates(document, "job_description", "description", "plain_text")
-        _setdefault_from_candidates(document, "posted_date", "published_at", "listed_at")
+        _setdefault_from_candidates(document, "location", "job_location", "location")
+        _setdefault_from_candidates(document, "posted_date", "date_posted", "published_at", "listed_at")
+        return
+
+    if platform == "linkedin" and resource_type == "post":
+        _setdefault_from_candidates(document, "post_text", "body", "plain_text")
+        _setdefault_from_candidates(document, "like_count", "num_likes", "reaction_count")
+        _setdefault_from_candidates(document, "comment_count", "num_comments", "comment_count")
+        _setdefault_from_candidates(document, "share_count", "num_shares", "repost_count")
+        _setdefault_from_candidates(document, "author_profile_url", "user_url", "author_profile_url")
+        _setdefault_from_candidates(document, "posted_date", "date_posted")
+        if document.get("post_media_urls") in (None, "", [], {}):
+            media_urls: list[Any] = []
+            for key in ("images", "videos"):
+                value = document.get(key)
+                if isinstance(value, list):
+                    media_urls.extend(item for item in value if item not in (None, ""))
+            if media_urls:
+                document["post_media_urls"] = media_urls
         return
 
     if platform == "wikipedia" and resource_type == "article":

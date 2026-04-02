@@ -404,12 +404,19 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                 root_for_rel=config.output_dir,
             )
 
+            normalized_structured = adapter.normalize_record(
+                record,
+                discovered,
+                legacy_extracted,
+                {"document_blocks": extracted_doc.structured.platform_fields.get("pdf_document_blocks", [])},
+            )
+
             # Step 4: Enrich (if field_groups specified or running full pipeline)
             if config.command in (CrawlCommand.RUN, CrawlCommand.ENRICH):
                 enrichment_request = adapter.build_enrichment_request(record, config.field_groups)
                 field_groups = list(enrichment_request.get("field_groups") or ["summaries"])
                 # Prepare document for enrichment
-                enrich_input = _build_enrich_input_from_record({
+                enrich_seed = {
                     "doc_id": extracted_doc.doc_id,
                     "canonical_url": url,
                     "platform": platform,
@@ -419,7 +426,16 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                     "structured": extracted_doc.structured.platform_fields,
                     "title": extracted_doc.structured.title,
                     "description": extracted_doc.structured.description,
-                })
+                }
+                if isinstance(normalized_structured, dict):
+                    enrich_seed.update({key: value for key, value in normalized_structured.items() if value not in (None, "", [], {})})
+                    structured_fields = enrich_seed.get("structured")
+                    if isinstance(structured_fields, dict):
+                        enrich_seed["structured"] = {
+                            **structured_fields,
+                            **{key: value for key, value in normalized_structured.items() if value not in (None, "", [], {})},
+                        }
+                enrich_input = _build_enrich_input_from_record(enrich_seed)
                 enriched = await enrich_pipeline.enrich(enrich_input, field_groups)
                 enrichment_result = enriched.to_dict()
             else:
@@ -448,12 +464,6 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                 "chunking_strategy": extracted_doc.quality.chunking_strategy,
                 "total_chunks": extracted_doc.total_chunks,
             }
-            normalized_structured = adapter.normalize_record(
-                record,
-                discovered,
-                legacy_extracted,
-                {"document_blocks": extracted_doc.structured.platform_fields.get("pdf_document_blocks", [])},
-            )
             if isinstance(normalized_structured, dict):
                 normalized.update({key: value for key, value in normalized_structured.items() if key not in normalized})
             if enrichment_result:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -76,6 +77,23 @@ def build_url(record: dict) -> dict:
 
 
 def build_seed_records(record: dict) -> list[DiscoveryRecord]:
+    url = record.get("url")
+    if isinstance(url, str) and url:
+        inferred = _infer_identity_from_url(record, url)
+        if inferred is not None:
+            return [
+                DiscoveryRecord(
+                    platform=str(record.get("platform") or "generic"),
+                    resource_type=str(record.get("resource_type") or "page"),
+                    discovery_mode=DiscoveryMode.CANONICALIZED_INPUT,
+                    canonical_url=inferred["canonical_url"],
+                    identity=inferred["identity"],
+                    source_seed=record,
+                    discovered_from=None,
+                    metadata={"artifacts": dict(record.get("artifacts") or {})},
+                )
+            ]
+
     if record.get("canonical_url"):
         canonical_url = str(record["canonical_url"])
         identity = {
@@ -110,3 +128,27 @@ def build_seed_records(record: dict) -> list[DiscoveryRecord]:
             metadata={"artifacts": discovered["artifacts"]},
         )
     ]
+
+
+def _infer_identity_from_url(record: dict, url: str) -> dict[str, object] | None:
+    platform = str(record.get("platform") or "")
+    resource_type = str(record.get("resource_type") or "")
+    if platform != "linkedin":
+        return None
+
+    patterns = (
+        ("profile", r"^https://www\.linkedin\.com/in/([^/]+)/?$", "public_identifier"),
+        ("company", r"^https://www\.linkedin\.com/company/([^/]+)/?$", "company_slug"),
+        ("job", r"^https://www\.linkedin\.com/jobs/view/(\d+)/?$", "job_id"),
+        ("post", r"^https://www\.linkedin\.com/feed/update/(urn:li:activity:\d+)/?$", "activity_urn"),
+    )
+    for expected_type, pattern, field_name in patterns:
+        if resource_type != expected_type:
+            continue
+        match = re.match(pattern, url)
+        if match:
+            return {
+                "canonical_url": url,
+                "identity": {field_name: match.group(1)},
+            }
+    return None

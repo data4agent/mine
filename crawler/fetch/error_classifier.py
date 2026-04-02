@@ -19,14 +19,39 @@ class FetchError:
 
 def classify_http_error(exc: Exception) -> FetchError:
     """Classify an httpx exception into a structured FetchError."""
+    message = str(exc)
+    lower_message = message.lower()
+
+    if "err_too_many_redirects" in lower_message or "ns_error_redirect_loop" in lower_message:
+        return FetchError(
+            "AUTH_EXPIRED",
+            "refresh_session",
+            "Redirect loop or login wall detected",
+            True,
+        )
+
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
+        request_url = str(getattr(exc.request, "url", "") or "")
+        response_url = str(getattr(exc.response, "url", "") or "")
+        joined_url = f"{request_url} {response_url}".lower()
         if code == 429:
             return FetchError("RATE_LIMITED", "wait_and_retry",
                               "Rate limit hit", True, code)
         if code in (401, 403):
             return FetchError("AUTH_EXPIRED", "refresh_session",
                               f"Auth failed ({code})", True, code)
+        if code == 451:
+            if "linkedin" in joined_url:
+                return FetchError(
+                    "LEGAL_RESTRICTED",
+                    "switch_network_region",
+                    "LinkedIn endpoint blocked by regional or legal restrictions",
+                    False,
+                    code,
+                )
+            return FetchError("LEGAL_RESTRICTED", "notify_user",
+                              "Endpoint blocked for legal reasons", False, code)
         if code == 404:
             return FetchError("PAGE_NOT_FOUND", "skip",
                               "Page not found", False, code)
@@ -47,11 +72,23 @@ def classify_http_error(exc: Exception) -> FetchError:
 
 def classify_content(html: str | None, final_url: str) -> FetchError | None:
     """Detect content-level issues in a fetched page."""
+    lower_final_url = final_url.lower()
+    lower = (html or "").lower()
+    if "/check/china/add-phone" in lower_final_url or (
+        "添加电话号码" in (html or "")
+        and "实名认证" in (html or "")
+    ):
+        return FetchError(
+            "AUTH_PHONE_REQUIRED",
+            "complete_phone_verification",
+            "LinkedIn requires phone verification before access",
+            False,
+        )
+
     if html is None or len(html) < 200:
         return FetchError("CONTENT_EMPTY", "retry_with_browser",
                           "Page body is empty or too short", True)
 
-    lower = html.lower()
     if "authwall" in lower or "/login" in final_url or "/checkpoint" in final_url:
         return FetchError("AUTH_EXPIRED", "refresh_session",
                           "Hit auth wall or login redirect", True)
@@ -59,6 +96,9 @@ def classify_content(html: str | None, final_url: str) -> FetchError | None:
     if re.search(r"captcha|robot check", lower):
         return FetchError("CAPTCHA", "complete_auto_login",
                           "Captcha or robot check detected", False)
+
+    if _looks_like_amazon_real_product_page(lower, final_url):
+        return None
 
     if (
         _looks_like_amazon_product_shell(lower, final_url)
@@ -112,6 +152,16 @@ def _looks_like_amazon_incomplete_twister_page(lower_html: str, final_url: str) 
             'id="bylineinfo"',
         )
     )
+    has_strong_detail_markers = any(
+        marker in lower_html
+        for marker in (
+            'id="acrpopover"',
+            'id="averagecustomerreviews_feature_div"',
+            'id="customerreviews"',
+            'id="reviewsmedialityfeature"',
+            'id="productoverview_feature_div"',
+        )
+    )
     has_twister_marker = any(
         marker in lower_html
         for marker in (
@@ -126,7 +176,30 @@ def _looks_like_amazon_incomplete_twister_page(lower_html: str, final_url: str) 
         or '"landingasincolor":"initial"' in lower_html
     )
     has_full_variant_state = '"dimensiontoasinmap"' in lower_html or '"colortoasin":{"' in lower_html
+    if has_strong_detail_markers:
+        return False
     return has_product_markers and has_twister_marker and has_empty_variant_state and not has_full_variant_state
+
+
+def _looks_like_amazon_real_product_page(lower_html: str, final_url: str) -> bool:
+    lower_url = final_url.lower()
+    if "amazon." not in lower_url:
+        return False
+    if "/dp/" not in lower_url and "/gp/product/" not in lower_url:
+        return False
+
+    markers = 0
+    for marker in (
+        'id="producttitle"',
+        'id="feature-bullets"',
+        'id="acrcustomerreviewtext"',
+        'id="bylineinfo"',
+        'id="averagecustomerreviews_feature_div"',
+        'id="detailbullets_feature_div"',
+    ):
+        if marker in lower_html:
+            markers += 1
+    return markers >= 2
 
 
 def _looks_like_amazon_signed_out_recommendation_shell(lower_html: str, final_url: str) -> bool:

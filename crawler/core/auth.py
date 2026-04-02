@@ -24,6 +24,8 @@ def _human_next_action(agent_hint: str) -> str:
         "open_public_url_and_complete_login": "open public URL and complete login",
         "provide_state": "provide cookies or storage state",
         "complete_auto_login": "complete login in auto-browser and retry",
+        "complete_phone_verification": "complete LinkedIn phone verification",
+        "switch_network_region": "switch to a non-restricted network region and retry",
     }
     return mapping.get(agent_hint, agent_hint.replace("_", " "))
 

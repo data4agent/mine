@@ -193,15 +193,22 @@ def render_first_load_experience() -> str:
     platform_ok, platform_line, platform_fixes = _platform_line()
 
     lines = [
-        "Mine for OpenClaw",
+        "Welcome to Mine",
         "",
         "Mine runs signed data-mining work in the background while the conversation stays interactive.",
+        "",
+    ]
+
+    # 添加版本检查信息
+    lines.extend(_version_lines())
+
+    lines.extend([
         "",
         "Status:",
         f"  {crawler_line}",
         f"  {wallet_line}",
         f"  {platform_line}",
-    ]
+    ])
 
     if wallet_ok and crawler_ok and platform_ok:
         lines.extend([

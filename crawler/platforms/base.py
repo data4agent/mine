@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
+from urllib.parse import parse_qs, urlparse
 
 from crawler.contracts import NormalizedError
 from crawler.extract.html_extract import extract_html_document
@@ -186,23 +187,53 @@ def hook_normalizer(hook_name: str) -> Callable[[dict[str, Any], dict[str, Any],
         supplemental: dict[str, Any],
     ) -> dict[str, Any]:
         metadata = extracted.get("metadata", {})
+        canonical_url = discovered.get("canonical_url") or record.get("canonical_url") or record.get("url")
+
+        def _first(*values: Any) -> Any:
+            for value in values:
+                if value not in (None, "", [], {}):
+                    return value
+            return None
+
         if hook_name == "wikipedia":
+            language = None
+            if isinstance(canonical_url, str):
+                hostname = urlparse(canonical_url).hostname or ""
+                parts = hostname.split(".")
+                language = parts[0] if len(parts) >= 3 else None
+            page_id = metadata.get("page_id") or extracted.get("structured", {}).get("page_id")
             result = {
                 "title": metadata.get("title") or record.get("title"),
                 "summary": extracted.get("plain_text", "").splitlines()[0] if extracted.get("plain_text") else "",
+                "URL": canonical_url,
+                "canonical_url": canonical_url,
             }
-            page_id = metadata.get("page_id")
             if page_id not in (None, ""):
                 result["page_id"] = str(page_id)
+            if language not in (None, ""):
+                result["language"] = language
+            if page_id not in (None, "") and language not in (None, ""):
+                result["dedup_key"] = f"{page_id}:{language}"
+            categories = extracted.get("structured", {}).get("categories")
+            if categories not in (None, "", [], {}):
+                result["categories"] = categories
             return result
         if hook_name == "arxiv":
             abstract = metadata.get("description") or extracted.get("structured", {}).get("abstract_plain_text") or ""
             if not abstract and extracted.get("plain_text"):
                 abstract = extracted.get("plain_text", "").splitlines()[0]
+            arxiv_id = discovered["fields"].get("arxiv_id")
             return {
-                "arxiv_id": discovered["fields"].get("arxiv_id"),
+                "arxiv_id": arxiv_id,
                 "abstract": abstract,
                 "pdf_document_blocks": supplemental.get("document_blocks", []),
+                "title": metadata.get("title") or record.get("title"),
+                "authors": metadata.get("authors") or extracted.get("structured", {}).get("authors"),
+                "categories": extracted.get("structured", {}).get("categories"),
+                "URL": canonical_url,
+                "canonical_url": canonical_url,
+                "dedup_key": arxiv_id,
+                "page_count": extracted.get("structured", {}).get("page_count"),
             }
         if hook_name == "amazon":
             extracted_structured = extracted.get("structured", {})
@@ -220,6 +251,14 @@ def hook_normalizer(hook_name: str) -> Callable[[dict[str, Any], dict[str, Any],
                     for key, value in extracted_structured.items()
                     if key != "title" and value not in (None, "", [], {})
                 })
+            result["URL"] = canonical_url
+            result["canonical_url"] = canonical_url
+            marketplace = _first(record.get("marketplace"), result.get("marketplace"), "US")
+            if marketplace not in (None, ""):
+                result["marketplace"] = marketplace
+            asin = _first(result.get("asin"), record.get("asin"))
+            if asin not in (None, "") and marketplace not in (None, ""):
+                result["dedup_key"] = f"{asin}:{marketplace}"
             return result
         if hook_name == "base_chain":
             return {
@@ -248,6 +287,9 @@ def hook_normalizer(hook_name: str) -> Callable[[dict[str, Any], dict[str, Any],
                 result["description"] = description
             if source_url:
                 result["source_url"] = source_url
+            if canonical_url:
+                result["URL"] = canonical_url
+                result["canonical_url"] = canonical_url
             return result
         return {}
 
