@@ -281,6 +281,31 @@ def _awp_request_json(method: str, base_url: str, path: str, payload: dict[str, 
     return body
 
 
+def _awp_jsonrpc(base_url: str, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Call AWP API v2 using JSON-RPC format."""
+    request_url = base_url.rstrip("/")
+    payload = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params or {},
+        "id": 1,
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    request = Request(request_url, data=data, headers=headers, method="POST")
+    try:
+        with urlopen(request, timeout=15) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"AWP JSON-RPC failed: {method} — {exc}") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError(f"AWP JSON-RPC failed: unexpected payload from {method}")
+    if "error" in body:
+        err = body["error"]
+        raise RuntimeError(f"AWP JSON-RPC error: {err.get('message', err)}")
+    return body.get("result", {})
+
+
 def _awp_get_json(base_url: str, path: str) -> dict[str, Any]:
     return _awp_request_json("GET", base_url, path)
 
@@ -372,7 +397,7 @@ def resolve_awp_registration(*, auto_register: bool = False) -> dict[str, Any]:
     result["wallet_address"] = wallet_address
 
     try:
-        check = _awp_get_json(base_url, f"/address/{wallet_address}/check")
+        check = _awp_jsonrpc(base_url, "address.check", {"address": wallet_address})
     except RuntimeError as exc:
         result["status"] = "status_check_failed"
         result["message"] = str(exc)
@@ -398,8 +423,8 @@ def resolve_awp_registration(*, auto_register: bool = False) -> dict[str, Any]:
         return result
 
     try:
-        registry = _awp_get_json(base_url, "/registry")
-        nonce_payload = _awp_get_json(base_url, f"/nonce/{wallet_address}")
+        registry = _awp_jsonrpc(base_url, "registry.get")
+        nonce_payload = _awp_jsonrpc(base_url, "nonce.get", {"address": wallet_address})
         nonce = int(nonce_payload.get("nonce") or 0)
         if nonce < 0:
             raise ValueError("invalid nonce")
@@ -421,9 +446,12 @@ def resolve_awp_registration(*, auto_register: bool = False) -> dict[str, Any]:
         signature = str(signature_payload.get("signature") or "").strip()
         if not signature:
             raise RuntimeError("awp-wallet sign-typed-data returned empty signature")
+        # Use REST relay endpoint (not JSON-RPC)
+        # Note: relay endpoint is at /api/relay/*, not /v2/relay/*
+        relay_base_url = base_url.replace("/v2", "")  # https://api.awp.sh
         relay = _awp_post_json(
-            base_url,
-            "/relay/set-recipient",
+            relay_base_url,
+            "/api/relay/set-recipient",
             {
                 "user": wallet_address,
                 "recipient": wallet_address,
@@ -439,7 +467,7 @@ def resolve_awp_registration(*, auto_register: bool = False) -> dict[str, Any]:
 
     for attempt in range(AWP_REGISTRATION_POLL_ATTEMPTS):
         try:
-            refreshed = _awp_get_json(base_url, f"/address/{wallet_address}/check")
+            refreshed = _awp_jsonrpc(base_url, "address.check", {"address": wallet_address})
         except RuntimeError:
             break
         if _is_awp_registered(refreshed):

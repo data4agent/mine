@@ -2,6 +2,8 @@
 
 Mine is an agent-first mining runtime for signed platform work, crawler execution, and submission export.
 
+Layout is **skill + Python runtime** in one repository: agents bootstrap here and drive `scripts/run_tool.py` with `awp-wallet` for signing.
+
 ## What lives here
 
 - `SKILL.md`: the root skill contract for agent hosts
@@ -30,6 +32,10 @@ python scripts/run_tool.py doctor
 python scripts/run_tool.py agent-status
 python scripts/run_tool.py agent-start
 ```
+
+Double-click or CMD-friendly entry: `scripts\bootstrap.cmd` (invokes the PowerShell bootstrap with `ExecutionPolicy Bypass`).
+
+Crawler task JSON may use task type `generic/page` for URL-only generic pages (see field alignment docs).
 
 If you want the worker loop directly instead of the host-oriented background flow:
 

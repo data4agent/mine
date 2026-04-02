@@ -18,7 +18,7 @@ requires:
 
 # Mine
 
-Agent-facing entrypoint for the local mining runtime.
+Agent-facing entrypoint for the local mining runtime. OpenClaw and other **plugin host**s load this skill from the repo root; crawler tasks may use `"platform":"generic"` or backtick form `generic` in operator docs.
 
 ## Commands (6 canonical)
 
