@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -215,6 +215,10 @@ class JsonExtractor:
                 amazon = self._extract_amazon_product_html(soup, url)
                 fields.update(amazon["fields"])
                 sources.update(amazon["sources"])
+            elif resource_type == "review":
+                amazon = self._extract_amazon_review_html(soup, url)
+                fields.update(amazon["fields"])
+                sources.update(amazon["sources"])
             elif resource_type == "seller":
                 amazon = self._extract_amazon_seller_html(soup, url)
                 fields.update(amazon["fields"])
@@ -267,9 +271,19 @@ class JsonExtractor:
         # Store original URL if different from canonical
         set_field("URL", canonical_url, "fetch:original_url")
 
-        title_node = soup.select_one("#productTitle")
+        # Title extraction with multiple fallback selectors
+        title_node = soup.select_one(
+            "#productTitle, "
+            "#title, "
+            "[data-feature-name='title'] span, "
+            "#titleSection #title span, "
+            "h1#title span, "
+            "h1.product-title"
+        )
         if title_node is not None:
-            set_field("title", title_node.get_text(" ", strip=True), "amazon_html:#productTitle")
+            title_text = title_node.get_text(" ", strip=True)
+            if title_text:
+                set_field("title", title_text, "amazon_html:title")
 
         byline_node = soup.select_one("#bylineInfo")
         if byline_node is not None:
@@ -421,7 +435,193 @@ class JsonExtractor:
 
         seller_node = soup.select_one("#merchant-info")
         if seller_node is not None:
-            set_field("seller", seller_node.get_text(" ", strip=True), "amazon_html:#merchant-info")
+            seller_text = seller_node.get_text(" ", strip=True)
+            set_field("seller_name", seller_text, "amazon_html:#merchant-info")
+            # Extract seller_id from link
+            seller_link = seller_node.select_one("a[href*='seller=']")
+            if seller_link:
+                href = seller_link.get("href", "")
+                seller_id_match = re.search(r"seller=([A-Z0-9]+)", href)
+                if seller_id_match:
+                    set_field("seller_id", seller_id_match.group(1), "amazon_html:#merchant-info@href")
+
+        # Extract coupon availability
+        coupon_node = soup.select_one(
+            "#promoPriceBlockMessage_feature_div, "
+            ".promoPriceBlockMessage, "
+            "[data-csa-c-content-id='coupon']"
+        )
+        if coupon_node:
+            set_field("coupon_available", True, "amazon_html:coupon_badge")
+
+        # Extract Subscribe & Save availability
+        sns_node = soup.select_one("#snsAccordionRowMiddle, #subscribeAndSaveFeature, #sns-accordion")
+        if sns_node:
+            set_field("subscribe_and_save_available", True, "amazon_html:sns_widget")
+
+        # Extract Prime eligibility
+        prime_node = soup.select_one(
+            "#prime-badge, "
+            ".a-icon-prime, "
+            "[data-feature-name='primeShippingFlag'], "
+            "#deliveryBlockMessage .a-icon-prime"
+        )
+        if prime_node:
+            set_field("prime_eligible", True, "amazon_html:prime_badge")
+
+        # Extract Best Sellers Rank
+        bsr_node = soup.select_one("#productDetails_detailBullets_sections1, #detailBulletsWrapper_feature_div")
+        if bsr_node:
+            bsr_text = bsr_node.get_text(" ", strip=True)
+            bsr_data = self._parse_best_sellers_rank(bsr_text)
+            if bsr_data:
+                set_field("best_sellers_rank", bsr_data, "amazon_html:product_details_bsr")
+
+        # Extract sales volume hint (e.g., "10K+ bought in past month")
+        sales_hint_node = soup.select_one(
+            "#social-proofing-faceout-title-tk_bought, "
+            "[data-csa-c-content-id='social-proofing'], "
+            ".social-proofing-faceout-title"
+        )
+        if sales_hint_node:
+            set_field("sales_volume_hint", sales_hint_node.get_text(" ", strip=True), "amazon_html:sales_hint")
+
+        # Extract answered questions count
+        qa_node = soup.select_one("#askATFLink span, #ask-btf_feature_div .a-size-base")
+        if qa_node:
+            qa_text = qa_node.get_text(" ", strip=True)
+            qa_match = re.search(r"(\d+)\s*(?:answered|questions)", qa_text, re.IGNORECASE)
+            if qa_match:
+                set_field("answered_questions_count", int(qa_match.group(1)), "amazon_html:qa_count")
+
+        # Extract product details table fields
+        details_tables = soup.select(
+            "#productDetails_techSpec_section_1 tr, "
+            "#productDetails_detailBullets_sections1 tr, "
+            "#detailBullets_feature_div li, "
+            "#prodDetails tr"
+        )
+        extracted_features: list[str] = []
+        for row in details_tables:
+            label_node = row.select_one("th, .a-text-bold, .prodDetSectionEntry")
+            value_node = row.select_one("td, .a-span9, .prodDetAttrValue")
+            label = label_node.get_text(" ", strip=True) if label_node else ""
+            value = value_node.get_text(" ", strip=True) if value_node else ""
+            if label and not value:
+                row_text = row.get_text(" ", strip=True)
+                value = row_text.replace(label, "", 1).strip(" :：\u200e\u200f")
+            if not label or not value:
+                continue
+            normalized_label = re.sub(r"[\s\u200e\u200f]+", "", label).strip(" :：").lower()
+
+            if "datefirstavailable" in normalized_label or "上架时间" in label:
+                set_field(
+                    "date_first_available",
+                    self._normalize_amazon_date_text(value) or value,
+                    "amazon_html:product_details",
+                )
+            elif "productdimensions" in normalized_label or "packagedimensions" in normalized_label or "尺寸" in label:
+                set_field("product_dimensions", value, "amazon_html:product_details")
+            elif "itemweight" in normalized_label or "productweight" in normalized_label or "商品重量" in label:
+                set_field("product_weight", value, "amazon_html:product_details")
+            elif "warranty" in normalized_label:
+                set_field("warranty_info", value, "amazon_html:product_details")
+            elif "countryoforigin" in normalized_label:
+                set_field("country_of_origin", value, "amazon_html:product_details")
+            elif "manufacturer" in normalized_label and "manufacturer" not in fields:
+                set_field("manufacturer", value, "amazon_html:product_details")
+            elif "model" in normalized_label and "number" in normalized_label:
+                set_field("model_number", value, "amazon_html:product_details")
+            elif "亚马逊热销商品排名" in label or "bestsellersrank" in normalized_label:
+                bsr_data = self._parse_best_sellers_rank(f"{label} {value}")
+                if bsr_data:
+                    set_field("best_sellers_rank", bsr_data, "amazon_html:product_details_bsr")
+            else:
+                extracted_features.append(f"{label.strip(' :：')}: {value}")
+
+        if extracted_features:
+            set_field("features", extracted_features, "amazon_html:product_details_features")
+
+        # Extract variant dimensions (sizes, colors, styles)
+        twister_labels = soup.select("#twister .a-row.a-spacing-small")
+        for label_row in twister_labels:
+            label_text = label_row.get_text(" ", strip=True).lower()
+            options = label_row.find_next_sibling()
+            if not options:
+                continue
+            option_values = [
+                opt.get_text(" ", strip=True)
+                for opt in options.select("li[data-defaultasin] img[alt], li[data-asin] img[alt], option")
+                if opt.get_text(" ", strip=True)
+            ]
+            if not option_values:
+                option_values = [
+                    opt.get("alt", "") or opt.get_text(" ", strip=True)
+                    for opt in options.select("li img[alt], li span.a-size-base")
+                ]
+            option_values = [v for v in option_values if v and v.lower() not in ("select", "choose")]
+
+            if "size" in label_text and option_values:
+                set_field("sizes", option_values, "amazon_html:twister_sizes")
+            elif "color" in label_text and option_values:
+                set_field("colors", option_values, "amazon_html:twister_colors")
+            elif "style" in label_text and option_values:
+                set_field("styles", option_values, "amazon_html:twister_styles")
+
+        # Extract frequently bought together
+        fbt_node = soup.select_one("#sims-fbt, #sims-fbt-content")
+        if fbt_node:
+            fbt_items: list[dict[str, Any]] = []
+            for item in fbt_node.select(".sims-fbt-image-box, .sims-fbt-carousel-item"):
+                item_asin = item.get("data-asin") or item.get("data-p13n-asin-metadata", "")
+                title_node = item.select_one(".sims-fbt-truncate-name, a[title]")
+                item_title = title_node.get_text(" ", strip=True) if title_node else None
+                if item_asin:
+                    fbt_item: dict[str, Any] = {"asin": str(item_asin)}
+                    if item_title:
+                        fbt_item["title"] = item_title
+                    fbt_items.append(fbt_item)
+            if fbt_items:
+                set_field("frequently_bought_together", fbt_items, "amazon_html:fbt_widget")
+
+        # Extract customers also viewed
+        cav_node = soup.select_one("#sp_detail, #sp_detail2, [data-component-type='sp_detail']")
+        if cav_node:
+            cav_items: list[dict[str, Any]] = []
+            for item in cav_node.select("[data-asin], .s-result-item"):
+                item_asin = item.get("data-asin")
+                title_node = item.select_one(".a-link-normal[title], .a-text-normal")
+                item_title = title_node.get_text(" ", strip=True) if title_node else None
+                if item_asin:
+                    cav_item: dict[str, Any] = {"asin": str(item_asin)}
+                    if item_title:
+                        cav_item["title"] = item_title
+                    cav_items.append(cav_item)
+            if cav_items:
+                set_field("customers_also_viewed", cav_items, "amazon_html:cav_widget")
+
+        # Extract video presence
+        video_node = soup.select_one(
+            "#videoblock, "
+            "[data-action='a-carousel-video'], "
+            ".vse-vpp-video-container"
+        )
+        if video_node:
+            set_field("has_video", True, "amazon_html:video_present")
+
+        # Keep the legacy "category" alias for enrich inputs, while also
+        # emitting schema-aligned category fields for downstream consumers.
+        if "category" in fields:
+            categories = fields["category"]
+            set_field("categories", categories, "amazon_html:breadcrumbs")
+            set_field("breadcrumbs", categories, "amazon_html:breadcrumbs")
+            # Generate category_tree string
+            if isinstance(categories, list):
+                set_field("category_tree", " > ".join(categories), "computed:category_tree")
+
+        # Compute image_count
+        if "images" in fields and isinstance(fields["images"], list):
+            set_field("image_count", len(fields["images"]), "computed:image_count")
 
         return {"fields": fields, "sources": sources}
 
@@ -439,23 +639,68 @@ class JsonExtractor:
             fields[name] = value
             sources[name] = source
 
+        seller_id = self._extract_seller_id_from_url(canonical_url)
+        marketplace = self._extract_marketplace_from_url(canonical_url)
+        if seller_id:
+            set_field("seller_id", seller_id, "amazon_url:seller_id")
+            set_field("marketplace", marketplace, "amazon_url:marketplace")
+            set_field("dedup_key", f"{seller_id}_{marketplace}", "computed:seller_id+marketplace")
+            set_field("canonical_url", f"https://www.amazon.{marketplace}/sp?seller={seller_id}", "computed:canonical")
+        set_field("URL", canonical_url, "fetch:original_url")
+
         seller_name_node = soup.select_one("#seller-name, #seller-profile-container h1, h1")
         if seller_name_node is not None:
             seller_name = seller_name_node.get_text(" ", strip=True)
             set_field("title", seller_name, "amazon_html:seller_name")
             set_field("seller_name", seller_name, "amazon_html:seller_name")
 
-        seller_rating_node = soup.select_one("#seller-rating, #seller-info-feedback-summary, .seller-rating")
+        seller_rating_node = soup.select_one(
+            "#seller-rating, "
+            "#seller-info-feedback-summary, "
+            ".seller-rating, "
+            "a[href*='#'] .a-icon-alt"
+        )
         if seller_rating_node is not None:
             set_field("seller_rating", seller_rating_node.get_text(" ", strip=True), "amazon_html:seller_rating")
 
         feedback_count_node = soup.select_one("#feedback-count, #seller-feedback-count, .feedback-count")
         if feedback_count_node is not None:
             set_field("feedback_count", feedback_count_node.get_text(" ", strip=True), "amazon_html:feedback_count")
+        elif seller_rating_node is not None:
+            summary_text = seller_rating_node.get_text(" ", strip=True)
+            feedback_match = re.search(r"\(([\d,]+)\s+ratings?\)|共\s*([\d,]+)\s*条评价|([\d,]+)\s*ratings?", summary_text, re.IGNORECASE)
+            if feedback_match:
+                feedback_value = next(group for group in feedback_match.groups() if group)
+                set_field("feedback_count", f"{feedback_value} ratings", "amazon_html:seller_rating_summary")
 
         seller_since_node = soup.select_one("#seller-since, .seller-since")
         if seller_since_node is not None:
             set_field("seller_since", seller_since_node.get_text(" ", strip=True), "amazon_html:seller_since")
+
+        description_node = soup.select_one(
+            ".about-seller, "
+            "#seller-description, "
+            "#page-section-detail-seller-info .a-spacing-small, "
+            "h3 + div"
+        )
+        if description_node is not None:
+            set_field("description", description_node.get_text(" ", strip=True), "amazon_html:seller_description")
+
+        return_policy_node = soup.select_one(
+            ".return-policy, "
+            "#page-section-return-policy, "
+            "#page-section-return-policy .a-section"
+        )
+        if return_policy_node is not None:
+            set_field("return_policy", return_policy_node.get_text(" ", strip=True), "amazon_html:return_policy")
+
+        detailed_info_node = soup.select_one(
+            ".detailed-info, "
+            "#page-section-detailed-seller-info, "
+            "#page-section-detailed-seller-info .a-section"
+        )
+        if detailed_info_node is not None:
+            set_field("detailed_info", detailed_info_node.get_text(" ", strip=True), "amazon_html:detailed_info")
 
         product_cards = soup.select("#seller-listings .seller-product, .seller-product")
         if product_cards:
@@ -485,10 +730,111 @@ class JsonExtractor:
 
         return {"fields": fields, "sources": sources}
 
+    def _extract_amazon_review_html(
+        self,
+        soup: BeautifulSoup,
+        canonical_url: str,
+    ) -> dict[str, dict[str, Any]]:
+        fields: dict[str, Any] = {}
+        sources: dict[str, str] = {}
+
+        def set_field(name: str, value: Any, source: str) -> None:
+            if value in (None, "", [], {}):
+                return
+            fields[name] = value
+            sources[name] = source
+
+        review_id = self._extract_review_id_from_url(canonical_url)
+        marketplace = self._extract_marketplace_from_url(canonical_url)
+        if review_id:
+            set_field("review_id", review_id, "amazon_url:review_id")
+            set_field("marketplace", marketplace, "amazon_url:marketplace")
+            set_field("dedup_key", f"{review_id}_{marketplace}", "computed:review_id+marketplace")
+            set_field("canonical_url", f"https://www.amazon.{marketplace}/gp/customer-reviews/{review_id}", "computed:canonical")
+        set_field("URL", canonical_url, "fetch:original_url")
+
+        review_node = soup.select_one("[data-hook='review'], [id^='customer_review-'], [id^='review-']")
+        if review_node is None:
+            return {"fields": fields, "sources": sources}
+
+        asin = review_node.get("data-asin")
+        if not asin:
+            product_link = review_node.select_one("a[href*='/dp/'], a[href*='/gp/product/']")
+            if product_link is not None:
+                asin = self._extract_asin_from_url(urljoin(canonical_url, str(product_link.get("href", ""))))
+        if asin:
+            set_field("asin", str(asin).strip(), "amazon_html:review@data-asin")
+
+        author_node = review_node.select_one(".a-profile-name, [data-hook='review-author']")
+        if author_node is not None:
+            author_name = author_node.get_text(" ", strip=True)
+            set_field("author_name", author_name, "amazon_html:review_author")
+            set_field("reviewer_name", author_name, "amazon_html:review_author")
+
+        author_link = review_node.select_one("a[href*='/gp/profile/'], a[href*='/hz/profile/']")
+        if author_link is not None:
+            href = str(author_link.get("href", ""))
+            author_id = href.rstrip("/").split("/")[-1]
+            if author_id:
+                set_field("author_id", author_id, "amazon_html:review_author_link")
+
+        title_node = review_node.select_one("[data-hook='review-title'], .review-title")
+        if title_node is not None:
+            set_field("review_headline", title_node.get_text(" ", strip=True), "amazon_html:review_title")
+
+        rating_node = review_node.select_one("[data-hook='review-star-rating'], .review-rating")
+        if rating_node is not None:
+            set_field("rating", rating_node.get_text(" ", strip=True), "amazon_html:review_rating")
+
+        body_node = review_node.select_one("[data-hook='review-body'], .review-text-content, .review-text")
+        if body_node is not None:
+            review_text = body_node.get_text(" ", strip=True)
+            set_field("review_text", review_text, "amazon_html:review_body")
+            set_field("plain_text", review_text, "amazon_html:review_body")
+
+        date_node = review_node.select_one("[data-hook='review-date'], .review-date")
+        if date_node is not None:
+            date_text = date_node.get_text(" ", strip=True)
+            set_field("date_posted", date_text, "amazon_html:review_date")
+            country_match = re.search(r"reviewed in\s+(.+?)\s+on\s+", date_text, re.IGNORECASE)
+            if country_match:
+                set_field("review_country", country_match.group(1).strip(), "amazon_html:review_date")
+
+        if review_node.select_one("[data-hook='avp-badge'], [data-hook='vine-badge']") is not None:
+            set_field("verified_purchase", True, "amazon_html:verified_purchase")
+
+        helpful_node = review_node.select_one("[data-hook='helpful-vote-statement']")
+        if helpful_node is not None:
+            helpful_text = helpful_node.get_text(" ", strip=True)
+            helpful_match = re.search(r"([\d,]+)", helpful_text)
+            if helpful_match:
+                set_field("helpful_count", int(helpful_match.group(1).replace(",", "")), "amazon_html:helpful_count")
+
+        review_images: list[str] = []
+        for image in review_node.select("img[src]"):
+            src = image.get("src")
+            if not src:
+                continue
+            absolute = urljoin(canonical_url, str(src))
+            if absolute not in review_images:
+                review_images.append(absolute)
+        if review_images:
+            set_field("review_images", review_images, "amazon_html:review_images")
+
+        seller_response_node = review_node.select_one("[data-hook='seller-comment'], .review-comment")
+        if seller_response_node is not None:
+            set_field("seller_response", seller_response_node.get_text(" ", strip=True), "amazon_html:seller_response")
+
+        return {"fields": fields, "sources": sources}
+
     def _normalize_amazon_brand(self, byline_text: str) -> str:
         text = byline_text.strip()
         if not text:
             return text
+
+        localized_author_match = re.match(r"(?:author|作者)\s+(.+?)(?:\s*\((?:author|作者)\))?$", text, flags=re.IGNORECASE)
+        if localized_author_match:
+            return localized_author_match.group(1).strip()
 
         visit_match = re.match(r"visit the\s+(.+?)\s+store$", text, flags=re.IGNORECASE)
         if visit_match:
@@ -509,6 +855,62 @@ class JsonExtractor:
             return match.group(2).strip()
         return None
 
+    def _parse_best_sellers_rank(self, text: str) -> dict[str, int]:
+        """Parse Best Sellers Rank from product details text.
+
+        Input example:
+        "Best Sellers Rank: #45 in Electronics (See Top 100 in Electronics)
+         #2 in Over-Ear Headphones"
+
+        Returns:
+        {"Electronics": 45, "Over-Ear Headphones": 2}
+        """
+        bsr_data: dict[str, int] = {}
+        # Pattern: #123 in Category Name
+        matches = re.findall(r"#([\d,]+)\s+in\s+([^(#\n]+)", text)
+        for rank_str, category in matches:
+            try:
+                rank = int(rank_str.replace(",", ""))
+                category_clean = category.strip().rstrip(")")
+                if category_clean:
+                    bsr_data[category_clean] = rank
+            except ValueError:
+                continue
+
+        localized_matches = re.findall(r"([^:：\n]+?)商品里排第\s*([\d,]+)\s*名", text)
+        for category, rank_str in localized_matches:
+            try:
+                rank = int(rank_str.replace(",", ""))
+            except ValueError:
+                continue
+            category_clean = category.strip()
+            if category_clean:
+                bsr_data[category_clean] = rank
+        return bsr_data
+
+    def _normalize_amazon_date_text(self, text: str) -> str | None:
+        cleaned = text.strip().replace("‎", "").replace("‏", "")
+        cleaned = re.sub(r"\s+", "", cleaned)
+        match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", cleaned)
+        if match:
+            year, month, day = match.groups()
+            return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        english_match = re.search(
+            r"([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})",
+            text,
+        )
+        if english_match:
+            month_name, day, year = english_match.groups()
+            month_map = {
+                "january": 1, "february": 2, "march": 3, "april": 4,
+                "may": 5, "june": 6, "july": 7, "august": 8,
+                "september": 9, "october": 10, "november": 11, "december": 12,
+            }
+            month = month_map.get(month_name.lower())
+            if month:
+                return f"{int(year):04d}-{month:02d}-{int(day):02d}"
+        return None
+
     def _extract_asin_from_url(self, url: str) -> str | None:
         """Extract ASIN from Amazon URL.
 
@@ -519,6 +921,20 @@ class JsonExtractor:
         """
         match = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?#]|$)', url)
         return match.group(1) if match else None
+
+    def _extract_seller_id_from_url(self, url: str) -> str | None:
+        parsed = urlparse(url)
+        for key in ("seller", "merchant", "me"):
+            candidate = parse_qs(parsed.query).get(key, [None])[0]
+            if candidate and re.fullmatch(r"[A-Z0-9]{10,20}", candidate, re.IGNORECASE):
+                return candidate.upper()
+        return None
+
+    def _extract_review_id_from_url(self, url: str) -> str | None:
+        match = re.search(r"/gp/customer-reviews/([A-Z0-9]+)(?:[/?#]|$)", url, re.IGNORECASE)
+        if not match:
+            return None
+        return match.group(1).upper()
 
     def _extract_marketplace_from_url(self, url: str) -> str:
         """Extract marketplace code from Amazon URL.

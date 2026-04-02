@@ -9,7 +9,12 @@ import pytest
 
 from crawler.cli import parse_args
 from crawler.contracts import CrawlerConfig
-from crawler.core.pipeline import _build_enrich_input_from_record, _persist_extraction_artifacts, run_command
+from crawler.core.pipeline import (
+    _build_enrich_input_from_record,
+    _build_legacy_compatible_extracted,
+    _persist_extraction_artifacts,
+    run_command,
+)
 
 
 def test_run_command_uses_new_pipeline_by_default(monkeypatch, workspace_tmp_path: Path) -> None:
@@ -348,6 +353,54 @@ def _fake_extracted_document() -> SimpleNamespace:
         quality=SimpleNamespace(content_ratio=1.0, noise_removed=0, chunking_strategy="test"),
         total_chunks=0,
     )
+
+
+def test_build_legacy_compatible_extracted_merges_richer_structured_fields_for_api_adapters() -> None:
+    class FakeAdapter:
+        default_backend = "api"
+
+        @staticmethod
+        def extract_content(record, fetch_result):
+            return {
+                "metadata": {"title": "Adapter Title"},
+                "plain_text": "adapter plain text",
+                "structured": {
+                    "arxiv_id": "1706.03762",
+                    "pdf_url": "",
+                    "page_count": None,
+                    "num_figures": None,
+                },
+            }
+
+    extracted_doc = _fake_extracted_document()
+    extracted_doc.structured = SimpleNamespace(
+        title="Transformers",
+        description="Attention paper",
+        canonical_url="https://arxiv.org/abs/1706.03762",
+        platform_fields={
+            "arxiv_id": "1706.03762",
+            "pdf_url": "https://arxiv.org/pdf/1706.03762v7",
+            "versions": ["v1", "v2", "v3", "v4", "v5", "v6", "v7"],
+            "page_count": 15,
+            "num_figures": 2,
+        },
+        field_sources={},
+    )
+
+    extracted = _build_legacy_compatible_extracted(
+        adapter=FakeAdapter(),
+        record={"platform": "arxiv", "resource_type": "paper"},
+        discovered={"canonical_url": "https://arxiv.org/abs/1706.03762"},
+        fetch_result={"url": "https://arxiv.org/abs/1706.03762", "content_type": "application/atom+xml"},
+        extracted_doc=extracted_doc,
+    )
+
+    assert extracted["metadata"]["title"] == "Adapter Title"
+    assert extracted["structured"]["arxiv_id"] == "1706.03762"
+    assert extracted["structured"]["pdf_url"] == "https://arxiv.org/pdf/1706.03762v7"
+    assert extracted["structured"]["versions"] == ["v1", "v2", "v3", "v4", "v5", "v6", "v7"]
+    assert extracted["structured"]["page_count"] == 15
+    assert extracted["structured"]["num_figures"] == 2
 
 
 def test_persist_extraction_artifacts_writes_cleaned_html(workspace_tmp_path: Path) -> None:
@@ -868,6 +921,99 @@ def test_new_pipeline_preserves_api_metadata_and_top_level_compat_fields(monkeyp
     assert records[0]["source_id"] == "123"
     assert records[0]["headline"] == "AI Engineer"
     assert records[0]["public_identifier"] == "john-doe"
+
+
+def test_new_pipeline_syncs_non_empty_normalized_fields_back_into_structured(monkeypatch, workspace_tmp_path: Path) -> None:
+    input_path = workspace_tmp_path / "input.jsonl"
+    output_dir = workspace_tmp_path / "out"
+    input_path.write_text(
+        json.dumps({"platform": "wikipedia", "resource_type": "article", "title": "OpenAI"}) + "\n",
+        encoding="utf-8",
+    )
+
+    class FakeAdapter:
+        default_backend = "api"
+        requires_auth = False
+
+        def resolve_backend(self, record: dict, override_backend: str | None = None, retry_count: int = 0) -> str:
+            return "api"
+
+        def fetch_record(self, record: dict, discovered: dict, backend: str, storage_state_path: str | None = None) -> dict:
+            return {
+                "backend": "api",
+                "url": discovered["canonical_url"],
+                "content_type": "application/json",
+                "status_code": 200,
+                "headers": {},
+                "json_data": {"query": {"pages": {}}},
+            }
+
+        def extract_content(self, record: dict, fetched: dict) -> dict:
+            return {
+                "metadata": {
+                    "title": "OpenAI",
+                    "content_type": fetched.get("content_type"),
+                    "source_url": fetched.get("url"),
+                },
+                "plain_text": "OpenAI is an AI research organization.",
+                "markdown": "# OpenAI",
+                "structured": {
+                    "categories": ["Artificial intelligence"],
+                    "infobox_raw": "{{Infobox organization}}",
+                    "protection_level": "",
+                },
+                "document_blocks": [],
+            }
+
+        def normalize_record(self, record: dict, discovered: dict, extracted: dict, supplemental: dict) -> dict:
+            return {
+                "title": "OpenAI",
+                "protection_level": "unprotected",
+                "infobox_structured": {"type": "AI research organization"},
+            }
+
+    fake_doc = SimpleNamespace(
+        doc_id="doc-1",
+        source_url="https://en.wikipedia.org/wiki/OpenAI",
+        full_text="OpenAI is an AI research organization.",
+        full_markdown="# OpenAI",
+        cleaned_html="",
+        structured=SimpleNamespace(
+            title="OpenAI",
+            description="AI research organization",
+            canonical_url="https://en.wikipedia.org/wiki/OpenAI",
+            platform_fields={
+                "categories": ["Artificial intelligence"],
+                "infobox_raw": "{{Infobox organization}}",
+                "protection_level": "",
+            },
+            field_sources={},
+            pdf_document_blocks=[],
+        ),
+        chunks=[],
+        quality=SimpleNamespace(content_ratio=1.0, noise_removed=0, chunking_strategy="test"),
+        total_chunks=0,
+    )
+
+    monkeypatch.setattr("crawler.platforms.registry.get_platform_adapter", lambda platform: FakeAdapter())
+    monkeypatch.setattr(
+        "crawler.discovery.url_builder.build_url",
+        lambda record: {
+            "canonical_url": "https://en.wikipedia.org/wiki/OpenAI",
+            "fields": {"title": "OpenAI"},
+            "artifacts": {},
+        },
+    )
+    monkeypatch.setattr("crawler.extract.pipeline.ExtractPipeline.extract", lambda self, fetched, platform, resource_type: fake_doc)
+
+    config = parse_args(["crawl", "--input", str(input_path), "--output", str(output_dir)])
+    records, errors = run_command(config)
+
+    assert errors == []
+    assert records[0]["protection_level"] == "unprotected"
+    assert records[0]["infobox_structured"] == {"type": "AI research organization"}
+    assert records[0]["structured"]["protection_level"] == "unprotected"
+    assert records[0]["structured"]["infobox_structured"] == {"type": "AI research organization"}
 
 
 def test_new_pipeline_uses_legacy_metadata_for_wikipedia_api(monkeypatch, workspace_tmp_path: Path) -> None:

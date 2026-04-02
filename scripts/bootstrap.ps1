@@ -4,6 +4,10 @@ $InstallProfile = if ($env:INSTALL_PROFILE) { $env:INSTALL_PROFILE.Trim() } else
 $VenvDir = if ($env:VENV_DIR) { $env:VENV_DIR.Trim() } else { ".venv" }
 $PythonBin = if ($env:PYTHON_BIN) { $env:PYTHON_BIN.Trim() } else { "python" }
 
+if (-not $env:HOME -and $env:USERPROFILE) {
+    $env:HOME = $env:USERPROFILE
+}
+
 function Invoke-CheckedExternal {
     param(
         [string]$FilePath,

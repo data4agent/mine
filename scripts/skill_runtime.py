@@ -155,8 +155,8 @@ def _platform_line() -> tuple[bool, str, list[str]]:
     if configured:
         # Detect network from URL
         network = "testnet" if "101.47.73.95" in configured else "configured"
-        return True, f"{SYM_CHECK} Platform Service {SYM_DASH} {configured} ({network})", []
-    return False, f"{SYM_CROSS} Platform Service {SYM_DASH} could not be resolved", []
+        return True, f"{SYM_CHECK} Platform API {SYM_DASH} {configured} ({network})", []
+    return False, f"{SYM_CROSS} Platform API {SYM_DASH} could not be resolved", []
 
 
 def _version_lines() -> list[str]:
@@ -171,7 +171,7 @@ def _version_lines() -> list[str]:
     if wallet_token.strip():
         wallet_session = f"ready {SYM_CHECK}"
     elif wallet_installed:
-        wallet_session = f"auto-managed ({SYM_BULLET} refresh with awp-wallet unlock --duration 3600)"
+        wallet_session = f"auto-managed ({SYM_BULLET} Mine restores or refreshes it when needed)"
     else:
         wallet_session = "not available"
     return [
@@ -238,15 +238,6 @@ def render_first_load_experience() -> str:
         if all_fixes:
             all_fixes.append("")
         all_fixes.extend(platform_fixes)
-    wallet_token = resolve_wallet_config()[1]
-    if not wallet_token.strip():
-        if all_fixes:
-            all_fixes.append("")
-        all_fixes.extend([
-            "# Refresh wallet session if mining asks for auth:",
-            "awp-wallet unlock --duration 3600",
-        ])
-
     lines.extend(["", f"{SYM_CROSS} Mine needs one fix before it can start.", "", "Next action:"])
     for fix in all_fixes:
         lines.append(f"  {fix}")
@@ -310,15 +301,16 @@ def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str
         if "401" in error_msg or "Unauthorized" in error_msg:
             lines.extend([
                 "",
-                "This looks like an authentication issue. The agent will auto-recover.",
-                "  1. python scripts/run_tool.py agent-control status",
+                "This looks like an authentication issue. Try the guided health checks first.",
+                "  1. python scripts/run_tool.py doctor",
                 "  2. python scripts/run_tool.py agent-start",
             ])
         elif "wallet" in error_msg.lower() or "token" in error_msg.lower():
             lines.extend([
                 "",
                 "This looks like a wallet session issue.",
-                f"  {SYM_BULLET} Run: awp-wallet unlock --duration 3600",
+                f"  {SYM_BULLET} Run: powershell -ExecutionPolicy Bypass -File .\\scripts\\bootstrap.ps1" if os.name == "nt" else f"  {SYM_BULLET} Run: ./scripts/bootstrap.sh",
+                f"  {SYM_BULLET} If that does not recover the session, run: awp-wallet unlock --duration 3600",
                 f"  {SYM_BULLET} Retry: python scripts/run_tool.py agent-start",
             ])
         else:

@@ -36,19 +36,23 @@ What bootstrap does:
 - creates or reuses `.venv`
 - installs Python requirements
 - installs `awp-wallet` from the GitHub repo if it is missing
+- refreshes the public signature-config when the platform is reachable and falls back cleanly if it is not
+- reports whether the current signature config source is `platform` or `fallback`
 - runs host diagnostics, environment verification, smoke tests, and post-install checks
 
-## 3. Initialize and unlock the wallet
+## 3. Wallet session model
 
-Initialize once if the wallet does not exist yet:
+The default path is now auto-managed:
+
+- bootstrap ensures `awp-wallet` is available
+- Mine restores the last valid local wallet session from worker state when possible
+- if the local wallet does not exist yet, Mine attempts `awp-wallet init`
+- if the session is missing or expired, Mine attempts `awp-wallet unlock --duration 3600`
+
+Manual wallet commands are still available for recovery:
 
 ```bash
 awp-wallet init
-```
-
-Unlock for one hour:
-
-```bash
 awp-wallet unlock --duration 3600
 ```
 
@@ -56,17 +60,27 @@ Mine signs requests through `awp-wallet`. Do not store seed phrases or private k
 
 ## 4. Configure the environment
 
-You do not need a `.env` file for the normal path. Mine defaults to testnet and a helper-safe `MINER_ID`. Only set overrides when you need something custom:
+You do not need a `.env` file or manual wallet token export for the normal path. Mine defaults to testnet, a helper-safe `MINER_ID`, and platform-discovered signature settings. Only set overrides when you need something custom:
 
 ```bash
 PLATFORM_BASE_URL=http://101.47.73.95
 MINER_ID=mine-agent
 AWP_WALLET_BIN=awp-wallet
-AWP_WALLET_TOKEN=<token from awp-wallet unlock>
-EIP712_DOMAIN_NAME=aDATA
-EIP712_CHAIN_ID=8453
-EIP712_VERIFYING_CONTRACT=0x0000000000000000000000000000000000000000
 ```
+
+Signature behavior:
+
+- Mine first attempts to refresh from `GET /api/public/v1/signature-config`
+- if refresh succeeds, the platform values become the active runtime base and are cached into worker state
+- if the platform cannot be reached, it falls back to the built-in aDATA defaults
+- `EIP712_*` variables are now manual overrides, not required setup
+
+Registration behavior:
+
+- Mine checks the current wallet against the AWP registration API during startup
+- if the wallet is not registered yet, Mine attempts a gasless self-registration automatically
+- the gasless path is equivalent to `setRecipient(self)` on AWP
+- `doctor` now reports both the signature config origin and the current registration status
 
 Why `MINER_ID` is still listed:
 
@@ -88,7 +102,7 @@ python scripts/run_tool.py doctor
 
 Interpretation:
 
-- `doctor` returns structured checks and exact fix commands
+- `doctor` returns structured checks, exact fix commands, the current signature-config origin/status, and wallet registration status
 - `agent-status` is the fastest readiness probe for host integrations
 - `first-load` renders the guided startup experience
 
@@ -152,7 +166,8 @@ Prefer this order:
 
 1. Re-run bootstrap.
 2. Run `python scripts/run_tool.py doctor`.
-3. Manually install `awp-wallet` from GitHub if bootstrap could not do it.
+3. If wallet session recovery still fails, run `awp-wallet unlock --duration 3600`.
+4. Manually install `awp-wallet` from GitHub if bootstrap could not do it.
 
 Manual `awp-wallet` install:
 

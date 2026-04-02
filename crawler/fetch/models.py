@@ -37,6 +37,7 @@ class RawFetchResult:
     content_bytes: bytes | None = None
     screenshot: bytes | None = None
     headers: dict[str, str] = field(default_factory=dict)
+    extra_data: dict[str, Any] = field(default_factory=dict)
     cookies_updated: bool = False
     wait_strategy_used: str = "none"
     resources_blocked: list[str] = field(default_factory=list)
@@ -48,6 +49,18 @@ class RawFetchResult:
         """Convert a dict from the old fetch backends into a RawFetchResult."""
         now = datetime.now(UTC)
         html = data.get("html") or data.get("text")
+        known_keys = {
+            "url",
+            "status_code",
+            "headers",
+            "content_type",
+            "text",
+            "html",
+            "content_bytes",
+            "json_data",
+            "screenshot_bytes",
+            "backend",
+        }
         return cls(
             url=url,
             final_url=data.get("url", url),
@@ -60,6 +73,7 @@ class RawFetchResult:
             content_bytes=data.get("content_bytes"),
             screenshot=data.get("screenshot_bytes"),
             headers=data.get("headers", {}),
+            extra_data={key: value for key, value in data.items() if key not in known_keys},
         )
 
     def to_legacy_dict(self) -> dict:
@@ -80,4 +94,6 @@ class RawFetchResult:
             result["content_bytes"] = self.content_bytes
         if self.screenshot is not None:
             result["screenshot_bytes"] = self.screenshot
+        if self.extra_data:
+            result.update(self.extra_data)
         return result

@@ -546,11 +546,33 @@ def test_pipeline_json_extraction_wikipedia_has_title_text_markdown_and_structur
                     "1164": {
                         "title": "Artificial intelligence",
                         "extract": "Artificial intelligence is the capability of computational systems to perform tasks associated with human intelligence.",
+                        "fullurl": "https://en.wikipedia.org/wiki/Artificial_intelligence",
                         "categories": [
                             {"title": "Category:Artificial intelligence"},
                             {"title": "Category:Computer science"},
                         ],
                         "pageprops": {"wikibase-shortdesc": "Intelligence of machines"},
+                        "extlinks": [{"*": "https://example.com/ref-1"}],
+                        "revisions": [
+                            {
+                                "timestamp": "2001-01-15T00:00:00Z",
+                                "slots": {
+                                    "main": {
+                                        "*": """{{Infobox technology
+| name = Artificial intelligence
+| field = Computer science
+}}
+Artificial intelligence is the capability of computational systems.
+<ref>Foundational source</ref>
+
+== See also ==
+* [[Machine learning]]
+* [[Neural network]]
+"""
+                                    }
+                                },
+                            }
+                        ],
                     }
                 }
             }
@@ -565,6 +587,13 @@ def test_pipeline_json_extraction_wikipedia_has_title_text_markdown_and_structur
     assert "computational systems" in doc.full_text
     assert doc.full_markdown.startswith("# Artificial intelligence")
     assert doc.structured.platform_fields["categories"] == ["Artificial intelligence", "Computer science"]
+    assert doc.structured.platform_fields["infobox_raw"].startswith("{{Infobox technology")
+    assert doc.structured.platform_fields["infobox_structured"] == {
+        "name": "Artificial intelligence",
+        "field": "Computer science",
+    }
+    assert doc.structured.platform_fields["see_also"] == ["Machine learning", "Neural network"]
+    assert doc.structured.platform_fields["references_count"] == 1
 
 
 def test_pipeline_json_extraction_base_has_meaningful_output() -> None:
@@ -625,8 +654,8 @@ def test_pipeline_xml_extraction_arxiv_skips_crawl4ai_and_parses_atom(monkeypatc
     monkeypatch.setattr(
         "crawler.extract.pipeline.extract_pdf_with_pymupdf4llm",
         lambda source, *, title=None: {
-            "markdown": "# GPT-4 Technical Report\n\nFull paper body.\n\n## References\n\n[1] Ref A",
-            "plain_text": "GPT-4 Technical Report\n\nFull paper body.\n\nReferences\n\n[1] Ref A",
+            "markdown": "# GPT-4 Technical Report\n\nFigure 1. System overview.\n\nFig. 2. Evaluation setup.\n\nFull paper body.\n\n## References\n\n[1] Ref A",
+            "plain_text": "GPT-4 Technical Report\n\nFigure 1. System overview.\n\nFig. 2. Evaluation setup.\n\nFull paper body.\n\nReferences\n\n[1] Ref A",
             "document_blocks": [{"type": "section", "text": "Full paper body."}],
             "extractor": "pymupdf4llm",
             "page_count": 12,
@@ -649,6 +678,8 @@ def test_pipeline_xml_extraction_arxiv_skips_crawl4ai_and_parses_atom(monkeypatc
     assert doc.structured.platform_fields["pdf_url"] == "https://arxiv.org/pdf/2303.08774v6"
     assert doc.structured.platform_fields["pdf_extractor"] == "pymupdf4llm"
     assert doc.structured.platform_fields["page_count"] == 12
+    assert doc.structured.platform_fields["versions"] == ["v1", "v2", "v3", "v4", "v5", "v6"]
+    assert doc.structured.platform_fields["num_figures"] == 2
     assert doc.structured.platform_fields["references"] == ["[1] Ref A"]
     assert doc.quality.chunking_strategy == "xml_structured"
 

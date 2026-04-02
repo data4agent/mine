@@ -196,17 +196,22 @@ def hook_normalizer(hook_name: str) -> Callable[[dict[str, Any], dict[str, Any],
             return None
 
         if hook_name == "wikipedia":
+            from crawler.platforms.wikipedia import _parse_infobox_structured
+
             language = None
             if isinstance(canonical_url, str):
                 hostname = urlparse(canonical_url).hostname or ""
                 parts = hostname.split(".")
                 language = parts[0] if len(parts) >= 3 else None
-            page_id = metadata.get("page_id") or extracted.get("structured", {}).get("page_id")
+            structured = extracted.get("structured", {})
+            page_id = metadata.get("page_id") or structured.get("page_id")
             result = {
                 "title": metadata.get("title") or record.get("title"),
                 "summary": extracted.get("plain_text", "").splitlines()[0] if extracted.get("plain_text") else "",
                 "URL": canonical_url,
                 "canonical_url": canonical_url,
+                "raw_text": extracted.get("plain_text"),
+                "HTML": extracted.get("markdown"),
             }
             if page_id not in (None, ""):
                 result["page_id"] = str(page_id)
@@ -214,28 +219,88 @@ def hook_normalizer(hook_name: str) -> Callable[[dict[str, Any], dict[str, Any],
                 result["language"] = language
             if page_id not in (None, "") and language not in (None, ""):
                 result["dedup_key"] = f"{page_id}:{language}"
-            categories = extracted.get("structured", {}).get("categories")
-            if categories not in (None, "", [], {}):
-                result["categories"] = categories
+            for field_name in (
+                "categories",
+                "article_creation_date",
+                "protection_level",
+                "references",
+                "references_count",
+                "external_links_count",
+                "see_also",
+                "images",
+                "word_count",
+                "number_of_sections",
+                "has_infobox",
+                "infobox_raw",
+                "title_disambiguated",
+                "canonical_entity_name",
+                "wikidata_id",
+                "article_summary",
+                "sections_structured",
+                "table_of_contents",
+                "tables_structured",
+                "categories_cleaned",
+                "citation_density",
+                "last_major_edit",
+                "article_quality_class",
+                "domain",
+                "topic_hierarchy",
+                "subject_tags",
+                "external_links_classified",
+                "cross_language_links",
+                "entity_name_translations",
+            ):
+                value = structured.get(field_name)
+                if value not in (None, "", [], {}):
+                    result[field_name] = value
+            infobox_structured = structured.get("infobox_structured")
+            if infobox_structured in (None, "", [], {}):
+                infobox_structured = _parse_infobox_structured(str(result.get("infobox_raw") or structured.get("infobox_raw") or ""))
+            if infobox_structured not in (None, "", [], {}):
+                result["infobox_structured"] = infobox_structured
             return result
         if hook_name == "arxiv":
-            abstract = metadata.get("description") or extracted.get("structured", {}).get("abstract_plain_text") or ""
+            structured = extracted.get("structured", {})
+            abstract = metadata.get("description") or structured.get("abstract_plain_text") or ""
             if not abstract and extracted.get("plain_text"):
                 abstract = extracted.get("plain_text", "").splitlines()[0]
             arxiv_id = discovered["fields"].get("arxiv_id")
-            return {
+            result = {
                 "arxiv_id": arxiv_id,
                 "abstract": abstract,
                 "pdf_document_blocks": supplemental.get("document_blocks", []),
                 "title": metadata.get("title") or record.get("title"),
-                "authors": metadata.get("authors") or extracted.get("structured", {}).get("authors"),
-                "categories": extracted.get("structured", {}).get("categories"),
+                "authors": metadata.get("authors") or structured.get("authors"),
+                "categories": structured.get("categories"),
                 "URL": canonical_url,
                 "canonical_url": canonical_url,
                 "dedup_key": arxiv_id,
-                "page_count": extracted.get("structured", {}).get("page_count"),
+                "page_count": structured.get("page_count"),
+                "raw_text": extracted.get("plain_text"),
             }
+            for target, candidates in (
+                ("DOI", ("DOI", "doi")),
+                ("primary_category", ("primary_category",)),
+                ("submission_date", ("submission_date", "published")),
+                ("update_date", ("update_date", "updated")),
+                ("versions", ("versions",)),
+                ("submission_comments", ("submission_comments", "comment")),
+                ("journal_ref", ("journal_ref",)),
+                ("license", ("license",)),
+                ("PDF_url", ("PDF_url", "pdf_url")),
+                ("references", ("references",)),
+                ("num_figures", ("num_figures",)),
+            ):
+                value = _first(*(structured.get(candidate) for candidate in candidates))
+                if value not in (None, "", [], {}):
+                    result[target] = value
+            authors = result.get("authors")
+            if isinstance(authors, list):
+                result["num_authors"] = len(authors)
+            return result
         if hook_name == "amazon":
+            from crawler.normalize import normalize_amazon_record
+
             extracted_structured = extracted.get("structured", {})
             result = {
                 key: value
@@ -253,29 +318,36 @@ def hook_normalizer(hook_name: str) -> Callable[[dict[str, Any], dict[str, Any],
                 })
             result["URL"] = canonical_url
             result["canonical_url"] = canonical_url
-            marketplace = _first(record.get("marketplace"), result.get("marketplace"), "US")
+            marketplace = _first(record.get("marketplace"), result.get("marketplace"), "com")
             if marketplace not in (None, ""):
                 result["marketplace"] = marketplace
+            resource_type = str(record.get("resource_type") or result.get("resource_type") or "").strip().lower()
+            seller_id = _first(result.get("seller_id"), record.get("seller_id"))
+            review_id = _first(result.get("review_id"), record.get("review_id"))
             asin = _first(result.get("asin"), record.get("asin"))
-            if asin not in (None, "") and marketplace not in (None, ""):
+            if resource_type == "seller" and seller_id not in (None, "") and marketplace not in (None, ""):
+                result["dedup_key"] = f"{seller_id}:{marketplace}"
+            elif resource_type == "review" and review_id not in (None, "") and marketplace not in (None, ""):
+                result["dedup_key"] = f"{review_id}:{marketplace}"
+            elif asin not in (None, "") and marketplace not in (None, ""):
                 result["dedup_key"] = f"{asin}:{marketplace}"
-            return result
+            if "category" not in result and result.get("categories") not in (None, "", [], {}):
+                result["category"] = result["categories"]
+            if "categories" not in result and result.get("category") not in (None, "", [], {}):
+                result["categories"] = result["category"]
+            if "breadcrumbs" not in result and result.get("categories") not in (None, "", [], {}):
+                result["breadcrumbs"] = result["categories"]
+            result["resource_type"] = resource_type or record.get("resource_type")
+            return normalize_amazon_record(result)
         if hook_name == "base_chain":
             return {
                 "identifier": next(iter(discovered["fields"].values()), None),
                 "title": metadata.get("title"),
             }
         if hook_name == "linkedin":
-            extracted_structured = extracted.get("structured", {})
-            linkedin_data = extracted_structured.get("linkedin", {}) if isinstance(extracted_structured, dict) else {}
-            result = dict(linkedin_data) if isinstance(linkedin_data, dict) else {}
-            public_identifier = discovered["fields"].get("public_identifier")
-            if public_identifier:
-                result.setdefault("public_identifier", public_identifier)
-            title = metadata.get("title")
-            if title:
-                result.setdefault("title", title)
-            return result
+            from crawler.platforms.linkedin import _normalize_linkedin_record
+
+            return _normalize_linkedin_record(record, discovered, extracted, supplemental)
         if hook_name == "generic_page":
             result: dict[str, Any] = {}
             title = metadata.get("title")

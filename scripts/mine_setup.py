@@ -30,7 +30,13 @@ from common import (
     DEFAULT_MINER_ID,
     DEFAULT_PLATFORM_BASE_URL,
     format_wallet_bin_display,
+    resolve_awp_registration,
+    persist_wallet_session,
+    resolve_miner_id,
+    resolve_platform_base_url,
+    resolve_signature_config,
     resolve_wallet_bin,
+    resolve_wallet_config,
 )
 from install_guidance import awp_wallet_install_steps
 from post_install_check import attempt_install_awp_wallet
@@ -222,7 +228,7 @@ def step4_install_deps() -> tuple[bool, str]:
 
 
 def step5_setup_wallet() -> tuple[bool, str, dict[str, Any]]:
-    """Step 5: Setup awp-wallet and get session token."""
+    """Step 5: Ensure awp-wallet exists and the local wallet session is ready."""
     wallet_bin = resolve_wallet_bin()
     extra: dict[str, Any] = {}
 
@@ -246,10 +252,16 @@ def step5_setup_wallet() -> tuple[bool, str, dict[str, Any]]:
         result = subprocess.run([wallet_bin, "receive"], capture_output=True, text=True, timeout=10, env=env)
 
         if result.returncode != 0:
-            if "not initialized" in result.stderr.lower() or "no wallet" in result.stderr.lower():
-                extra["fix_command"] = "awp-wallet init"
-                return False, "Wallet not initialized. Run: awp-wallet init", extra
-            return False, f"Wallet check failed: {result.stderr.strip()}", extra
+            stderr = result.stderr.lower()
+            if "not initialized" in stderr or "no wallet" in stderr or "init first" in stderr:
+                init_result = subprocess.run([wallet_bin, "init"], capture_output=True, text=True, timeout=30, env=env)
+                if init_result.returncode != 0:
+                    return False, f"Wallet initialization failed: {init_result.stderr.strip()}", extra
+                result = subprocess.run([wallet_bin, "receive"], capture_output=True, text=True, timeout=10, env=env)
+                if result.returncode != 0:
+                    return False, f"Wallet check failed after init: {result.stderr.strip()}", extra
+            else:
+                return False, f"Wallet check failed: {result.stderr.strip()}", extra
 
         # Parse address
         data = json.loads(result.stdout)
@@ -272,11 +284,11 @@ def step5_setup_wallet() -> tuple[bool, str, dict[str, Any]]:
         )
 
         if unlock_result.returncode != 0:
-            # Might need password - this is interactive
+            # Might need password - this is the only expected manual fallback
             if "password" in unlock_result.stderr.lower():
                 extra["needs_password"] = True
                 extra["manual_command"] = f"awp-wallet unlock --duration {duration}"
-                return False, "Wallet needs password. Run manually: awp-wallet unlock --duration 3600", extra
+                return False, "Wallet needs interactive confirmation. Run awp-wallet unlock once, then rerun setup.", extra
             return False, f"Unlock failed: {unlock_result.stderr.strip()}", extra
 
         unlock_data = json.loads(unlock_result.stdout)
@@ -287,15 +299,17 @@ def step5_setup_wallet() -> tuple[bool, str, dict[str, Any]]:
 
         issued_at = int(time.time())
         expires_at = issued_at + duration
+        persist_wallet_session(session_token, expires_at=expires_at)
 
         extra["session_token"] = session_token
         extra["expires_at"] = expires_at
-        extra["env_vars"] = {
-            "AWP_WALLET_TOKEN": session_token,
-            "AWP_WALLET_TOKEN_EXPIRES_AT": str(expires_at),
+        extra["wallet_session"] = {
+            "status": "ready",
+            "managed": True,
+            "expires_at": expires_at,
         }
 
-        return True, f"Wallet unlocked ✓ (address: {address[:10]}...)", extra
+        return True, f"Wallet session ready ✓ (address: {address[:10]}...)", extra
 
     except json.JSONDecodeError:
         return False, "Could not parse wallet response", extra
@@ -306,50 +320,37 @@ def step5_setup_wallet() -> tuple[bool, str, dict[str, Any]]:
 
 
 def step6_configure_env(state: SetupState) -> tuple[bool, str, dict[str, Any]]:
-    """Step 6: Configure environment variables."""
+    """Step 6: Confirm effective runtime defaults."""
     extra: dict[str, Any] = {}
 
-    # Check what's already set
-    platform_url = os.environ.get("PLATFORM_BASE_URL", "").strip() or state.platform_url
-    miner_id = os.environ.get("MINER_ID", "").strip() or state.miner_id or DEFAULT_MINER_ID
-    wallet_token = os.environ.get("AWP_WALLET_TOKEN", "").strip() or state.wallet_token
-
-    missing = []
-    env_vars: dict[str, str] = {}
-
-    if not platform_url:
-        missing.append("PLATFORM_BASE_URL")
-        # Default to testnet for setup
-        env_vars["PLATFORM_BASE_URL"] = TESTNET_URL
-        platform_url = TESTNET_URL
-
-    if not os.environ.get("MINER_ID") and not state.miner_id:
-        env_vars["MINER_ID"] = DEFAULT_MINER_ID
-
-    if not wallet_token and state.wallet_token:
-        wallet_token = state.wallet_token
-        env_vars["AWP_WALLET_TOKEN"] = wallet_token
-        if state.wallet_token_expires_at:
-            env_vars["AWP_WALLET_TOKEN_EXPIRES_AT"] = str(state.wallet_token_expires_at)
-
-    if env_vars:
-        extra["env_vars_to_set"] = env_vars
-        extra["export_commands"] = [f"export {k}={v}" for k, v in env_vars.items()]
-
-    if missing and not env_vars:
-        return False, f"Missing environment variables: {', '.join(missing)}", extra
+    platform_url = resolve_platform_base_url()
+    miner_id = resolve_miner_id()
+    wallet_token = resolve_wallet_config()[1] or state.wallet_token
+    signature_config = resolve_signature_config(force_refresh=True)
+    registration = resolve_awp_registration(auto_register=False)
+    signature_origin = str(signature_config.get("origin") or signature_config.get("source") or "fallback")
 
     extra["configured"] = {
         "PLATFORM_BASE_URL": platform_url,
         "MINER_ID": miner_id,
-        "AWP_WALLET_TOKEN": wallet_token[:8] + "..." if wallet_token else "(not set)",
+        "wallet_session": wallet_token[:8] + "..." if wallet_token else "(auto-managed, not currently available)",
+        "auth_mode": "auto-managed wallet session",
+        "signature_config_source": signature_origin,
+        "signature_domain_name": signature_config.get("domain_name"),
+        "signature_chain_id": signature_config.get("chain_id"),
+        "registration_status": registration.get("status"),
+        "wallet_address": registration.get("wallet_address"),
     }
 
-    # If we have auto-defaults, that's success with a note
-    if env_vars:
-        return True, f"Environment configured with defaults (testnet). Set these env vars: {', '.join(env_vars.keys())}", extra
+    if not wallet_token:
+        extra["fix_command"] = "python scripts/run_tool.py doctor"
+        return False, "Runtime defaults are ready, but the wallet session is still unavailable.", extra
 
-    return True, "Environment configured ✓", extra
+    if not registration.get("registered"):
+        extra["fix_command"] = "python scripts/run_tool.py doctor"
+        return True, "Runtime defaults ready ✓ (wallet registration will be checked again at startup)", extra
+
+    return True, "Runtime defaults ready ✓ (no manual env export required)", extra
 
 
 def run_full_setup() -> dict[str, Any]:
@@ -379,9 +380,6 @@ def run_full_setup() -> dict[str, Any]:
                 state.wallet_token_expires_at = extra.get("expires_at", 0)
         elif name == "Environment":
             ok, msg, extra = step6_configure_env(state)
-            if ok and extra.get("env_vars_to_set"):
-                for k, v in extra["env_vars_to_set"].items():
-                    os.environ[k] = v
         else:
             ok, msg = func()
             extra = {}
@@ -432,20 +430,12 @@ def run_full_setup() -> dict[str, Any]:
     state.step = len(steps)
     state.save()
 
-    # Generate the final command
-    env_result = results[-1]
-    env_vars = env_result.get("env_vars_to_set", {})
-
     final_command = "python scripts/run_tool.py first-load"
-    if env_vars:
-        exports = " && ".join(f"export {k}={v}" for k, v in env_vars.items())
-        final_command = f"{exports} && {final_command}"
 
     return output_success(
         "Setup complete! Mine is ready to use.",
         results=results,
         next_command=final_command,
-        env_vars=env_vars,
     )
 
 
@@ -474,18 +464,20 @@ def check_status() -> dict[str, Any]:
         "message": format_wallet_bin_display(wallet_bin) if wallet_ok else "Not found",
     })
 
-    platform_url = os.environ.get("PLATFORM_BASE_URL", "")
-    miner_id = os.environ.get("MINER_ID", "")
-    wallet_token = os.environ.get("AWP_WALLET_TOKEN", "")
+    platform_url = resolve_platform_base_url()
+    miner_id = resolve_miner_id()
+    _wallet_bin, wallet_token = resolve_wallet_config()
 
-    env_ok = bool(platform_url)
+    env_ok = bool(platform_url and miner_id)
     env_items = []
     if platform_url:
         env_items.append(f"PLATFORM_BASE_URL={platform_url}")
     if miner_id:
         env_items.append(f"MINER_ID={miner_id}")
     if wallet_token:
-        env_items.append(f"AWP_WALLET_TOKEN={wallet_token[:8]}...")
+        env_items.append(f"wallet_session={wallet_token[:8]}...")
+    else:
+        env_items.append("wallet_session=auto-managed")
 
     checks.append({
         "name": "Environment",

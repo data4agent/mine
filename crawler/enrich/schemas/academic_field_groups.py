@@ -11,7 +11,79 @@ from crawler.enrich.schemas.field_group_registry import (
     FieldGroupSpec,
     GenerativeConfig,
     OutputFieldSpec,
+    PassthroughConfig,
 )
+
+
+def _passthrough_field_group(
+    *,
+    name: str,
+    description: str,
+    platform: str,
+    subdataset: str,
+    source_fields: list[str],
+    output_field: str,
+    field_type: str = "string",
+) -> FieldGroupSpec:
+    return FieldGroupSpec(
+        name=name,
+        description=description,
+        required_source_fields=[],
+        output_fields=[OutputFieldSpec(name=output_field, field_type=field_type)],
+        strategy="passthrough",
+        passthrough_config=PassthroughConfig(source_fields=source_fields, output_field=output_field),
+        platform=platform,
+        subdataset=subdataset,
+    )
+
+
+ARXIV_BASE_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
+    "arxiv_base_dedup_key": _passthrough_field_group(name="arxiv_base_dedup_key", description="Pass through arXiv dedup key", platform="arxiv", subdataset="paper", source_fields=["dedup_key"], output_field="dedup_key"),
+    "arxiv_base_canonical_url": _passthrough_field_group(name="arxiv_base_canonical_url", description="Pass through canonical URL", platform="arxiv", subdataset="paper", source_fields=["canonical_url"], output_field="canonical_url"),
+    "arxiv_base_url": _passthrough_field_group(name="arxiv_base_url", description="Pass through source URL", platform="arxiv", subdataset="paper", source_fields=["URL"], output_field="URL"),
+    "arxiv_base_arxiv_id": _passthrough_field_group(name="arxiv_base_arxiv_id", description="Pass through arXiv id", platform="arxiv", subdataset="paper", source_fields=["arxiv_id"], output_field="arxiv_id"),
+    "arxiv_base_doi": _passthrough_field_group(name="arxiv_base_doi", description="Pass through DOI", platform="arxiv", subdataset="paper", source_fields=["DOI", "doi"], output_field="DOI"),
+    "arxiv_base_title": _passthrough_field_group(name="arxiv_base_title", description="Pass through title", platform="arxiv", subdataset="paper", source_fields=["title"], output_field="title"),
+    "arxiv_base_abstract": _passthrough_field_group(name="arxiv_base_abstract", description="Pass through abstract", platform="arxiv", subdataset="paper", source_fields=["abstract"], output_field="abstract"),
+    "arxiv_base_page_count": _passthrough_field_group(name="arxiv_base_page_count", description="Pass through page count", platform="arxiv", subdataset="paper", source_fields=["page_count"], output_field="page_count", field_type="integer"),
+    "arxiv_base_num_authors": _passthrough_field_group(name="arxiv_base_num_authors", description="Pass through author count", platform="arxiv", subdataset="paper", source_fields=["num_authors"], output_field="num_authors", field_type="integer"),
+    "arxiv_base_num_figures": _passthrough_field_group(name="arxiv_base_num_figures", description="Pass through figure count", platform="arxiv", subdataset="paper", source_fields=["num_figures"], output_field="num_figures", field_type="integer"),
+    "arxiv_base_authors": _passthrough_field_group(name="arxiv_base_authors", description="Pass through authors", platform="arxiv", subdataset="paper", source_fields=["authors"], output_field="authors", field_type="array<string>"),
+    "arxiv_base_categories": _passthrough_field_group(name="arxiv_base_categories", description="Pass through categories", platform="arxiv", subdataset="paper", source_fields=["categories"], output_field="categories", field_type="array<string>"),
+    "arxiv_base_primary_category": _passthrough_field_group(name="arxiv_base_primary_category", description="Pass through primary category", platform="arxiv", subdataset="paper", source_fields=["primary_category"], output_field="primary_category"),
+    "arxiv_base_submission_date": _passthrough_field_group(name="arxiv_base_submission_date", description="Pass through submission date", platform="arxiv", subdataset="paper", source_fields=["submission_date", "published"], output_field="submission_date"),
+    "arxiv_base_update_date": _passthrough_field_group(name="arxiv_base_update_date", description="Pass through update date", platform="arxiv", subdataset="paper", source_fields=["update_date", "updated"], output_field="update_date"),
+    "arxiv_base_versions": _passthrough_field_group(name="arxiv_base_versions", description="Pass through versions", platform="arxiv", subdataset="paper", source_fields=["versions"], output_field="versions", field_type="array<string>"),
+    "arxiv_base_submission_comments": _passthrough_field_group(name="arxiv_base_submission_comments", description="Pass through submission comments", platform="arxiv", subdataset="paper", source_fields=["submission_comments", "comment"], output_field="submission_comments"),
+    "arxiv_base_journal_ref": _passthrough_field_group(name="arxiv_base_journal_ref", description="Pass through journal reference", platform="arxiv", subdataset="paper", source_fields=["journal_ref"], output_field="journal_ref"),
+    "arxiv_base_license": _passthrough_field_group(name="arxiv_base_license", description="Pass through license", platform="arxiv", subdataset="paper", source_fields=["license"], output_field="license"),
+    "arxiv_base_raw_text": _passthrough_field_group(name="arxiv_base_raw_text", description="Pass through raw paper text", platform="arxiv", subdataset="paper", source_fields=["raw_text", "plain_text"], output_field="raw_text"),
+    "arxiv_base_pdf_url": _passthrough_field_group(name="arxiv_base_pdf_url", description="Pass through PDF URL", platform="arxiv", subdataset="paper", source_fields=["PDF_url", "pdf_url"], output_field="PDF_url"),
+    "arxiv_base_references": _passthrough_field_group(name="arxiv_base_references", description="Pass through references", platform="arxiv", subdataset="paper", source_fields=["references"], output_field="references", field_type="array<string>"),
+}
+
+WIKIPEDIA_BASE_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
+    "wikipedia_base_dedup_key": _passthrough_field_group(name="wikipedia_base_dedup_key", description="Pass through article dedup key", platform="wikipedia", subdataset="article", source_fields=["dedup_key"], output_field="dedup_key"),
+    "wikipedia_base_canonical_url": _passthrough_field_group(name="wikipedia_base_canonical_url", description="Pass through canonical URL", platform="wikipedia", subdataset="article", source_fields=["canonical_url"], output_field="canonical_url"),
+    "wikipedia_base_url": _passthrough_field_group(name="wikipedia_base_url", description="Pass through source URL", platform="wikipedia", subdataset="article", source_fields=["URL"], output_field="URL"),
+    "wikipedia_base_page_id": _passthrough_field_group(name="wikipedia_base_page_id", description="Pass through page id", platform="wikipedia", subdataset="article", source_fields=["page_id"], output_field="page_id"),
+    "wikipedia_base_title": _passthrough_field_group(name="wikipedia_base_title", description="Pass through title", platform="wikipedia", subdataset="article", source_fields=["title"], output_field="title"),
+    "wikipedia_base_language": _passthrough_field_group(name="wikipedia_base_language", description="Pass through language", platform="wikipedia", subdataset="article", source_fields=["language"], output_field="language"),
+    "wikipedia_base_article_creation_date": _passthrough_field_group(name="wikipedia_base_article_creation_date", description="Pass through creation date", platform="wikipedia", subdataset="article", source_fields=["article_creation_date"], output_field="article_creation_date"),
+    "wikipedia_base_protection_level": _passthrough_field_group(name="wikipedia_base_protection_level", description="Pass through protection level", platform="wikipedia", subdataset="article", source_fields=["protection_level"], output_field="protection_level"),
+    "wikipedia_base_raw_text": _passthrough_field_group(name="wikipedia_base_raw_text", description="Pass through raw article text", platform="wikipedia", subdataset="article", source_fields=["raw_text", "plain_text"], output_field="raw_text"),
+    "wikipedia_base_html": _passthrough_field_group(name="wikipedia_base_html", description="Pass through article HTML or markdown", platform="wikipedia", subdataset="article", source_fields=["HTML", "markdown"], output_field="HTML"),
+    "wikipedia_base_word_count": _passthrough_field_group(name="wikipedia_base_word_count", description="Pass through word count", platform="wikipedia", subdataset="article", source_fields=["word_count"], output_field="word_count", field_type="integer"),
+    "wikipedia_base_number_of_sections": _passthrough_field_group(name="wikipedia_base_number_of_sections", description="Pass through number of sections", platform="wikipedia", subdataset="article", source_fields=["number_of_sections"], output_field="number_of_sections", field_type="integer"),
+    "wikipedia_base_has_infobox": _passthrough_field_group(name="wikipedia_base_has_infobox", description="Pass through infobox flag", platform="wikipedia", subdataset="article", source_fields=["has_infobox"], output_field="has_infobox", field_type="boolean"),
+    "wikipedia_base_infobox_raw": _passthrough_field_group(name="wikipedia_base_infobox_raw", description="Pass through raw infobox content", platform="wikipedia", subdataset="article", source_fields=["infobox_raw"], output_field="infobox_raw"),
+    "wikipedia_base_categories": _passthrough_field_group(name="wikipedia_base_categories", description="Pass through categories", platform="wikipedia", subdataset="article", source_fields=["categories"], output_field="categories", field_type="array<string>"),
+    "wikipedia_base_references_count": _passthrough_field_group(name="wikipedia_base_references_count", description="Pass through references count", platform="wikipedia", subdataset="article", source_fields=["references_count"], output_field="references_count", field_type="integer"),
+    "wikipedia_base_external_links_count": _passthrough_field_group(name="wikipedia_base_external_links_count", description="Pass through external links count", platform="wikipedia", subdataset="article", source_fields=["external_links_count"], output_field="external_links_count", field_type="integer"),
+    "wikipedia_base_references": _passthrough_field_group(name="wikipedia_base_references", description="Pass through references", platform="wikipedia", subdataset="article", source_fields=["references"], output_field="references", field_type="array<string>"),
+    "wikipedia_base_see_also": _passthrough_field_group(name="wikipedia_base_see_also", description="Pass through see also links", platform="wikipedia", subdataset="article", source_fields=["see_also"], output_field="see_also", field_type="array<string>"),
+    "wikipedia_base_images": _passthrough_field_group(name="wikipedia_base_images", description="Pass through image URLs", platform="wikipedia", subdataset="article", source_fields=["images"], output_field="images", field_type="array<string>"),
+}
 
 # ---------------------------------------------------------------------------
 # arXiv field groups (18)
@@ -75,8 +147,11 @@ ARXIV_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
         required_source_fields=["title", "abstract"],
         output_fields=[
             OutputFieldSpec(name="acceptance_status_inferred", field_type="string"),
+            OutputFieldSpec(name="venue_mentioned", field_type="string"),
             OutputFieldSpec(name="venue_published", field_type="string"),
+            OutputFieldSpec(name="venue_tier_mapped", field_type="string"),
             OutputFieldSpec(name="venue_tier", field_type="string"),
+            OutputFieldSpec(name="target_venue_inferred", field_type="string"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(prompt_template="arxiv_dates.jinja2"),
@@ -310,6 +385,8 @@ ARXIV_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             OutputFieldSpec(name="executive_summary", field_type="string"),
             OutputFieldSpec(name="layman_summary", field_type="string"),
             OutputFieldSpec(name="technical_abstract_enhanced", field_type="string"),
+            OutputFieldSpec(name="practitioner_takeaway", field_type="string"),
+            OutputFieldSpec(name="qa_pairs_generated", field_type="array<object>"),
             OutputFieldSpec(name="review_style_summary", field_type="object"),
         ],
         strategy="generative_only",
@@ -330,6 +407,13 @@ ARXIV_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             OutputFieldSpec(name="novelty_delta_assessment", field_type="object"),
             OutputFieldSpec(name="methodology_transferability", field_type="array<string>"),
             OutputFieldSpec(name="claim_verification_notes", field_type="array<object>"),
+            OutputFieldSpec(name="internal_consistency_issues", field_type="array<string>"),
+            OutputFieldSpec(name="missing_baselines_or_ablations", field_type="array<string>"),
+            OutputFieldSpec(name="cherry_picking_indicators", field_type="array<string>"),
+            OutputFieldSpec(name="writing_quality_assessment", field_type="string"),
+            OutputFieldSpec(name="experiment_rigor_score", field_type="number"),
+            OutputFieldSpec(name="readability_for_audience", field_type="string"),
+            OutputFieldSpec(name="follow_up_research_questions", field_type="array<string>"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
@@ -392,6 +476,9 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             OutputFieldSpec(name="table_of_contents", field_type="array<string>"),
             OutputFieldSpec(name="article_summary", field_type="string"),
             OutputFieldSpec(name="reading_level", field_type="string"),
+            OutputFieldSpec(name="alternative_explanations", field_type="array<string>"),
+            OutputFieldSpec(name="section_interdependency_map", field_type="array<object>"),
+            OutputFieldSpec(name="qa_pairs_generated", field_type="array<object>"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
@@ -426,6 +513,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
         required_source_fields=["extract"],
         output_fields=[
             OutputFieldSpec(name="infobox_structured", field_type="object"),
+            OutputFieldSpec(name="infobox_text_consistency", field_type="string"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(prompt_template="wikipedia_infobox.jinja2"),
@@ -522,6 +610,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
                 field_type="array<object>",
                 description="url, source_type, reliability_tier",
             ),
+            OutputFieldSpec(name="controversy_map", field_type="array<object>"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
@@ -541,6 +630,9 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
             OutputFieldSpec(name="citation_density", field_type="number"),
             OutputFieldSpec(name="last_major_edit", field_type="string"),
             OutputFieldSpec(name="edit_controversy_score", field_type="number"),
+            OutputFieldSpec(name="internal_contradictions", field_type="array<string>"),
+            OutputFieldSpec(name="article_completeness_assessment", field_type="string"),
+            OutputFieldSpec(name="source_diversity_assessment", field_type="string"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
@@ -668,6 +760,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
                 field_type="array<object>",
                 description="phrase, location, issue",
             ),
+            OutputFieldSpec(name="citation_needed_gaps", field_type="array<string>"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
@@ -722,6 +815,8 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
 # ---------------------------------------------------------------------------
 
 ACADEMIC_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
+    **ARXIV_BASE_FIELD_GROUPS,
+    **WIKIPEDIA_BASE_FIELD_GROUPS,
     **ARXIV_FIELD_GROUPS,
     **WIKIPEDIA_FIELD_GROUPS,
 }

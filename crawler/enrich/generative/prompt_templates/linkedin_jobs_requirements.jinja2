@@ -1,0 +1,26 @@
+You extract requirements from a LinkedIn job posting and return structured JSON.
+
+## Source Fields
+{% for key, value in source_fields.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+
+## Instructions
+1. Extract responsibilities and explicit requirements.
+2. Separate required and preferred skills where possible.
+3. Identify tools, languages, and frameworks only when grounded in the text.
+
+## Null Rules
+1. Return [] for list fields with no grounded items.
+
+## Output Format
+JSON only:
+{
+  "responsibilities_extracted": ["string"],
+  "requirements_extracted": [{}],
+  "required_skills": ["string"],
+  "preferred_skills": ["string"],
+  "tools_and_platforms": ["string"],
+  "programming_languages": ["string"],
+  "frameworks": ["string"]
+}

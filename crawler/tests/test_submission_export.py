@@ -157,6 +157,56 @@ def test_build_submission_request_merges_enriched_fields_for_schema_properties()
         pytest.param(
             {
                 "platform": "linkedin",
+                "resource_type": "company",
+                "canonical_url": "https://www.linkedin.com/company/openai/",
+                "plain_text": "OpenAI company profile",
+                "structured": {
+                    "source_id": "11130470",
+                    "title": "OpenAI",
+                    "country_code": "US",
+                    "company_type": "private",
+                    "company_size_range": "1001-5000 employees",
+                    "top_topics": ["ai", "machinelearning", "openai"],
+                    "funding_stage_inferred": "secondary_market",
+                    "tech_stack_mentioned_in_about": ["AI", "machine learning"],
+                    "linkable_identifiers": {
+                        "website_domain": "openai.com",
+                        "crunchbase_hint": "https://www.crunchbase.com/organization/openai",
+                    },
+                    "company_stage_signals": {
+                        "stage_inferred": "late_stage",
+                        "confidence": 0.79,
+                        "evidence_phrases": ["SECONDARY_MARKET", "11 funding rounds"],
+                    },
+                },
+                "crawl_timestamp": "2026-04-01T09:00:00Z",
+            },
+            {
+                "company_id": "11130470",
+                "name": "OpenAI",
+                "dedup_key": "11130470",
+                "canonical_url": "https://www.linkedin.com/company/openai/",
+                "country_code": "US",
+                "company_type": "private",
+                "company_size_range": "1001-5000 employees",
+                "top_topics": ["ai", "machinelearning", "openai"],
+                "funding_stage_inferred": "secondary_market",
+                "tech_stack_mentioned_in_about": ["AI", "machine learning"],
+                "linkable_identifiers": {
+                    "website_domain": "openai.com",
+                    "crunchbase_hint": "https://www.crunchbase.com/organization/openai",
+                },
+                "company_stage_signals": {
+                    "stage_inferred": "late_stage",
+                    "confidence": 0.79,
+                    "evidence_phrases": ["SECONDARY_MARKET", "11 funding rounds"],
+                },
+            },
+            id="linkedin-company-direct-derived-fields",
+        ),
+        pytest.param(
+            {
+                "platform": "linkedin",
                 "resource_type": "job",
                 "canonical_url": "https://www.linkedin.com/jobs/view/1234567890",
                 "plain_text": "Staff AI Engineer role",

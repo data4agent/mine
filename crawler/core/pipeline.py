@@ -453,7 +453,7 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
             normalized["metadata"] = legacy_extracted.get("metadata", {})
             normalized["plain_text"] = extracted_doc.full_text
             normalized["markdown"] = extracted_doc.full_markdown
-            normalized["structured"] = extracted_doc.structured.platform_fields
+            normalized["structured"] = dict(extracted_doc.structured.platform_fields)
             normalized["document_blocks"] = legacy_extracted.get("document_blocks", [])
             if legacy_extracted.get("extractor") not in (None, ""):
                 normalized["extractor"] = legacy_extracted["extractor"]
@@ -465,6 +465,23 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                 "total_chunks": extracted_doc.total_chunks,
             }
             if isinstance(normalized_structured, dict):
+                structured_fields = normalized.get("structured")
+                if isinstance(structured_fields, dict):
+                    sync_excluded_fields = {
+                        "title",
+                        "summary",
+                        "abstract",
+                        "URL",
+                        "canonical_url",
+                        "dedup_key",
+                        "raw_text",
+                        "HTML",
+                        "pdf_document_blocks",
+                    }
+                    for key, value in normalized_structured.items():
+                        if key in sync_excluded_fields or value in (None, "", [], {}):
+                            continue
+                        structured_fields[key] = value
                 normalized.update({key: value for key, value in normalized_structured.items() if key not in normalized})
             if enrichment_result:
                 normalized["enrichment"] = enrichment_result
@@ -773,7 +790,14 @@ def _build_legacy_compatible_extracted(
             extracted["metadata"] = metadata
             extracted.setdefault("plain_text", extracted_doc.full_text)
             extracted.setdefault("markdown", extracted_doc.full_markdown)
-            extracted.setdefault("structured", extracted_doc.structured.platform_fields)
+            existing_structured = extracted.get("structured") if isinstance(extracted.get("structured"), dict) else {}
+            merged_structured = dict(extracted_doc.structured.platform_fields)
+            for key, value in existing_structured.items():
+                if value not in (None, "", [], {}):
+                    merged_structured[key] = value
+                else:
+                    merged_structured.setdefault(key, value)
+            extracted["structured"] = merged_structured
             extracted.setdefault("document_blocks", [])
             return extracted
 

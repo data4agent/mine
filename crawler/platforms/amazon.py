@@ -84,7 +84,7 @@ def _build_amazon_enrichment_request(record: dict[str, object], requested_groups
 ADAPTER = PlatformAdapter(
     platform="amazon",
     discovery=PlatformDiscoveryPlan(
-        resource_types=("product", "seller", "search"),
+        resource_types=("product", "seller", "review", "search"),
         canonicalizer="amazon",
     ),
     fetch=FETCH_PLAN,

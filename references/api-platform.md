@@ -28,10 +28,18 @@ When a wallet signer is available, requests include:
 | `X-Signed-Headers` | Currently `content-type,x-request-id` |
 | `Authorization` | Optional bearer token from `PLATFORM_TOKEN` |
 
-The signature domain is configurable:
+Mine now discovers the signature domain from the public config endpoint and caches it locally:
 
-- code defaults: `Platform Service`, chain ID `1`, zero-address verifying contract
-- recommended for the known aDATA platform: `aDATA`, chain ID `8453`, zero-address verifying contract
+```text
+GET /api/public/v1/signature-config
+```
+
+Runtime priority is:
+
+1. explicit `EIP712_*` environment overrides
+2. cached public signature config
+3. fresh fetch from the public endpoint when cache is missing or stale
+4. built-in fallback: `aDATA`, chain ID `8453`, zero-address verifying contract
 
 ## Endpoint summary
 

@@ -3,13 +3,41 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 
 from secret_refs import read_mine_config, resolve_secret_ref
 
 DEFAULT_PLATFORM_BASE_URL = "http://101.47.73.95"
 DEFAULT_MINER_ID = "mine-agent"
+DEFAULT_EIP712_DOMAIN_NAME = "aDATA"
+DEFAULT_EIP712_CHAIN_ID = 8453
+DEFAULT_EIP712_VERIFYING_CONTRACT = "0x0000000000000000000000000000000000000000"
+DEFAULT_SIGNATURE_SCHEME = "eip712-http-request"
+DEFAULT_SIGNATURE_CONFIG_PATH = "/api/public/v1/signature-config"
+DEFAULT_AWP_API_BASE_URL = "https://api.awp.sh/v2"
+DEFAULT_SIGNATURE_REQUIRED_HEADERS = [
+    "X-Signer",
+    "X-Signature",
+    "X-Nonce",
+    "X-Issued-At",
+    "X-Expires-At",
+]
+DEFAULT_SIGNATURE_OPTIONAL_HEADERS = [
+    "X-Chain-Id",
+    "X-Signed-Headers",
+    "X-Request-ID",
+    "Content-Type",
+]
+SIGNATURE_CONFIG_CACHE_TTL_SECONDS = 24 * 60 * 60
+AWP_REGISTRATION_POLL_ATTEMPTS = 5
+AWP_REGISTRATION_POLL_INTERVAL_SECONDS = 2
 
 
 def resolve_crawler_root() -> Path:
@@ -48,8 +76,439 @@ def resolve_local_venv_python(root: Path | None = None) -> Path | None:
     return None
 
 
+def resolve_output_root() -> Path:
+    return Path(os.environ.get("CRAWLER_OUTPUT_ROOT", str(resolve_crawler_root() / "output" / "agent-runs"))).resolve()
+
+
+def resolve_worker_state_root() -> Path:
+    return Path(os.environ.get("WORKER_STATE_ROOT", str(resolve_output_root() / "_worker_state"))).resolve()
+
+
 def resolve_platform_base_url() -> str:
     return os.environ.get("PLATFORM_BASE_URL", "").strip() or DEFAULT_PLATFORM_BASE_URL
+
+
+def _signature_config_cache_path() -> Path:
+    return resolve_worker_state_root() / "signature_config.json"
+
+
+def _signature_config_path() -> str:
+    return os.environ.get("SIGNATURE_CONFIG_PATH", "").strip() or DEFAULT_SIGNATURE_CONFIG_PATH
+
+
+def _normalize_signature_config(payload: dict[str, Any], *, fetched_at: int | None = None) -> dict[str, Any]:
+    body = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    domain = body.get("domain") if isinstance(body.get("domain"), dict) else {}
+    chain_id_raw = body.get("chain_id", domain.get("chain_id", DEFAULT_EIP712_CHAIN_ID))
+    try:
+        chain_id = int(chain_id_raw)
+    except (TypeError, ValueError):
+        chain_id = DEFAULT_EIP712_CHAIN_ID
+    return {
+        "scheme": str(body.get("scheme") or DEFAULT_SIGNATURE_SCHEME),
+        "domain_name": str(body.get("domain_name") or domain.get("name") or DEFAULT_EIP712_DOMAIN_NAME),
+        "chain_id": chain_id,
+        "verifying_contract": str(
+            body.get("verifying_contract") or domain.get("verifying_contract") or DEFAULT_EIP712_VERIFYING_CONTRACT
+        ),
+        "required_headers": [
+            str(item)
+            for item in (body.get("required_headers") or DEFAULT_SIGNATURE_REQUIRED_HEADERS)
+            if str(item).strip()
+        ],
+        "optional_headers": [
+            str(item)
+            for item in (body.get("optional_headers") or DEFAULT_SIGNATURE_OPTIONAL_HEADERS)
+            if str(item).strip()
+        ],
+        "fetched_at": int(fetched_at if fetched_at is not None else time.time()),
+        "source_url": str(
+            body.get("source_url")
+            or payload.get("source_url")
+            or urljoin(resolve_platform_base_url().rstrip("/") + "/", _signature_config_path().lstrip("/"))
+        ),
+    }
+
+
+def _default_signature_config() -> dict[str, Any]:
+    return {
+        "scheme": DEFAULT_SIGNATURE_SCHEME,
+        "domain_name": DEFAULT_EIP712_DOMAIN_NAME,
+        "chain_id": DEFAULT_EIP712_CHAIN_ID,
+        "verifying_contract": DEFAULT_EIP712_VERIFYING_CONTRACT,
+        "required_headers": list(DEFAULT_SIGNATURE_REQUIRED_HEADERS),
+        "optional_headers": list(DEFAULT_SIGNATURE_OPTIONAL_HEADERS),
+        "fetched_at": 0,
+        "source_url": urljoin(resolve_platform_base_url().rstrip("/") + "/", _signature_config_path().lstrip("/")),
+    }
+
+
+def _load_cached_signature_config() -> dict[str, Any] | None:
+    cache_path = _signature_config_cache_path()
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return _normalize_signature_config(payload, fetched_at=int(payload.get("fetched_at") or 0))
+    except (TypeError, ValueError):
+        return None
+
+
+def _persist_signature_config(config: dict[str, Any]) -> None:
+    cache_path = _signature_config_cache_path()
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _fetch_signature_config_from_platform(base_url: str) -> dict[str, Any]:
+    request_url = urljoin(base_url.rstrip("/") + "/", _signature_config_path().lstrip("/"))
+    try:
+        with urlopen(request_url, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"signature config fetch failed: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("signature config fetch failed: unexpected payload")
+    return _normalize_signature_config(payload)
+
+
+def _signature_status(*, source: str, stale: bool) -> str:
+    if source == "fallback":
+        return "fallback"
+    if stale:
+        return "stale"
+    return "fresh"
+
+
+def _signature_origin(*, has_platform_config: bool) -> str:
+    return "platform" if has_platform_config else "fallback"
+
+
+def resolve_signature_config(*, force_refresh: bool = False) -> dict[str, Any]:
+    base_url = resolve_platform_base_url()
+    request_url = urljoin(base_url.rstrip("/") + "/", _signature_config_path().lstrip("/"))
+    cached = _load_cached_signature_config()
+    cache_matches_target = bool(cached and str(cached.get("source_url") or "") == request_url)
+    now = int(time.time())
+    cache_is_fresh = bool(
+        cached
+        and cache_matches_target
+        and int(cached.get("fetched_at") or 0) >= now - SIGNATURE_CONFIG_CACHE_TTL_SECONDS
+    )
+
+    resolved = cached if (cached and cache_matches_target) else _default_signature_config()
+    source = "cache" if (cached and cache_matches_target) else "fallback"
+    has_platform_config = bool(cached and cache_matches_target)
+    stale = bool(cached and cache_matches_target) and not cache_is_fresh
+
+    if force_refresh or not cached or not cache_matches_target or not cache_is_fresh:
+        try:
+            fetched = _fetch_signature_config_from_platform(base_url)
+        except RuntimeError:
+            fetched = None
+        if fetched is not None:
+            _persist_signature_config(fetched)
+            resolved = fetched
+            source = "platform"
+            has_platform_config = True
+            stale = False
+
+    overrides = {
+        "domain_name": os.environ.get("EIP712_DOMAIN_NAME", "").strip(),
+        "chain_id": os.environ.get("EIP712_CHAIN_ID", "").strip(),
+        "verifying_contract": os.environ.get("EIP712_VERIFYING_CONTRACT", "").strip(),
+    }
+    if overrides["domain_name"] or overrides["chain_id"] or overrides["verifying_contract"]:
+        resolved = dict(resolved)
+        if overrides["domain_name"]:
+            resolved["domain_name"] = overrides["domain_name"]
+        if overrides["chain_id"]:
+            try:
+                resolved["chain_id"] = int(overrides["chain_id"])
+            except ValueError:
+                resolved["chain_id"] = DEFAULT_EIP712_CHAIN_ID
+        if overrides["verifying_contract"]:
+            resolved["verifying_contract"] = overrides["verifying_contract"]
+        source = "env"
+        stale = False
+
+    resolved["source"] = source
+    resolved["origin"] = _signature_origin(has_platform_config=has_platform_config)
+    resolved["status"] = _signature_status(source=source, stale=stale)
+    return resolved
+
+
+def resolve_awp_api_base_url() -> str:
+    return os.environ.get("AWP_API_URL", "").strip() or DEFAULT_AWP_API_BASE_URL
+
+
+def _extract_wallet_address(payload: dict[str, Any]) -> str:
+    address = str(payload.get("address") or payload.get("eoaAddress") or "").strip()
+    if not address:
+        addresses = payload.get("addresses")
+        if isinstance(addresses, list) and addresses:
+            first = addresses[0]
+            if isinstance(first, dict):
+                address = str(first.get("address") or first.get("eoaAddress") or "").strip()
+    if not address:
+        raise RuntimeError("wallet address missing from awp-wallet receive")
+    return address
+
+
+def _awp_request_json(method: str, base_url: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    request_url = urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+    data = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = Request(
+        request_url,
+        data=data,
+        headers=headers,
+        method=method.upper(),
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"AWP API request failed: {request_url} — {exc}") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError(f"AWP API request failed: unexpected payload from {request_url}")
+    return body
+
+
+def _awp_get_json(base_url: str, path: str) -> dict[str, Any]:
+    return _awp_request_json("GET", base_url, path)
+
+
+def _awp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return _awp_request_json("POST", base_url, path, payload)
+
+
+def _registration_domain_from_registry(registry: dict[str, Any]) -> dict[str, Any]:
+    domain = registry.get("eip712Domain")
+    if isinstance(domain, dict):
+        return {
+            "name": str(domain.get("name") or "AWPRegistry"),
+            "version": str(domain.get("version") or "1"),
+            "chainId": int(domain.get("chainId") or registry.get("chainId") or 8453),
+            "verifyingContract": str(domain.get("verifyingContract") or registry.get("awpRegistry") or ""),
+        }
+    return {
+        "name": "AWPRegistry",
+        "version": "1",
+        "chainId": int(registry.get("chainId") or 8453),
+        "verifyingContract": str(registry.get("awpRegistry") or ""),
+    }
+
+
+def _build_set_recipient_typed_data(
+    *,
+    wallet_address: str,
+    nonce: int,
+    deadline: int,
+    domain: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "types": {
+            "EIP712Domain": [
+                {"name": "name", "type": "string"},
+                {"name": "version", "type": "string"},
+                {"name": "chainId", "type": "uint256"},
+                {"name": "verifyingContract", "type": "address"},
+            ],
+            "SetRecipient": [
+                {"name": "user", "type": "address"},
+                {"name": "recipient", "type": "address"},
+                {"name": "nonce", "type": "uint256"},
+                {"name": "deadline", "type": "uint256"},
+            ],
+        },
+        "primaryType": "SetRecipient",
+        "domain": domain,
+        "message": {
+            "user": wallet_address,
+            "recipient": wallet_address,
+            "nonce": nonce,
+            "deadline": deadline,
+        },
+    }
+
+
+def _is_awp_registered(payload: dict[str, Any]) -> bool:
+    return bool(payload.get("isRegistered") or payload.get("isRegisteredUser"))
+
+
+def resolve_awp_registration(*, auto_register: bool = False) -> dict[str, Any]:
+    base_url = resolve_awp_api_base_url()
+    wallet_bin, wallet_token = resolve_wallet_config()
+    result: dict[str, Any] = {
+        "api_base_url": base_url,
+        "wallet_address": "",
+        "registered": False,
+        "status": "unavailable",
+        "message": "",
+        "tx_hash": "",
+        "registration_required": False,
+    }
+
+    if not (Path(wallet_bin).exists() or shutil.which(wallet_bin)):
+        result["status"] = "wallet_missing"
+        result["message"] = "awp-wallet is unavailable, cannot verify AWP registration"
+        return result
+
+    try:
+        wallet_payload = _run_wallet_json(wallet_bin, "receive")
+        wallet_address = _extract_wallet_address(wallet_payload)
+    except RuntimeError as exc:
+        result["status"] = "wallet_unavailable"
+        result["message"] = str(exc)
+        return result
+
+    result["wallet_address"] = wallet_address
+
+    try:
+        check = _awp_get_json(base_url, f"/address/{wallet_address}/check")
+    except RuntimeError as exc:
+        result["status"] = "status_check_failed"
+        result["message"] = str(exc)
+        return result
+
+    if _is_awp_registered(check):
+        result["registered"] = True
+        result["status"] = "registered"
+        result["bound_to"] = str(check.get("boundTo") or "")
+        result["recipient"] = str(check.get("recipient") or "")
+        result["message"] = "wallet already registered on AWP"
+        return result
+
+    result["status"] = "unregistered"
+    result["message"] = "wallet is not registered on AWP"
+    result["registration_required"] = True
+    if not auto_register:
+        return result
+
+    if not wallet_token.strip():
+        result["status"] = "wallet_session_unavailable"
+        result["message"] = "wallet is not registered and no wallet session is available for auto registration"
+        return result
+
+    try:
+        registry = _awp_get_json(base_url, "/registry")
+        nonce_payload = _awp_get_json(base_url, f"/nonce/{wallet_address}")
+        nonce = int(nonce_payload.get("nonce") or 0)
+        if nonce < 0:
+            raise ValueError("invalid nonce")
+        deadline = int(time.time()) + 3600
+        typed_data = _build_set_recipient_typed_data(
+            wallet_address=wallet_address,
+            nonce=nonce,
+            deadline=deadline,
+            domain=_registration_domain_from_registry(registry),
+        )
+        signature_payload = _run_wallet_json(
+            wallet_bin,
+            "sign-typed-data",
+            "--token",
+            wallet_token,
+            "--data",
+            json.dumps(typed_data, ensure_ascii=False, separators=(",", ":")),
+        )
+        signature = str(signature_payload.get("signature") or "").strip()
+        if not signature:
+            raise RuntimeError("awp-wallet sign-typed-data returned empty signature")
+        relay = _awp_post_json(
+            base_url,
+            "/relay/set-recipient",
+            {
+                "user": wallet_address,
+                "recipient": wallet_address,
+                "deadline": deadline,
+                "signature": signature,
+            },
+        )
+        result["tx_hash"] = str(relay.get("txHash") or relay.get("tx_hash") or "").strip()
+    except (RuntimeError, ValueError) as exc:
+        result["status"] = "auto_register_failed"
+        result["message"] = f"auto registration failed: {exc}"
+        return result
+
+    for attempt in range(AWP_REGISTRATION_POLL_ATTEMPTS):
+        try:
+            refreshed = _awp_get_json(base_url, f"/address/{wallet_address}/check")
+        except RuntimeError:
+            break
+        if _is_awp_registered(refreshed):
+            result["registered"] = True
+            result["status"] = "auto_registered"
+            result["bound_to"] = str(refreshed.get("boundTo") or "")
+            result["recipient"] = str(refreshed.get("recipient") or "")
+            result["message"] = "wallet auto-registered on AWP"
+            result["registration_required"] = False
+            return result
+        if attempt < AWP_REGISTRATION_POLL_ATTEMPTS - 1:
+            time.sleep(AWP_REGISTRATION_POLL_INTERVAL_SECONDS)
+
+    result["status"] = "registration_pending"
+    result["message"] = "gasless self-registration submitted; awaiting AWP confirmation"
+    result["registration_required"] = True
+    return result
+
+
+def resolve_runtime_readiness() -> dict[str, Any]:
+    wallet_bin = resolve_wallet_bin()
+    wallet_found = bool(shutil.which(wallet_bin) or Path(wallet_bin).exists())
+    _wallet_bin, wallet_token = resolve_wallet_config()
+    signature_config = resolve_signature_config()
+    signature_origin = str(signature_config.get("origin") or signature_config.get("source") or "fallback")
+    try:
+        registration = resolve_awp_registration(auto_register=False)
+    except Exception as exc:
+        registration = {
+            "status": "unknown",
+            "registered": False,
+            "registration_required": False,
+            "wallet_address": "",
+            "message": str(exc),
+        }
+
+    wallet_session_ready = bool(wallet_token.strip())
+    registration_required = bool(registration.get("registration_required"))
+    registration_registered = bool(registration.get("registered"))
+    can_start = wallet_found and wallet_session_ready
+    can_mine = can_start and registration_registered
+    auto_registration_possible = can_start and registration_required
+
+    if not wallet_found:
+        state = "agent_not_initialized"
+    elif not wallet_session_ready:
+        state = "auth_required"
+    elif registration_registered:
+        state = "ready"
+    elif registration_required:
+        state = "registration_required"
+    else:
+        state = "degraded"
+
+    return {
+        "state": state,
+        "wallet_found": wallet_found,
+        "wallet_bin": wallet_bin,
+        "wallet_session_ready": wallet_session_ready,
+        "wallet_session": (wallet_token[:8] + "...") if wallet_token else "(auto-managed, not currently available)",
+        "platform_base_url": resolve_platform_base_url(),
+        "miner_id": resolve_miner_id(),
+        "signature_config": signature_config,
+        "signature_config_origin": signature_origin,
+        "registration": registration,
+        "can_start": can_start,
+        "can_mine": can_mine,
+        "auto_registration_possible": auto_registration_possible,
+    }
 
 
 def resolve_miner_id() -> str:
@@ -114,11 +573,94 @@ def resolve_wallet_bin() -> str:
     return configured or "awp-wallet"
 
 
+def _wallet_command_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if not env.get("HOME") and env.get("USERPROFILE"):
+        env["HOME"] = env["USERPROFILE"]
+    return env
+
+
+def _load_state_session() -> dict[str, Any]:
+    session_path = resolve_worker_state_root() / "session.json"
+    try:
+        return json.loads(session_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def persist_wallet_session(session_token: str, *, expires_at: int | None = None) -> None:
+    if not session_token.strip():
+        return
+    state_root = resolve_worker_state_root()
+    state_root.mkdir(parents=True, exist_ok=True)
+    session_path = state_root / "session.json"
+    payload = _load_state_session()
+    payload["wallet_session_token"] = session_token
+    if expires_at is not None:
+        payload["token_expires_at"] = int(expires_at)
+    session_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_persisted_wallet_session() -> tuple[str, int | None]:
+    payload = _load_state_session()
+    session_token = str(payload.get("wallet_session_token") or "").strip()
+    expires_at_raw = payload.get("token_expires_at")
+    expires_at = int(expires_at_raw) if str(expires_at_raw or "").isdigit() else None
+    if session_token and (expires_at is None or expires_at > int(time.time()) + 30):
+        os.environ.setdefault("AWP_WALLET_TOKEN", session_token)
+        if expires_at is not None:
+            os.environ.setdefault("AWP_WALLET_TOKEN_EXPIRES_AT", str(expires_at))
+        return session_token, expires_at
+    return "", expires_at
+
+
+def _run_wallet_json(wallet_bin: str, *args: str) -> dict[str, Any]:
+    result = subprocess.run(
+        [wallet_bin, *args],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_wallet_command_env(),
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(stderr or f"awp-wallet {' '.join(args)} failed")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"awp-wallet returned non-JSON output for {' '.join(args)}") from exc
+
+
+def _ensure_wallet_session(wallet_bin: str, *, duration_seconds: int = 3600) -> str:
+    try:
+        _run_wallet_json(wallet_bin, "receive")
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if "no wallet found" not in message and "init first" not in message:
+            return ""
+        _run_wallet_json(wallet_bin, "init")
+
+    issued_at = int(time.time())
+    try:
+        payload = _run_wallet_json(wallet_bin, "unlock", "--duration", str(max(1, duration_seconds)))
+    except RuntimeError:
+        return ""
+
+    session_token = str(payload.get("sessionToken") or "").strip()
+    if not session_token:
+        return ""
+    expires_at = issued_at + max(1, duration_seconds)
+    os.environ["AWP_WALLET_TOKEN"] = session_token
+    os.environ["AWP_WALLET_TOKEN_EXPIRES_AT"] = str(expires_at)
+    persist_wallet_session(session_token, expires_at=expires_at)
+    return session_token
+
+
 def resolve_wallet_config() -> tuple[str, str]:
-    """Return ``(wallet_bin, wallet_token)`` from environment variables.
+    """Return ``(wallet_bin, wallet_token)`` using explicit config, local state, and auto-recovery.
 
     * ``AWP_WALLET_BIN``   – path to awp-wallet CLI (default ``"awp-wallet"``)
-    * ``AWP_WALLET_TOKEN`` – session token from ``awp-wallet unlock --duration 3600``
+    * ``AWP_WALLET_TOKEN`` – optional explicit wallet session token override
     * ``AWP_WALLET_TOKEN_SECRET_REF`` – JSON SecretRef resolved against Mine config providers
     """
     import os
@@ -134,5 +676,9 @@ def resolve_wallet_config() -> tuple[str, str]:
                 ref = None
             if ref is not None:
                 wallet_token = resolve_secret_ref(ref, read_mine_config())
+    if not wallet_token:
+        wallet_token, _expires_at = _load_persisted_wallet_session()
+    if not wallet_token and (Path(wallet_bin).exists() or shutil.which(wallet_bin)):
+        wallet_token = _ensure_wallet_session(wallet_bin)
 
     return (wallet_bin, wallet_token)

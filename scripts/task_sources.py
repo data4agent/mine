@@ -9,6 +9,24 @@ from run_models import TaskEnvelope, WorkItem
 from worker_state import WorkerStateStore
 
 
+class SkipClaimedTask(Exception):
+    """平台下发的 claim 任务无法落地（占位 submission、缺失 URL 等），非本机配置错误。"""
+
+    pass
+
+
+def _is_placeholder_submission_id(submission_id: str) -> bool:
+    """识别测试/占位 submission，避免无意义请求与误报为 worker 错误。"""
+    s = submission_id.strip().lower()
+    if not s:
+        return True
+    if s.startswith("sub_fake") or s.startswith("sub_test_") or s.startswith("sub_demo_"):
+        return True
+    if s.endswith("_not_created"):
+        return True
+    return False
+
+
 def optional_string(value: Any) -> str | None:
     if value in (None, ""):
         return None
@@ -27,6 +45,8 @@ def claimed_task_from_payload(
         raise ValueError("task payload is missing id")
     url = canonicalize_url(str(enriched_payload.get("url") or enriched_payload.get("target_url") or "").strip())
     if not url:
+        if task_type == "repeat_crawl":
+            raise SkipClaimedTask(f"repeat_crawl 任务 {task_id} 在补全后仍无有效 url")
         raise ValueError(f"task {task_id} is missing url")
     platform, resource_type, _ = infer_platform_task(url)
     metadata = dict(enriched_payload)
@@ -51,12 +71,15 @@ def enrich_task_payload(task_type: str, payload: dict[str, Any], *, client: Any 
         return enriched
     submission_id = optional_string(enriched.get("submission_id"))
     if task_type == "repeat_crawl" and submission_id and client is not None:
+        if _is_placeholder_submission_id(submission_id):
+            raise SkipClaimedTask(
+                f"repeat_crawl 跳过占位 submission_id={submission_id!r}（payload 无 url）"
+            )
         try:
             submission = client.fetch_core_submission(submission_id)
         except Exception as exc:
-            raise ValueError(
-                f"repeat_crawl task references submission {submission_id}, "
-                "but the submission could not be loaded and the task payload does not include a url"
+            raise SkipClaimedTask(
+                f"repeat_crawl 无法解析：submission {submission_id} 拉取失败且 payload 无 url"
             ) from exc
         enriched.setdefault("dataset_id", submission.get("dataset_id"))
         enriched.setdefault("url", submission.get("original_url") or submission.get("normalized_url"))
@@ -206,9 +229,11 @@ class BackendClaimSource:
     def __init__(self, client: Any) -> None:
         self.client = client
         self.last_errors: list[str] = []
+        self.last_skips: list[str] = []
 
     def collect(self) -> list[WorkItem]:
         self.last_errors = []
+        self.last_skips = []
         items: list[WorkItem] = []
         repeat_payload = self._safe_claim(self.client.claim_repeat_crawl_task, "repeat_crawl")
         if isinstance(repeat_payload, dict):
@@ -234,6 +259,10 @@ class BackendClaimSource:
         try:
             task = claimed_task_from_payload(task_type, payload, client=self.client)
             return claimed_task_to_work_item(task)
+        except SkipClaimedTask as exc:
+            task_id = optional_string(payload.get("id")) or "unknown"
+            self.last_skips.append(f"claim 跳过 {task_type} task {task_id}: {exc}")
+            return None
         except Exception as exc:
             task_id = optional_string(payload.get("id")) or "unknown"
             self.last_errors.append(f"claim source failed: {task_type} task {task_id} skipped: {exc}")

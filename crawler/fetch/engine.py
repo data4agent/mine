@@ -237,6 +237,18 @@ class FetchEngine:
         else:
             data = api_fetcher(url, **kwargs)
         nav_ms = _now_ms() - nav_start
+        known_keys = {
+            "url",
+            "status_code",
+            "content_type",
+            "json_data",
+            "headers",
+            "text",
+            "html",
+            "content_bytes",
+            "screenshot_bytes",
+            "backend",
+        }
 
         return RawFetchResult(
             url=url,
@@ -249,6 +261,7 @@ class FetchEngine:
             json_data=data.get("json_data"),
             content_bytes=data.get("content_bytes"),
             headers=data.get("headers", {}),
+            extra_data={key: value for key, value in data.items() if key not in known_keys},
             timing=FetchTiming(
                 start_ms=start_ms,
                 navigation_ms=nav_ms,

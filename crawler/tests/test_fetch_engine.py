@@ -88,6 +88,26 @@ class TestRawFetchResult:
         assert legacy["json_data"] == {"key": "value"}
         assert "html" not in legacy
 
+    def test_to_legacy_dict_preserves_extra_api_payload_fields(self):
+        result = RawFetchResult(
+            url="https://api.example.com",
+            final_url="https://api.example.com",
+            backend="api",
+            fetch_time=datetime(2026, 1, 1),
+            content_type="application/json",
+            status_code=200,
+            json_data={"key": "value"},
+            extra_data={
+                "parse_json_data": {"parse": {"title": "OpenAI"}},
+                "html_fallback_text": "<html><body>OpenAI</body></html>",
+            },
+        )
+
+        legacy = result.to_legacy_dict()
+
+        assert legacy["parse_json_data"] == {"parse": {"title": "OpenAI"}}
+        assert legacy["html_fallback_text"] == "<html><body>OpenAI</body></html>"
+
 
 class TestFetchTiming:
     def test_frozen(self):
@@ -344,6 +364,8 @@ class TestFetchEngineHttp:
                 "status_code": 200,
                 "content_type": "application/json",
                 "json_data": {"result": "ok"},
+                "parse_json_data": {"parse": {"title": "OpenAI"}},
+                "html_fallback_text": "<html><body>OpenAI</body></html>",
                 "headers": {},
             }
 
@@ -357,6 +379,8 @@ class TestFetchEngineHttp:
             )
             assert result.backend == "api"
             assert result.json_data == {"result": "ok"}
+            assert result.extra_data["parse_json_data"] == {"parse": {"title": "OpenAI"}}
+            assert result.extra_data["html_fallback_text"] == "<html><body>OpenAI</body></html>"
 
         asyncio.run(run())
 

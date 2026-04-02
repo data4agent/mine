@@ -699,6 +699,79 @@ class TestEnrichPipeline:
         assert result.status == "success"
         assert record.enriched_fields["behavior_signal"] == "frequent article edits"
 
+    def test_pipeline_with_wikipedia_base_passthrough_group(self) -> None:
+        pipeline = EnrichPipeline()
+        record = asyncio.run(
+            pipeline.enrich(
+                {
+                    "platform": "wikipedia",
+                    "resource_type": "article",
+                    "title": "Artificial Intelligence",
+                    "canonical_url": "https://en.wikipedia.org/wiki/Artificial_intelligence",
+                    "URL": "https://en.wikipedia.org/wiki/Artificial_intelligence",
+                    "page_id": "1164",
+                    "language": "en",
+                    "raw_text": "Artificial intelligence is intelligence demonstrated by machines.",
+                    "HTML": "<h1>Artificial Intelligence</h1>",
+                    "word_count": 8,
+                    "number_of_sections": 1,
+                    "has_infobox": True,
+                    "infobox_raw": "field=value",
+                    "categories": ["Artificial intelligence"],
+                    "references": ["https://example.com/ref-1"],
+                    "references_count": 1,
+                    "external_links_count": 1,
+                    "images": ["https://example.com/ai.png"],
+                },
+                field_groups=["wikipedia_base_page_id", "wikipedia_base_has_infobox", "wikipedia_base_references_count"],
+            )
+        )
+
+        assert record.enrichment_results["wikipedia_base_page_id"].status == "success"
+        assert record.enrichment_results["wikipedia_base_has_infobox"].status == "success"
+        assert record.enrichment_results["wikipedia_base_references_count"].status == "success"
+        assert record.enriched_fields["page_id"] == "1164"
+        assert record.enriched_fields["has_infobox"] is True
+        assert record.enriched_fields["references_count"] == 1
+
+    def test_pipeline_with_arxiv_base_passthrough_group(self) -> None:
+        pipeline = EnrichPipeline()
+        record = asyncio.run(
+            pipeline.enrich(
+                {
+                    "platform": "arxiv",
+                    "resource_type": "paper",
+                    "title": "GPT-4 Technical Report",
+                    "canonical_url": "https://arxiv.org/abs/2303.08774",
+                    "arxiv_id": "2303.08774",
+                    "DOI": "10.48550/arXiv.2303.08774",
+                    "URL": "https://arxiv.org/abs/2303.08774",
+                    "abstract": "We report the development of GPT-4.",
+                    "authors": ["OpenAI", "Josh Achiam"],
+                    "categories": ["cs.CL", "cs.AI"],
+                    "primary_category": "cs.CL",
+                    "submission_date": "2023-03-15",
+                    "update_date": "2023-03-27",
+                    "submission_comments": "Accepted to internal review.",
+                    "journal_ref": "arXiv preprint",
+                    "license": "http://creativecommons.org/licenses/by/4.0/",
+                    "raw_text": "We report the development of GPT-4.",
+                    "PDF_url": "https://arxiv.org/pdf/2303.08774.pdf",
+                    "references": ["Attention Is All You Need"],
+                    "page_count": 12,
+                    "num_authors": 2,
+                },
+                field_groups=["arxiv_base_arxiv_id", "arxiv_base_doi", "arxiv_base_num_authors"],
+            )
+        )
+
+        assert record.enrichment_results["arxiv_base_arxiv_id"].status == "success"
+        assert record.enrichment_results["arxiv_base_doi"].status == "success"
+        assert record.enrichment_results["arxiv_base_num_authors"].status == "success"
+        assert record.enriched_fields["arxiv_id"] == "2303.08774"
+        assert record.enriched_fields["DOI"] == "10.48550/arXiv.2303.08774"
+        assert record.enriched_fields["num_authors"] == 2
+
     def test_pipeline_generative_group_without_llm(self) -> None:
         """Generative-only groups fail gracefully when no LLM is configured."""
         pipeline = EnrichPipeline()
@@ -1024,6 +1097,42 @@ class TestEnrichPipeline:
         )
 
         assert record.enrichment_results["amazon_products_competition"].status == "pending_agent"
+
+    def test_pipeline_accepts_amazon_product_normalized_aliases_for_pricing_and_market_positioning(self) -> None:
+        pipeline = EnrichPipeline()
+        enrich_input = _build_enrich_input_from_record(
+            {
+                "platform": "amazon",
+                "resource_type": "product",
+                "canonical_url": "https://www.amazon.com/dp/B000TEST",
+                "final_price": 19.99,
+                "rating": 4.7,
+                "reviews_count": 1041568,
+                "categories": ["Electronics", "Smart Speakers"],
+                "breadcrumbs": ["Electronics", "Smart Speakers"],
+                "plain_text": "Example product page body.",
+                "metadata": {
+                    "title": "Example Product",
+                    "description": "Compact smart speaker.",
+                },
+            }
+        )
+        record = asyncio.run(
+            pipeline.enrich(
+                enrich_input,
+                field_groups=[
+                    "amazon_products_pricing",
+                    "amazon_products_category",
+                    "amazon_products_competition",
+                    "amazon_products_market_positioning",
+                ],
+            )
+        )
+
+        assert record.enrichment_results["amazon_products_pricing"].status == "pending_agent"
+        assert record.enrichment_results["amazon_products_category"].status == "pending_agent"
+        assert record.enrichment_results["amazon_products_competition"].status == "pending_agent"
+        assert record.enrichment_results["amazon_products_market_positioning"].status == "pending_agent"
 
     def test_pipeline_executes_amazon_generative_groups_with_model_config(self, monkeypatch) -> None:
         async def fake_complete(self, prompt: str, **kwargs) -> LLMResponse:

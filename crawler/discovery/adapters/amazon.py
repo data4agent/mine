@@ -17,8 +17,12 @@ from crawler.discovery.contracts import (
 from crawler.discovery.expand.base import ExpandResult
 from crawler.discovery.map_engine import MapResult
 from crawler.discovery.normalize.amazon import (
+    build_review_url,
+    build_seller_url,
     build_product_url,
     extract_asins_from_html,
+    extract_review_id,
+    extract_seller_id,
     normalize_amazon_url,
 )
 from crawler.discovery.normalize.base import NormalizeResult
@@ -31,7 +35,7 @@ class AmazonDiscoveryAdapter(BaseDiscoveryAdapter):
     """
 
     platform = "amazon"
-    supported_resource_types = ("product", "seller", "search")
+    supported_resource_types = ("product", "seller", "review", "search")
 
     def can_handle_url(self, url: str) -> bool:
         return "amazon.com" in url or "amazon.co" in url
@@ -81,25 +85,74 @@ class AmazonDiscoveryAdapter(BaseDiscoveryAdapter):
     ) -> MapResult:
         """Extract product candidates from an Amazon page."""
         search_urls = list(context.get("search_urls", []))
+        seller_urls: list[str] = []
+        review_urls: list[str] = []
         if not search_urls:
             html = str(context.get("html") or "")
             soup = BeautifulSoup(html, "html.parser")
             for anchor in soup.find_all("a", href=True):
                 href = str(anchor.get("href") or "")
-                if "/dp/" not in href and "/gp/product/" not in href:
+                absolute = urljoin(seed.canonical_url, href)
+                if "/dp/" in href or "/gp/product/" in href:
+                    search_urls.append(absolute.split("?")[0].rstrip("/"))
                     continue
-                search_urls.append(urljoin(seed.canonical_url, href).split("?")[0].rstrip("/"))
+                if "seller=" in href or "/sp?" in href:
+                    seller_urls.append(absolute)
+                    continue
+                if "/gp/customer-reviews/" in href:
+                    review_urls.append(absolute)
 
             for asin in re.findall(r'"asin"\s*:\s*"([A-Z0-9]{10})"', html):
                 search_urls.append(f"https://www.amazon.com/dp/{asin}")
 
-        # For now, delegate to search results if available
+        accepted: list[DiscoveryCandidate] = []
         if search_urls:
-            return await self.map_search_results(
+            search_result = await self.map_search_results(
                 query=context.get("query", ""),
                 urls=list(dict.fromkeys(search_urls)),
             )
-        return MapResult(accepted=[], rejected=[], exhausted=True, next_seeds=[])
+            accepted.extend(search_result.accepted)
+
+        for seller_url in dict.fromkeys(seller_urls):
+            seller_id = extract_seller_id(seller_url)
+            if not seller_id:
+                continue
+            accepted.append(
+                DiscoveryCandidate(
+                    platform="amazon",
+                    resource_type="seller",
+                    canonical_url=build_seller_url(seller_id),
+                    seed_url=None,
+                    fields={"seller_id": seller_id},
+                    discovery_mode=DiscoveryMode.PAGE_LINKS,
+                    score=0.65,
+                    score_breakdown={"page_links": 0.65},
+                    hop_depth=1,
+                    parent_url=None,
+                    metadata={},
+                )
+            )
+
+        for review_url in dict.fromkeys(review_urls):
+            review_id = extract_review_id(review_url)
+            if not review_id:
+                continue
+            accepted.append(
+                DiscoveryCandidate(
+                    platform="amazon",
+                    resource_type="review",
+                    canonical_url=build_review_url(review_id),
+                    seed_url=None,
+                    fields={"review_id": review_id},
+                    discovery_mode=DiscoveryMode.PAGE_LINKS,
+                    score=0.65,
+                    score_breakdown={"page_links": 0.65},
+                    hop_depth=1,
+                    parent_url=None,
+                    metadata={},
+                )
+            )
+        return MapResult(accepted=accepted, rejected=[], exhausted=True, next_seeds=[])
 
     async def crawl(
         self, candidate: DiscoveryCandidate, context: dict[str, Any]

@@ -1,0 +1,21 @@
+You infer workforce and hiring signals from a LinkedIn company page and return structured JSON.
+
+## Source Fields
+{% for key, value in source_fields.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+
+## Instructions
+1. Estimate hiring and retention signals conservatively.
+2. Use short categorical labels where possible.
+
+## Null Rules
+1. Return null for unsupported values.
+
+## Output Format
+JSON only:
+{
+  "employee_growth_trend": "string|null",
+  "attrition_signal": "string|null",
+  "hiring_velocity": "string|null"
+}

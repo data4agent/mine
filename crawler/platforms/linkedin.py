@@ -9,6 +9,7 @@ from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
 from bs4 import BeautifulSoup, Tag
+import httpx
 
 from crawler.fetch.api_backend import fetch_api_get
 
@@ -31,46 +32,33 @@ ENRICH_PLAN = PlatformEnrichmentPlan(
     route="social_graph",
     field_groups=(
         "linkedin_profiles_identity",
-        "linkedin_profiles_current_role",
-        "linkedin_profiles_about",
+        "linkedin_profiles_summary",
+        "linkedin_profiles_career",
     ),
 )
 
 PROFILE_FIELD_GROUPS = (
     "linkedin_profiles_identity",
-    "linkedin_profiles_current_role",
-    "linkedin_profiles_about",
+    "linkedin_profiles_summary",
+    "linkedin_profiles_career",
 )
 
 COMPANY_FIELD_GROUPS = (
     "linkedin_company_basic",
-    "linkedin_company_profile",
-    "linkedin_company_scale",
-    "linkedin_company_content",
-    "linkedin_company_tech",
-    "linkedin_company_financials",
-    "linkedin_company_multi_level_summary",
-    "linkedin_company_cross_dataset_linkable_ids",
+    "linkedin_company_org_intel",
+    "linkedin_company_talent_signals",
 )
 
 JOB_FIELD_GROUPS = (
     "linkedin_jobs_basic",
-    "linkedin_jobs_content",
-    "linkedin_jobs_classification",
-    "linkedin_jobs_skills",
-    "linkedin_jobs_market",
-    "linkedin_jobs_multi_level_summary",
-    "linkedin_jobs_domain_specific",
+    "linkedin_jobs_requirements",
+    "linkedin_jobs_candidate_view",
 )
 
 POST_FIELD_GROUPS = (
-    "linkedin_posts_content",
-    "linkedin_posts_engagement",
-    "linkedin_posts_author",
-    "linkedin_posts_temporal",
-    "linkedin_posts_multimodal",
-    "linkedin_posts_multi_level_summary",
-    "linkedin_posts_behavioral",
+    "linkedin_posts_basic",
+    "linkedin_posts_entities",
+    "linkedin_posts_summary",
 )
 
 QUERY_IDS = {
@@ -255,19 +243,43 @@ def _fetch_linkedin_api(record: dict, discovered: dict, storage_state_path: str 
             discovered=discovered,
         )
     if resource_type == "profile":
-        return _fetch_linkedin_json(
-            canonical_url=canonical_url,
-            endpoint=_build_profile_lookup_endpoint(record["public_identifier"]),
-            storage_state_path=storage_state_path,
-            discovered=discovered,
-        )
+        try:
+            return _fetch_linkedin_json(
+                canonical_url=canonical_url,
+                endpoint=_build_profile_lookup_endpoint(record["public_identifier"]),
+                storage_state_path=storage_state_path,
+                discovered=discovered,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 451:
+                raise
+            html_response = _fetch_linkedin_html(
+                canonical_url=canonical_url,
+                storage_state_path=storage_state_path,
+                discovered=discovered,
+            )
+            html_response["html_fallback_text"] = html_response.get("text")
+            html_response["html_fallback_content_type"] = html_response.get("content_type")
+            return html_response
     if resource_type == "company":
-        return _fetch_linkedin_json(
-            canonical_url=canonical_url,
-            endpoint=_build_company_lookup_endpoint(record["company_slug"]),
-            storage_state_path=storage_state_path,
-            discovered=discovered,
-        )
+        try:
+            return _fetch_linkedin_json(
+                canonical_url=canonical_url,
+                endpoint=_build_company_lookup_endpoint(record["company_slug"]),
+                storage_state_path=storage_state_path,
+                discovered=discovered,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 451:
+                raise
+            html_response = _fetch_linkedin_html(
+                canonical_url=canonical_url,
+                storage_state_path=storage_state_path,
+                discovered=discovered,
+            )
+            html_response["html_fallback_text"] = html_response.get("text")
+            html_response["html_fallback_content_type"] = html_response.get("content_type")
+            return html_response
     response = _fetch_linkedin_json(
         canonical_url=canonical_url,
         endpoint=_build_linkedin_endpoint(record),
@@ -307,9 +319,13 @@ def _extract_linkedin(record: dict, fetched: dict) -> dict:
     if record["resource_type"] == "post":
         return _extract_linkedin_post(record, fetched)
     data = fetched.get("json_data") or {}
+    html_fallback_text = str(fetched.get("html_fallback_text") or "")
     if record["resource_type"] == "job" and _linkedin_job_payload_missing(data):
-        html_fallback_text = str(fetched.get("html_fallback_text") or "")
         extracted = _extract_linkedin_job_from_html(record, html_fallback_text) if html_fallback_text else _extract_linkedin_structured(record, data)
+    elif record["resource_type"] == "company" and html_fallback_text:
+        extracted = _extract_linkedin_company_from_html(record, html_fallback_text)
+    elif record["resource_type"] == "profile" and html_fallback_text:
+        extracted = _extract_linkedin_profile_from_html(record, html_fallback_text)
     else:
         extracted = _extract_linkedin_structured(record, data)
     metadata = {
@@ -863,6 +879,131 @@ def _linkedin_job_payload_missing(data: dict[str, Any]) -> bool:
     return not isinstance(payload_data.get("jobsDashJobPostingsById"), dict)
 
 
+def _extract_linkedin_bpr_payloads_from_html(html_text: str, request_keywords: tuple[str, ...]) -> list[dict[str, Any]]:
+    text = unescape(html_text or "")
+    bodies = {
+        match.group(1): match.group(2).strip()
+        for match in re.finditer(r'<code style="display: none" id="(bpr-guid-[^"]+)">\s*(.*?)\s*</code>', text, re.DOTALL)
+    }
+    payloads: list[dict[str, Any]] = []
+    for match in re.finditer(r'<code style="display: none" id="(datalet-bpr-guid-[^"]+)">\s*(.*?)\s*</code>', text, re.DOTALL):
+        try:
+            datalet = json.loads(match.group(2).strip())
+        except json.JSONDecodeError:
+            continue
+        request = str(datalet.get("request") or "")
+        if request_keywords and not any(keyword in request for keyword in request_keywords):
+            continue
+        body = bodies.get(str(datalet.get("body") or ""))
+        if not body:
+            continue
+        try:
+            payloads.append(json.loads(body))
+        except json.JSONDecodeError:
+            continue
+    return payloads
+
+
+def _extract_linkedin_company_from_html(record: dict[str, Any], html_text: str) -> dict[str, Any]:
+    payloads = _extract_linkedin_bpr_payloads_from_html(
+        html_text,
+        (
+            "voyagerOrganizationDashCompanies",
+            "voyagerJobsDashOrganizationWorkplacePolicies",
+        ),
+    )
+    if payloads:
+        merged = _merge_linkedin_payloads(*payloads)
+        extracted = _extract_linkedin_company(merged)
+        structured = extracted.get("structured") if isinstance(extracted.get("structured"), dict) else {}
+        if structured.get("title") or structured.get("source_id"):
+            return extracted
+    title_match = re.search(r"<title>([^<]+)</title>", html_text or "", re.IGNORECASE)
+    raw_title = unescape(title_match.group(1)).strip() if title_match else ""
+    title = raw_title.replace("| LinkedIn", "").strip() or str(record.get("company_slug") or "")
+    return {
+        "title": title,
+        "plain_text": "",
+        "markdown": f"# {title}".strip() if title else "",
+        "structured": {
+            "source_id": None,
+            "title": title,
+            "company_slug": record.get("company_slug"),
+            "company_url": f"https://www.linkedin.com/company/{record.get('company_slug')}/" if record.get("company_slug") else None,
+        },
+        "metadata_extra": {
+            "entity_type": "organization",
+            "source_id": None,
+        },
+    }
+
+
+def _extract_profile_headline_from_html(soup: BeautifulSoup, canonical_url: str, title: str | None) -> str | None:
+    canonical_url = canonical_url.rstrip("/")
+    for anchor in soup.find_all("a", href=True):
+        href = str(anchor.get("href") or "").rstrip("/")
+        if canonical_url and href != canonical_url:
+            continue
+        text = " ".join(anchor.stripped_strings).strip()
+        if not text:
+            continue
+        if title and text.startswith(title):
+            headline = text[len(title):].strip(" -")
+            if headline:
+                return headline
+    return None
+
+
+def _extract_profile_location_from_html(html_text: str) -> str | None:
+    match = re.search(
+        r">([^<>]{2,120})</p>\s*<p[^>]*>·</p>\s*<p[^>]*><a[^>]+/overlay/contact-info/",
+        html_text,
+        re.IGNORECASE,
+    )
+    if match:
+        return unescape(match.group(1)).strip()
+    return None
+
+
+def _extract_linkedin_profile_from_html(record: dict[str, Any], html_text: str) -> dict[str, Any]:
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    canonical_url = str(record.get("canonical_url") or f"https://www.linkedin.com/in/{record.get('public_identifier', '')}/").strip()
+    title_match = re.search(r"<title>([^<]+)</title>", html_text or "", re.IGNORECASE)
+    raw_title = unescape(title_match.group(1)).strip() if title_match else ""
+    title = raw_title.replace("| LinkedIn", "").strip() or str(record.get("public_identifier") or "")
+    headline = _extract_profile_headline_from_html(soup, canonical_url, title)
+    about_match = re.search(r"个人简介\s*(.+?)(?:\s*(?:精选动态|活动|经验|教育|技能|兴趣|推荐内容)|\Z)", soup.get_text("\n", strip=True), re.DOTALL)
+    about = about_match.group(1).strip() if about_match else None
+    follower_match = re.search(r"([\d,]+)\s*位关注者", soup.get_text("\n", strip=True))
+    avatar_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displayphoto-[^\s\"']+)", html_text)
+    banner_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displaybackgroundimage-[^\s\"']+)", html_text)
+    structured = {
+        "source_id": str(record.get("public_identifier") or "").strip() or None,
+        "title": title,
+        "headline": headline,
+        "public_identifier": record.get("public_identifier"),
+        "about": about,
+        "city": _extract_profile_location_from_html(html_text),
+        "country_code": None,
+        "profile_url": canonical_url or None,
+        "avatar": avatar_match.group(1) if avatar_match else None,
+        "banner_image": banner_match.group(1) if banner_match else None,
+        "follower_count": int(follower_match.group(1).replace(",", "")) if follower_match else None,
+    }
+    plain_text = "\n\n".join(part for part in (headline, about) if part)
+    markdown = "\n\n".join(part for part in (f"# {title}" if title else "", headline, about) if part)
+    return {
+        "title": title,
+        "plain_text": plain_text,
+        "markdown": markdown,
+        "structured": {key: value for key, value in structured.items() if value not in (None, "", [], {})},
+        "metadata_extra": {
+            "entity_type": "person",
+            "source_id": structured.get("source_id"),
+        },
+    }
+
+
 def _first_selector_text(soup: BeautifulSoup, selectors: tuple[str, ...]) -> str | None:
     for selector in selectors:
         node = soup.select_one(selector)
@@ -1034,7 +1175,8 @@ def _normalize_linkedin_record(
     metadata = extracted.get("metadata", {}) if isinstance(extracted.get("metadata"), dict) else {}
     extracted_structured = extracted.get("structured", {}) if isinstance(extracted.get("structured"), dict) else {}
     linkedin_data = extracted_structured.get("linkedin", {}) if isinstance(extracted_structured.get("linkedin"), dict) else {}
-    result = dict(linkedin_data)
+    result = dict(extracted_structured)
+    result.update(linkedin_data)
 
     canonical_url = str((discovered or {}).get("canonical_url") or record.get("canonical_url") or "").strip()
     resource_type = str(record.get("resource_type") or "")
@@ -1048,6 +1190,7 @@ def _normalize_linkedin_record(
         result.setdefault("profile_url", canonical_url)
         result.setdefault("position", result.get("headline"))
         result.setdefault("avatar_url", result.get("avatar"))
+        result.setdefault("followers", result.get("follower_count"))
     elif resource_type == "company":
         specialties = result.get("specialties")
         if isinstance(specialties, list):
@@ -1201,7 +1344,7 @@ def _extract_linkedin_company(data: dict[str, Any]) -> dict[str, Any]:
         "staff_count": company.get("staffCount"),
         "staff_count_range_start": (company.get("staffCountRange") or {}).get("start"),
         "headquarters": headquarters,
-        "country_code": company.get("countryISOCode"),
+        "country_code": company.get("countryISOCode") or ((company.get("headquarter") or {}).get("country") if isinstance(company.get("headquarter"), dict) else None),
         "locations": _location_labels(company),
         "follower_count": follower_count,
         "logo_url": logo_url,
@@ -1209,6 +1352,13 @@ def _extract_linkedin_company(data: dict[str, Any]) -> dict[str, Any]:
         "company_url": company.get("url"),
         "founded_year": company.get("foundedOn", {}).get("year") if isinstance(company.get("foundedOn"), dict) else company.get("foundedYear"),
         "specialties": company.get("specialities") or [],
+        "company_size_range": _company_size_range_label(company),
+        "company_type": _company_type_value(company),
+        "top_topics": _company_top_topics(company),
+        "funding_stage_inferred": _company_funding_stage(company),
+        "linkable_identifiers": _company_linkable_identifiers(company),
+        "company_stage_signals": _company_stage_signals(company),
+        "tech_stack_mentioned_in_about": _company_tech_stack_mentions(text, company.get("specialities") or []),
     }
     return {
         "title": title,
@@ -1550,6 +1700,130 @@ def _industry_label(company: dict[str, Any]) -> str | None:
             return first
 
     return None
+
+
+def _company_size_range_label(company: dict[str, Any]) -> str | None:
+    staff_count_range = company.get("staffCountRange")
+    if not isinstance(staff_count_range, dict):
+        return None
+    start = staff_count_range.get("start")
+    end = staff_count_range.get("end")
+    if isinstance(start, int) and isinstance(end, int):
+        return f"{start}-{end} employees"
+    if isinstance(start, int):
+        return f"{start}+ employees"
+    return None
+
+
+def _company_type_value(company: dict[str, Any]) -> str | None:
+    company_type = company.get("companyType")
+    if isinstance(company_type, dict):
+        company_type = company_type.get("localizedName") or company_type.get("name")
+    value = str(company_type or "").strip().lower()
+    if not value:
+        return None
+    mapping = {
+        "public company": "public",
+        "public": "public",
+        "privately held": "private",
+        "private": "private",
+        "joint venture": "private",
+        "合营企业": "private",
+        "nonprofit": "nonprofit",
+        "非营利组织": "nonprofit",
+        "educational": "educational",
+        "政府机构": "government",
+        "government agency": "government",
+        "government": "government",
+    }
+    return mapping.get(value)
+
+
+def _company_top_topics(company: dict[str, Any]) -> list[str]:
+    cards = company.get("contentTopicCards")
+    if not isinstance(cards, list):
+        return []
+    topics: list[str] = []
+    seen: set[str] = set()
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        raw = card.get("name")
+        if not raw and isinstance(card.get("entityUrn"), str) and ":hashtag:" in card["entityUrn"]:
+            raw = card["entityUrn"].rsplit(":hashtag:", 1)[-1]
+        topic = str(raw or "").strip().lower()
+        if not topic or topic in seen:
+            continue
+        seen.add(topic)
+        topics.append(topic)
+    return topics
+
+
+def _company_funding_stage(company: dict[str, Any]) -> str | None:
+    funding = company.get("fundingData")
+    if not isinstance(funding, dict):
+        return None
+    last_round = funding.get("lastFundingRound")
+    if not isinstance(last_round, dict):
+        return None
+    funding_type = str(last_round.get("fundingType") or "").strip().lower()
+    return funding_type or None
+
+
+def _company_linkable_identifiers(company: dict[str, Any]) -> dict[str, Any] | None:
+    identifiers: dict[str, Any] = {}
+    website = str(company.get("companyPageUrl") or "").strip()
+    if website:
+        identifiers["website_domain"] = urlsplit(website).hostname or None
+    funding = company.get("fundingData")
+    if isinstance(funding, dict):
+        crunchbase = str(funding.get("companyCrunchbaseUrl") or "").strip()
+        if crunchbase:
+            identifiers["crunchbase_hint"] = crunchbase
+    return identifiers or None
+
+
+def _company_stage_signals(company: dict[str, Any]) -> dict[str, Any] | None:
+    funding = company.get("fundingData")
+    if not isinstance(funding, dict):
+        return None
+    funding_stage = _company_funding_stage(company)
+    num_rounds = funding.get("numFundingRounds")
+    evidence: list[str] = []
+    if funding_stage:
+        evidence.append(funding_stage.upper())
+    if isinstance(num_rounds, int) and num_rounds > 0:
+        evidence.append(f"{num_rounds} funding rounds")
+    if not evidence:
+        return None
+    return {
+        "stage_inferred": funding_stage,
+        "confidence": 0.8 if funding_stage else 0.5,
+        "evidence_phrases": evidence,
+    }
+
+
+def _company_tech_stack_mentions(description: Any, specialties: Any) -> list[str]:
+    parts: list[str] = []
+    if isinstance(description, str) and description.strip():
+        parts.append(description)
+    if isinstance(specialties, str) and specialties.strip():
+        parts.append(specialties)
+    elif isinstance(specialties, list):
+        parts.extend(str(item) for item in specialties if str(item).strip())
+    haystack = "\n".join(parts).lower()
+    if not haystack:
+        return []
+    matches: list[str] = []
+    for label, needles in (
+        ("AI", ("artificial intelligence", " ai ")),
+        ("machine learning", ("machine learning",)),
+        ("Python", ("python",)),
+        ("Kubernetes", ("kubernetes",)),
+    ):
+        if any(needle in haystack for needle in needles):
+            matches.append(label)
+    return matches
 
 
 ADAPTER = PlatformAdapter(

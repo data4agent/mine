@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import re
+import json
 from pathlib import Path
 from typing import Any
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "prompt_templates"
 
 
-def render_prompt(template_name: str, source_fields: dict[str, Any]) -> str:
+def render_prompt(
+    template_name: str,
+    source_fields: dict[str, Any],
+    *,
+    output_fields: list[Any] | None = None,
+    field_group_name: str = "",
+    field_group_description: str = "",
+) -> str:
     """Render a Jinja2-style template with simple variable substitution.
 
     Supports:
@@ -17,7 +25,13 @@ def render_prompt(template_name: str, source_fields: dict[str, Any]) -> str:
     """
     template_path = _TEMPLATES_DIR / template_name
     if not template_path.exists():
-        return _fallback_prompt(template_name, source_fields)
+        return _fallback_prompt(
+            template_name,
+            source_fields,
+            output_fields=output_fields or [],
+            field_group_name=field_group_name,
+            field_group_description=field_group_description,
+        )
 
     template_text = template_path.read_text(encoding="utf-8")
     return _expand_template(template_text, source_fields)
@@ -52,13 +66,46 @@ def _expand_template(template_text: str, source_fields: dict[str, Any]) -> str:
     return result.strip()
 
 
-def _fallback_prompt(template_name: str, source_fields: dict[str, Any]) -> str:
+def _build_output_schema(output_fields: list[Any]) -> dict[str, Any]:
+    schema: dict[str, Any] = {}
+    for field in output_fields:
+        name = getattr(field, "name", None)
+        if not name:
+            continue
+        schema[str(name)] = {
+            "type": getattr(field, "field_type", "string"),
+            "description": getattr(field, "description", ""),
+            "required": bool(getattr(field, "required", True)),
+        }
+    return schema
+
+
+def _fallback_prompt(
+    template_name: str,
+    source_fields: dict[str, Any],
+    *,
+    output_fields: list[Any],
+    field_group_name: str,
+    field_group_description: str,
+) -> str:
     """Generate a simple prompt when no template file is found."""
-    parts = [f"Field group: {template_name}", "Source fields:"]
+    resolved_group_name = field_group_name or template_name.removesuffix(".jinja2")
+    parts = [f"Field group: {resolved_group_name}"]
+    if field_group_description:
+        parts.append(f"Description: {field_group_description}")
+    parts.append("Source fields:")
     for key, value in source_fields.items():
         parts.append(f"  {key}: {value}")
     parts.append("")
-    parts.append("Return a JSON object with the enriched fields based on the source data above.")
+    if output_fields:
+        parts.append("Target output schema:")
+        parts.append(json.dumps(_build_output_schema(output_fields), ensure_ascii=False, indent=2))
+        parts.append("")
+    parts.append("Instructions:")
+    parts.append("- Return valid JSON only.")
+    parts.append("- Use exactly the target output field names.")
+    parts.append("- If a field cannot be inferred confidently, return null, [] or {} as appropriate.")
+    parts.append("- Do not add extra keys.")
     return "\n".join(parts)
 
 

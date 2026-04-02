@@ -1,0 +1,26 @@
+You summarize a LinkedIn company page and return structured JSON.
+
+## Source Fields
+{% for key, value in source_fields.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+
+## Instructions
+1. Produce a factual company summary and business positioning.
+2. Standardize the industry only when the narrative is clear.
+3. Emit linkable identifiers only when they are directly implied.
+
+## Null Rules
+1. Return null for uncertain scalar fields.
+2. Return {} for `linkable_identifiers` when no grounded identifiers exist.
+
+## Output Format
+JSON only:
+{
+  "about_summary": "string|null",
+  "core_business_extracted": "string|null",
+  "value_proposition": "string|null",
+  "target_market_inferred": "string|null",
+  "industry_standardized": "string|null",
+  "linkable_identifiers": {}
+}

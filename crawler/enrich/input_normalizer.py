@@ -115,6 +115,7 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
         _setdefault_from_candidates(document, "name", "title")
         _setdefault_from_candidates(document, "profile_url", "canonical_url")
         _setdefault_from_candidates(document, "avatar_url", "avatar", "avatar_url")
+        _setdefault_from_candidates(document, "banner_image", "banner", "banner_url")
         _setdefault_from_candidates(document, "follower_count", "followers")
         _setdefault_from_candidates(document, "connection_count", "connections")
         _setdefault_from_candidates(document, "posts", "featured_content", "posts_count")
@@ -125,6 +126,8 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
         _setdefault_from_candidates(document, "about", "description", "summary", "plain_text")
         _setdefault_from_candidates(document, "employee_count", "staff_count")
         _setdefault_from_candidates(document, "company_url", "canonical_url")
+        _setdefault_from_candidates(document, "website", "company_website")
+        _setdefault_from_candidates(document, "headquarters_location", "headquarters", "headquarter")
         _setdefault_from_candidates(document, "company_posts", "posts_recent")
         _setdefault_from_candidates(document, "job_postings", "jobs", "open_jobs")
         return
@@ -134,6 +137,8 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
         _setdefault_from_candidates(document, "job_description", "description", "plain_text")
         _setdefault_from_candidates(document, "location", "job_location", "location")
         _setdefault_from_candidates(document, "posted_date", "date_posted", "published_at", "listed_at")
+        _setdefault_from_candidates(document, "job_summary", "summary")
+        _setdefault_from_candidates(document, "required_skills_seed", "skills", "required_skills")
         return
 
     if platform == "linkedin" and resource_type == "post":
@@ -142,6 +147,7 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
         _setdefault_from_candidates(document, "comment_count", "num_comments", "comment_count")
         _setdefault_from_candidates(document, "share_count", "num_shares", "repost_count")
         _setdefault_from_candidates(document, "author_profile_url", "user_url", "author_profile_url")
+        _setdefault_from_candidates(document, "author_headline", "headline")
         _setdefault_from_candidates(document, "posted_date", "date_posted")
         if document.get("post_media_urls") in (None, "", [], {}):
             media_urls: list[Any] = []
@@ -171,16 +177,20 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
 
     if platform == "amazon" and resource_type == "review":
         _setdefault_from_candidates(document, "review_text", "plain_text")
-        _setdefault_from_candidates(document, "reviewer_name", "author", "reviewer", "user_name")
+        _setdefault_from_candidates(document, "reviewer_name", "author_name", "author", "reviewer", "user_name")
+        _setdefault_from_candidates(document, "author_name", "reviewer_name", "author", "reviewer", "user_name")
         _setdefault_from_candidates(document, "rating", "review_rating", "stars")
         _setdefault_from_candidates(document, "verified_purchase", "is_verified_purchase", "verified")
         _setdefault_from_candidates(document, "review_images", "photo_urls", "image_urls", "images")
+        _setdefault_from_candidates(document, "date_posted", "review_date", "date", "posted_date")
         return
 
     if platform == "amazon" and resource_type == "seller":
         _setdefault_from_candidates(document, "seller_name", "title", "name")
         _setdefault_from_candidates(document, "product_listings", "products", "listings", "items")
         _setdefault_from_candidates(document, "seller_since", "since", "shop_since", "joined_date")
+        _setdefault_from_candidates(document, "seller_rating", "stars")
+        _setdefault_from_candidates(document, "feedback_count", "feedbacks")
         return
 
     if platform == "base" and resource_type == "address":

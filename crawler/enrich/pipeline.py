@@ -262,7 +262,13 @@ class EnrichPipeline:
                 )
 
             gen_config = spec.generative_config
-            prompt = render_prompt(gen_config.prompt_template, source_fields)
+            prompt = render_prompt(
+                gen_config.prompt_template,
+                source_fields,
+                output_fields=spec.output_fields,
+                field_group_name=spec.name,
+                field_group_description=spec.description,
+            )
             if self._llm_client is not None:
                 return await self._run_generative(spec, prompt, gen_config.system_prompt, start, document)
             return FieldGroupResult(

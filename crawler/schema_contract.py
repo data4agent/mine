@@ -69,6 +69,9 @@ def flatten_record_for_schema(record: Record) -> dict[str, Any]:
     flattened: dict[str, Any] = {}
     for field_name in contract.property_names:
         value = _resolve_schema_field(record, field_name)
+        normalizer = FIELD_NORMALIZERS.get(field_name)
+        if normalizer is not None:
+            value = normalizer(value)
         if value in (None, ""):
             continue
         flattened[field_name] = value
@@ -129,7 +132,7 @@ def _infer_record_kind(record: Record) -> tuple[str, str]:
             return "amazon", "product"
         if "seller=" in parsed.query:
             return "amazon", "seller"
-        if "/review/" in path:
+        if "/review/" in path or "/gp/customer-reviews/" in path:
             return "amazon", "review"
     if "arxiv.org" in hostname:
         return "arxiv", "paper"
@@ -150,6 +153,39 @@ def _first(*values: Any) -> Any:
     for value in values:
         if value not in (None, ""):
             return value
+    return None
+
+
+def _join_strings(value: Any) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, (list, tuple)):
+        parts = [str(item).strip() for item in value if str(item).strip()]
+        if parts:
+            return ", ".join(parts)
+    return None
+
+
+def _count_items(value: Any) -> int | None:
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return None
+
+
+def _wikipedia_has_infobox(record: Record) -> bool | None:
+    structured = _structured(record)
+    metadata = _metadata(record)
+
+    infobox = _first(structured.get("infobox_structured"), structured.get("infobox"))
+    if isinstance(infobox, dict):
+        return bool(infobox)
+
+    pageprops = metadata.get("pageprops")
+    if isinstance(pageprops, dict):
+        for key in ("infobox", "wikibase_item", "wikibase-shortdesc"):
+            if key in pageprops:
+                return True
     return None
 
 
@@ -262,10 +298,28 @@ def _amazon_dedup_key(record: Record) -> str | None:
 
 
 FIELD_RESOLVERS: dict[str, Resolver] = {
+    "ID": lambda record: _first(
+        record.get("ID"),
+        _structured(record).get("ID"),
+        record.get("linkedin_num_id"),
+        _structured(record).get("linkedin_num_id"),
+        record.get("company_id"),
+        _structured(record).get("company_id"),
+        _structured(record).get("source_id"),
+        record.get("source_id"),
+    ),
     "URL": _canonical_url,
     "canonical_url": _canonical_url,
     "title": lambda record: _first(_structured(record).get("title"), _metadata(record).get("title"), record.get("title")),
     "name": lambda record: _first(_structured(record).get("name"), _structured(record).get("title"), _metadata(record).get("title"), record.get("name"), record.get("title")),
+    "about": lambda record: _first(
+        record.get("about"),
+        _structured(record).get("about"),
+        _structured(record).get("about_summary"),
+        _structured(record).get("description"),
+        _metadata(record).get("description"),
+        record.get("summary"),
+    ),
     "seller_name": lambda record: _first(
         record.get("seller_name"),
         _structured(record).get("seller_name"),
@@ -306,17 +360,104 @@ FIELD_RESOLVERS: dict[str, Resolver] = {
         _structured(record).get("author"),
         record.get("reviewer_name"),
         _structured(record).get("reviewer_name"),
+        record.get("reviewer"),
+        _structured(record).get("reviewer"),
+        record.get("user_name"),
+        _structured(record).get("user_name"),
     ),
     "content": lambda record: _first(record.get("plain_text"), record.get("cleaned_data"), record.get("markdown")),
+    "raw_text": lambda record: _first(
+        record.get("raw_text"),
+        _structured(record).get("raw_text"),
+        record.get("plain_text"),
+        record.get("cleaned_data"),
+        record.get("markdown"),
+    ),
+    "HTML": lambda record: _first(record.get("HTML"), _structured(record).get("HTML"), record.get("html"), _structured(record).get("html"), record.get("markdown")),
+    "article_summary": lambda record: _first(
+        record.get("article_summary"),
+        _structured(record).get("article_summary"),
+        record.get("summary"),
+        _structured(record).get("summary"),
+        _metadata(record).get("description"),
+    ),
+    "has_infobox": _wikipedia_has_infobox,
+    "infobox_structured": lambda record: _first(
+        record.get("infobox_structured"),
+        _structured(record).get("infobox_structured"),
+        _structured(record).get("infobox"),
+    ),
     "linkedin_num_id": lambda record: _first(record.get("linkedin_num_id"), _structured(record).get("linkedin_num_id"), _structured(record).get("source_id"), record.get("source_id")),
     "company_id": lambda record: _first(record.get("company_id"), _structured(record).get("company_id"), _structured(record).get("source_id"), record.get("source_id")),
+    "current_company_name": lambda record: _first(
+        record.get("current_company_name"),
+        _structured(record).get("current_company_name"),
+        record.get("current_company"),
+        _structured(record).get("current_company"),
+    ),
+    "current_company_id": lambda record: _first(
+        record.get("current_company_id"),
+        _structured(record).get("current_company_id"),
+    ),
+    "position": lambda record: _first(
+        record.get("position"),
+        _structured(record).get("position"),
+        _structured(record).get("headline"),
+        _structured(record).get("title"),
+        _metadata(record).get("headline"),
+    ),
+    "website": lambda record: _first(
+        record.get("website"),
+        _structured(record).get("website"),
+        record.get("company_website"),
+        _structured(record).get("company_website"),
+    ),
+    "specialties": lambda record: _first(
+        _join_strings(_structured(record).get("specialties")),
+        _join_strings(record.get("specialties")),
+        record.get("specialties"),
+        _structured(record).get("specialties"),
+    ),
     "job_posting_id": lambda record: _first(record.get("job_posting_id"), _structured(record).get("job_posting_id"), _structured(record).get("source_id"), record.get("job_id"), record.get("source_id")),
+    "job_title_standardized": lambda record: _first(
+        record.get("job_title_standardized"),
+        _structured(record).get("job_title_standardized"),
+        ((record.get("enrichment") or {}).get("enriched_fields") or {}).get("job_title_standardized"),
+        ((record.get("enrichment") or {}).get("enriched_fields") or {}).get("standardized_job_title"),
+        record.get("standardized_job_title"),
+    ),
+    "job_summary": lambda record: _first(
+        record.get("job_summary"),
+        _structured(record).get("job_summary"),
+        record.get("summary"),
+        _structured(record).get("summary"),
+        record.get("plain_text"),
+    ),
+    "remote_policy_detail": lambda record: _first(
+        record.get("remote_policy_detail"),
+        _structured(record).get("remote_policy_detail"),
+        ((record.get("enrichment") or {}).get("enriched_fields") or {}).get("remote_policy_detail"),
+        ((record.get("enrichment") or {}).get("enriched_fields") or {}).get("remote_policy"),
+        record.get("remote_policy"),
+    ),
     "post_id": _linkedin_post_id,
+    "entities_mentioned": lambda record: _first(
+        record.get("entities_mentioned"),
+        _structured(record).get("entities_mentioned"),
+        record.get("entities"),
+        _structured(record).get("entities"),
+        record.get("mentions"),
+        _structured(record).get("mentions"),
+    ),
     "page_id": lambda record: _first(record.get("page_id"), _structured(record).get("page_id"), _metadata(record).get("page_id")),
     "language": _wikipedia_language,
     "date_posted": lambda record: _first(
         record.get("date_posted"),
         _structured(record).get("date_posted"),
+        record.get("review_date"),
+        _structured(record).get("review_date"),
+        record.get("date"),
+        _structured(record).get("date"),
         record.get("posted_date"),
         _structured(record).get("posted_date"),
         _structured(record).get("published_at"),
@@ -328,7 +469,42 @@ FIELD_RESOLVERS: dict[str, Resolver] = {
     "asin": lambda record: _first(record.get("asin"), _structured(record).get("asin")),
     "seller_id": _amazon_seller_id,
     "review_id": _amazon_review_id,
+    "feedbacks": lambda record: _first(
+        record.get("feedbacks"),
+        _structured(record).get("feedbacks"),
+        record.get("feedback_count"),
+        _structured(record).get("feedback_count"),
+    ),
+    "stars": lambda record: _first(
+        record.get("stars"),
+        _structured(record).get("stars"),
+        record.get("seller_rating"),
+        _structured(record).get("seller_rating"),
+    ),
     "arxiv_id": lambda record: _first(record.get("arxiv_id"), _structured(record).get("arxiv_id")),
+    "DOI": lambda record: _first(record.get("DOI"), _structured(record).get("DOI"), record.get("doi"), _structured(record).get("doi")),
+    "submission_comments": lambda record: _first(
+        record.get("submission_comments"),
+        _structured(record).get("submission_comments"),
+        record.get("comment"),
+        _structured(record).get("comment"),
+    ),
+    "submission_date": lambda record: _first(
+        record.get("submission_date"),
+        _structured(record).get("submission_date"),
+        record.get("published"),
+        _structured(record).get("published"),
+    ),
+    "update_date": lambda record: _first(
+        record.get("update_date"),
+        _structured(record).get("update_date"),
+        record.get("updated"),
+        _structured(record).get("updated"),
+    ),
+    "PDF_url": lambda record: _first(record.get("PDF_url"), _structured(record).get("PDF_url"), record.get("pdf_url"), _structured(record).get("pdf_url")),
+    "num_authors": lambda record: _count_items(
+        _first(record.get("authors"), _structured(record).get("authors"), _structured(record).get("authors_structured"))
+    ),
     "dedup_key": lambda record: _first(
         record.get("dedup_key"),
         _structured(record).get("dedup_key"),
@@ -340,6 +516,11 @@ FIELD_RESOLVERS: dict[str, Resolver] = {
         _wikipedia_dedup_key(record),
         _first(record.get("arxiv_id"), _structured(record).get("arxiv_id")),
     ),
+}
+
+
+FIELD_NORMALIZERS: dict[str, Callable[[Any], Any]] = {
+    "specialties": _join_strings,
 }
 
 

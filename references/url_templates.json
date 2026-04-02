@@ -31,6 +31,12 @@
       "optional_fields": [],
       "notes": "Seller storefront discovery is useful for brand and manufacturer linking."
     },
+    "review": {
+      "canonical_template": "https://www.amazon.com/gp/customer-reviews/{review_id}",
+      "required_fields": ["review_id"],
+      "optional_fields": ["asin"],
+      "notes": "Review detail pages carry reviewer text, rating, media, and seller response signals."
+    },
     "search": {
       "canonical_template": "https://www.amazon.com/s?k={query}",
       "required_fields": ["query"],

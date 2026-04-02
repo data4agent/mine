@@ -17,7 +17,17 @@ if TYPE_CHECKING:
 
 from auth_orchestrator import AUTH_ERROR_CODES, AuthOrchestrator
 from canonicalize import normalize_url
-from common import inject_crawler_root, resolve_miner_id, resolve_platform_base_url, resolve_wallet_config
+from common import (
+    DEFAULT_EIP712_CHAIN_ID,
+    DEFAULT_EIP712_DOMAIN_NAME,
+    DEFAULT_EIP712_VERIFYING_CONTRACT,
+    inject_crawler_root,
+    resolve_awp_registration,
+    resolve_miner_id,
+    resolve_platform_base_url,
+    resolve_signature_config,
+    resolve_wallet_config,
+)
 from crawl_mode_planner import CrawlModePlanner
 from lib.platform_client import PlatformClient as ExtractedPlatformClient
 from mine_gateway import resolve_mine_gateway_model_config, write_model_config
@@ -214,9 +224,8 @@ class PlatformClient:
                             error_message = str(error_body.get("message") or "")
                     if error_code == "MISSING_HEADERS":
                         raise RuntimeError(
-                            "Platform Service requires Web3 signature headers; configure plugin config "
-                            "`awpWalletToken` or `AWP_WALLET_TOKEN` (from `awp-wallet unlock --duration 3600`) "
-                            "or provide equivalent signed requests."
+                            "Platform API requires Web3 signature headers. "
+                            "Let Mine restore the local wallet session automatically or provide equivalent signed requests."
                         ) from error
                     if (
                         self._signer is not None
@@ -730,6 +739,7 @@ class AgentWorker:
             claimed = []
             summary.errors.append(f"claim source failed: {exc}")
         summary.errors.extend(getattr(self.backend_source, "last_errors", []))
+        summary.messages.extend(getattr(self.backend_source, "last_skips", []))
         summary.claimed_items = len(claimed)
         items.extend(claimed)
         try:
@@ -1303,7 +1313,7 @@ class AgentWorker:
         return True
 
 
-def build_worker_from_env() -> AgentWorker:
+def build_worker_from_env(*, auto_register_awp: bool = False) -> AgentWorker:
     from signer import WalletSigner
 
     output_root = Path(os.environ.get("CRAWLER_OUTPUT_ROOT", str(CRAWLER_ROOT / "output" / "agent-runs"))).resolve()
@@ -1311,6 +1321,7 @@ def build_worker_from_env() -> AgentWorker:
     python_bin = os.environ.get("PYTHON_BIN") or os.environ.get("PLUGIN_PYTHON_BIN") or sys.executable
     state_root = Path(os.environ.get("WORKER_STATE_ROOT", str(output_root / "_worker_state"))).resolve()
     gateway_model_config = resolve_mine_gateway_model_config()
+    signature_config = resolve_signature_config()
     config = WorkerConfig(
         base_url=resolve_platform_base_url(),
         token=os.environ.get("PLATFORM_TOKEN", ""),
@@ -1328,13 +1339,19 @@ def build_worker_from_env() -> AgentWorker:
         auth_retry_interval_seconds=max(30, int(os.environ.get("AUTH_RETRY_INTERVAL_SECONDS", "300"))),
         gateway_enrich_enabled=bool(gateway_model_config),
         gateway_model_config=gateway_model_config,
-        # EIP-712 signature domain parameters from environment
-        eip712_domain_name=os.environ.get("EIP712_DOMAIN_NAME", "Platform Service"),
-        eip712_chain_id=int(os.environ.get("EIP712_CHAIN_ID", "1")),
-        eip712_verifying_contract=os.environ.get("EIP712_VERIFYING_CONTRACT", "0x0000000000000000000000000000000000000000"),
+        # 签名参数统一走平台自动发现/缓存链路，再按需被环境变量覆盖。
+        eip712_domain_name=str(signature_config.get("domain_name") or DEFAULT_EIP712_DOMAIN_NAME),
+        eip712_chain_id=int(signature_config.get("chain_id") or DEFAULT_EIP712_CHAIN_ID),
+        eip712_verifying_contract=str(
+            signature_config.get("verifying_contract") or DEFAULT_EIP712_VERIFYING_CONTRACT
+        ),
     )
 
     wallet_bin, wallet_token = resolve_wallet_config()
+    if auto_register_awp and wallet_token.strip():
+        registration = resolve_awp_registration(auto_register=True)
+        if registration.get("registration_required"):
+            raise RuntimeError(str(registration.get("message") or "wallet registration required before startup"))
     signer: WalletSigner | None = None
     if wallet_token.strip():
         signer = WalletSigner(wallet_bin=wallet_bin, session_token=wallet_token)

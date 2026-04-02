@@ -17,8 +17,6 @@ Unix-like:
 
 ```bash
 ./scripts/bootstrap.sh
-awp-wallet init
-awp-wallet unlock --duration 3600
 python scripts/run_tool.py doctor
 python scripts/run_tool.py agent-status
 python scripts/run_tool.py agent-start
@@ -28,8 +26,6 @@ Windows:
 
 ```powershell
 ./scripts/bootstrap.ps1
-awp-wallet init
-awp-wallet unlock --duration 3600
 python scripts/run_tool.py doctor
 python scripts/run_tool.py agent-status
 python scripts/run_tool.py agent-start
@@ -52,13 +48,23 @@ Defaults now cover the normal OpenClaw happy path:
 
 Required for authenticated mining:
 
-- `AWP_WALLET_TOKEN` or `AWP_WALLET_TOKEN_SECRET_REF`
+- 默认情况下不需要手动设置；Mine 会优先从本地状态恢复钱包会话，必要时自动 `init + unlock`
+- 只有在接入外部 Secret 管理或自定义宿主时，才需要 `AWP_WALLET_TOKEN` 或 `AWP_WALLET_TOKEN_SECRET_REF`
 
-Usually required for the known aDATA platform:
+Signature configuration is also auto-managed now:
 
-- `EIP712_DOMAIN_NAME=aDATA`
-- `EIP712_CHAIN_ID=8453`
-- `EIP712_VERIFYING_CONTRACT=0x0000000000000000000000000000000000000000`
+- Mine 会优先尝试从平台拉取 `GET /api/public/v1/signature-config`
+- 拉取成功后会覆盖本地默认值，并写入本地 worker state 缓存
+- 如果平台暂时不可达，才回退到内置 aDATA 默认值
+- `doctor` / `bootstrap` 会明确显示当前签名配置来源是 `platform` 还是 `fallback`
+- 只有在特殊兼容场景下，才需要手动覆盖 `EIP712_*`
+
+Registration is also auto-managed now:
+
+- Mine 会在启动链路检查当前钱包是否已经在 AWP 注册
+- 若未注册，会自动尝试 gasless 自注册，本质是 `setRecipient(self)`
+- 自动注册成功后继续启动；若仍未完成，`doctor` 会显示当前注册状态
+- 如需切换 AWP 接口，可通过 `AWP_API_URL` 覆盖默认 `https://api.awp.sh/api`
 
 Important nuance: low-level platform status calls derive the miner identity from the wallet address. `MINER_ID` is now just a helper-layer compatibility default and does not need to be configured manually in the common case.
 

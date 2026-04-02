@@ -144,6 +144,29 @@ def _extract_arxiv_ids(text: str) -> list[str]:
     return sorted(set(re.findall(r"\b\d{4}\.\d{4,5}(?:v\d+)?\b", text)))
 
 
+def _extract_arxiv_versions(entry_id: str | None) -> list[str]:
+    if not entry_id:
+        return []
+    match = re.search(r"v(\d+)$", entry_id)
+    if match is None:
+        return ["v1"]
+    latest_version = int(match.group(1))
+    if latest_version <= 0:
+        return []
+    return [f"v{index}" for index in range(1, latest_version + 1)]
+
+
+def _estimate_figure_count(markdown: str, plain_text: str) -> int:
+    numbered_figures: set[str] = set()
+    for source in (markdown, plain_text):
+        for match in re.findall(r"(?im)\b(?:figure|fig\.?)\s*(\d+)\b", source):
+            numbered_figures.add(match)
+    if numbered_figures:
+        return len(numbered_figures)
+    image_markers = re.findall(r"!\[[^\]]*\]\([^)]+\)", markdown)
+    return len(image_markers)
+
+
 def _generate_doc_id(url: str, platform: str) -> str:
     """Generate a deterministic doc_id from URL and platform."""
     hash_input = f"{platform}:{url}".encode("utf-8")
@@ -374,6 +397,7 @@ class ExtractPipeline:
         pdf_document_blocks: list[dict[str, Any]] = []
         parser_metadata: dict[str, Any] = {}
         page_count = None
+        num_figures = None
         if pdf_url:
             pdf_bytes = fetch_binary_content(pdf_url)
             import tempfile
@@ -393,6 +417,7 @@ class ExtractPipeline:
             pdf_document_blocks = list(pdf_result.get("document_blocks") or [])
             parser_metadata.update(dict(pdf_result.get("parser_metadata") or {}))
             page_count = pdf_result.get("page_count")
+            num_figures = _estimate_figure_count(pdf_markdown, pdf_text)
         full_text = pdf_text or summary or ""
         preamble = f"# {title}\n\n## Abstract\n\n{summary}".strip() if title or summary else ""
         body_markdown = pdf_markdown.strip()
@@ -424,6 +449,8 @@ class ExtractPipeline:
             normalized_id = paper_id.split("v", 1)[0]
             if normalized_id != current_arxiv_id:
                 related_arxiv_ids.append(paper_id)
+        entry_id = text_or_none("atom:id")
+        versions = _extract_arxiv_versions(entry_id)
         structured = StructuredFields(
             platform=platform,
             resource_type=resource_type,
@@ -438,7 +465,8 @@ class ExtractPipeline:
                 "primary_category": primary_category,
                 "published": text_or_none("atom:published"),
                 "updated": text_or_none("atom:updated"),
-                "entry_id": text_or_none("atom:id"),
+                "entry_id": entry_id,
+                "versions": versions,
                 "pdf_url": pdf_url,
                 "raw_text": full_text,
                 "title_normalized": normalized_title,
@@ -463,6 +491,7 @@ class ExtractPipeline:
                 "pdf_document_blocks": pdf_document_blocks,
                 "pdf_extractor": "pymupdf4llm" if pdf_text else None,
                 "page_count": page_count,
+                "num_figures": num_figures,
             },
             field_sources={
                 "doi": "xml:doi",
@@ -473,6 +502,7 @@ class ExtractPipeline:
                 "published": "xml:published",
                 "updated": "xml:updated",
                 "entry_id": "xml:id",
+                "versions": "xml:id+derived",
                 "pdf_url": "xml:link[type=application/pdf]@href",
                 "raw_text": "pdf:pymupdf4llm",
                 "title_normalized": "xml:title+derived",
@@ -492,6 +522,7 @@ class ExtractPipeline:
                 "pdf_document_blocks": "pdf:pymupdf4llm",
                 "pdf_extractor": "pdf:pymupdf4llm",
                 "page_count": "pdf:pymupdf4llm",
+                "num_figures": "pdf:pymupdf4llm+derived",
             },
         )
 

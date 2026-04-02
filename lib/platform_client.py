@@ -5,6 +5,12 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urljoin
 
 import httpx
+from common import (
+    DEFAULT_EIP712_CHAIN_ID,
+    DEFAULT_EIP712_DOMAIN_NAME,
+    DEFAULT_EIP712_VERIFYING_CONTRACT,
+    resolve_signature_config,
+)
 
 if TYPE_CHECKING:
     from signer import WalletSigner
@@ -17,15 +23,32 @@ class PlatformClient:
         base_url: str,
         token: str,
         signer: "WalletSigner | None" = None,
-        eip712_chain_id: int = 1,
-        eip712_domain_name: str = "Platform Service",
-        eip712_verifying_contract: str = "0x0000000000000000000000000000000000000000",
+        eip712_chain_id: int | None = None,
+        eip712_domain_name: str | None = None,
+        eip712_verifying_contract: str | None = None,
     ) -> None:
+        signature_config = (
+            resolve_signature_config()
+            if eip712_chain_id is None or eip712_domain_name is None or eip712_verifying_contract is None
+            else None
+        )
         self._base_url = base_url.rstrip("/")
         self._signer = signer
-        self._eip712_chain_id = eip712_chain_id
-        self._eip712_domain_name = eip712_domain_name
-        self._eip712_verifying_contract = eip712_verifying_contract
+        self._eip712_chain_id = int(
+            eip712_chain_id
+            if eip712_chain_id is not None
+            else signature_config.get("chain_id", DEFAULT_EIP712_CHAIN_ID)
+        )
+        self._eip712_domain_name = str(
+            eip712_domain_name
+            if eip712_domain_name is not None
+            else signature_config.get("domain_name", DEFAULT_EIP712_DOMAIN_NAME)
+        )
+        self._eip712_verifying_contract = str(
+            eip712_verifying_contract
+            if eip712_verifying_contract is not None
+            else signature_config.get("verifying_contract", DEFAULT_EIP712_VERIFYING_CONTRACT)
+        )
         self._max_retries = 3
         self._last_wallet_refresh: dict[str, Any] | None = None
         headers = {
@@ -214,9 +237,8 @@ class PlatformClient:
                             error_message = str(error_body.get("message") or "")
                     if error_code == "MISSING_HEADERS":
                         raise RuntimeError(
-                            "Platform Service requires Web3 signature headers; configure plugin config "
-                            "`awpWalletToken` or `AWP_WALLET_TOKEN` (from `awp-wallet unlock --duration 3600`) "
-                            "or provide equivalent signed requests."
+                            "Platform API requires Web3 signature headers. "
+                            "Let Mine restore the local wallet session automatically or provide equivalent signed requests."
                         ) from error
                     if (
                         self._signer is not None

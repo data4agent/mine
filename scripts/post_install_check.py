@@ -5,7 +5,6 @@ This script runs after skill installation to ensure all dependencies
 are properly installed, including awp-wallet.
 """
 
-import json
 import os
 import shutil
 import subprocess
@@ -13,7 +12,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-from common import format_wallet_bin_display, resolve_wallet_bin
+from common import (
+    DEFAULT_MINER_ID,
+    DEFAULT_PLATFORM_BASE_URL,
+    format_wallet_bin_display,
+    resolve_awp_registration,
+    resolve_signature_config,
+    resolve_wallet_bin,
+    resolve_wallet_config,
+)
 from install_guidance import awp_wallet_install_steps
 
 
@@ -86,19 +93,32 @@ def check_venv_exists() -> tuple[bool, str]:
 
 
 def check_env_vars() -> tuple[bool, str, list[str]]:
-    """Check required environment variables."""
-    missing = []
-
-    if not os.environ.get("PLATFORM_BASE_URL"):
-        missing.append("PLATFORM_BASE_URL")
-
-    if not os.environ.get("MINER_ID"):
-        missing.append("MINER_ID")
-
-    if missing:
-        return False, f"Missing: {', '.join(missing)}", missing
-
-    return True, "Environment variables set", []
+    """Check effective environment/runtime defaults."""
+    wallet_bin, wallet_token = resolve_wallet_config()
+    signature_config = resolve_signature_config(force_refresh=True)
+    registration = resolve_awp_registration(auto_register=False)
+    signature_origin = str(signature_config.get("origin") or signature_config.get("source") or "fallback")
+    notes = [
+        f"PLATFORM_BASE_URL={os.environ.get('PLATFORM_BASE_URL', '').strip() or DEFAULT_PLATFORM_BASE_URL}",
+        f"MINER_ID={os.environ.get('MINER_ID', '').strip() or DEFAULT_MINER_ID}",
+        f"wallet_bin={format_wallet_bin_display(wallet_bin)}",
+        (
+            "signature_config="
+            f"{signature_origin}:{signature_config.get('domain_name')}/"
+            f"{signature_config.get('chain_id')}"
+        ),
+        f"registration={registration.get('status')}",
+    ]
+    if wallet_token.strip():
+        if registration.get("registered"):
+            notes.append("wallet_session=ready")
+            return True, ", ".join(notes), []
+        notes.append("wallet_session=ready")
+        return False, ", ".join(notes), ["AWP_REGISTRATION"]
+    else:
+        notes.append("wallet_session=ready")
+    notes[-1] = "wallet_session=needs_unlock"
+    return False, ", ".join(notes), ["AWP_WALLET_SESSION"]
 
 
 def attempt_install_awp_wallet() -> tuple[bool, str]:
@@ -215,19 +235,16 @@ def attempt_install_python_deps() -> tuple[bool, str]:
 
 
 def set_default_env_vars() -> tuple[bool, str, list[str]]:
-    """Set default environment variables if missing."""
-    import hashlib
-    import time
-
+    """Set process-local defaults aligned with runtime behavior."""
     set_vars = []
 
     if not os.environ.get("PLATFORM_BASE_URL"):
-        default_url = "http://101.47.73.95"
+        default_url = DEFAULT_PLATFORM_BASE_URL
         os.environ["PLATFORM_BASE_URL"] = default_url
         set_vars.append(f"PLATFORM_BASE_URL={default_url}")
 
     if not os.environ.get("MINER_ID"):
-        default_id = f"miner-{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
+        default_id = DEFAULT_MINER_ID
         os.environ["MINER_ID"] = default_id
         set_vars.append(f"MINER_ID={default_id}")
 
@@ -346,9 +363,9 @@ def main():
                 fixes_failed.append(f"venv: {msg}")
                 print(f"  ✗ {msg}")
 
-        # Fix: Set env vars
+        # Fix: Set defaults / auto-managed session
         if "set_env_vars" in fixes_needed:
-            print("→ Setting default environment variables...")
+            print("→ Applying runtime defaults and restoring wallet session...")
             ok, msg, set_vars = set_default_env_vars()
             if ok:
                 fixes_applied.append(f"env: {msg}")
@@ -400,10 +417,9 @@ def main():
     print("=" * 80)
     print()
     print("Next steps:")
-    print("  1. Initialize wallet: awp-wallet init")
-    print("  2. Unlock wallet:    awp-wallet unlock --duration 3600")
-    print("  3. Check readiness:  python scripts/run_tool.py agent-status")
-    print("  4. Start mining:     python scripts/run_tool.py agent-start")
+    print("  1. Check readiness:  python scripts/run_tool.py agent-status")
+    print("  2. Start mining:     python scripts/run_tool.py agent-start")
+    print("  3. Inspect status:   python scripts/run_tool.py agent-control status")
     print()
 
 

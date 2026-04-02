@@ -51,7 +51,9 @@ Windows:
 ./scripts/bootstrap.ps1
 ```
 
-Bootstrap installs Python dependencies, verifies the host, and installs `awp-wallet` from GitHub if it is missing.
+Bootstrap installs Python dependencies, verifies the host, installs `awp-wallet` from GitHub if it is missing, and refreshes the public signature config cache when the platform is reachable.
+On supported hosts, bootstrap also prepares or restores the local wallet session so `agent-start` can run without manual token export.
+Bootstrap / post-install checks now also report whether the active signature config came from `platform` or `fallback`.
 
 Windows note:
 
@@ -61,17 +63,13 @@ Windows note:
 
 ## Wallet flow
 
-Initialize once if needed:
+The normal path is now auto-managed:
 
-```bash
-awp-wallet init
-```
+- bootstrap verifies `awp-wallet`
+- Mine restores the last valid local wallet session from worker state when available
+- if no session exists yet, Mine attempts `awp-wallet init` and `awp-wallet unlock --duration 3600` automatically
 
-Unlock a session:
-
-```bash
-awp-wallet unlock --duration 3600
-```
+Manual wallet commands are now fallback/recovery tools, not the primary host path.
 
 Mine uses `awp-wallet` for all request signing. Never store seed phrases or private keys in repo files.
 
@@ -85,16 +83,18 @@ Common overrides:
 PLATFORM_BASE_URL=http://101.47.73.95
 MINER_ID=mine-agent
 AWP_WALLET_BIN=awp-wallet
-AWP_WALLET_TOKEN=<token from awp-wallet unlock>
-EIP712_DOMAIN_NAME=aDATA
-EIP712_CHAIN_ID=8453
-EIP712_VERIFYING_CONTRACT=0x0000000000000000000000000000000000000000
 ```
 
 Important nuance:
 
 - `PLATFORM_BASE_URL` now defaults to testnet
 - `MINER_ID` now defaults to `mine-agent` for helper-layer compatibility
+- EIP-712 参数会在运行时优先尝试从平台公开接口 `GET /api/public/v1/signature-config` 拉取
+- 拉取成功后会覆盖本地默认值，并写入本地 worker state 缓存
+- 平台暂时不可达时，才回退到内置 fallback 默认值
+- `EIP712_DOMAIN_NAME` / `EIP712_CHAIN_ID` / `EIP712_VERIFYING_CONTRACT` 现在只应作为手动覆盖手段
+- 若钱包尚未在 AWP 注册，启动链路会自动尝试 gasless 自注册，等价于 `setRecipient(self)`
+- `doctor` 会显示签名配置来源和注册状态，方便宿主判断当前是否已 ready
 - lower-level platform identity is still derived from the wallet signer address
 
 For full details, see [`docs/ENVIRONMENT.md`](./docs/ENVIRONMENT.md).
@@ -102,11 +102,9 @@ For full details, see [`docs/ENVIRONMENT.md`](./docs/ENVIRONMENT.md).
 ## Recommended OpenClaw workflow
 
 1. Run bootstrap.
-2. Initialize or verify the wallet.
-3. Unlock the wallet and capture a session token.
-4. Run `python scripts/run_tool.py agent-status`.
-5. Run `python scripts/run_tool.py agent-start`.
-6. Use `python scripts/run_tool.py agent-control status` to inspect progress without blocking chat.
+2. Run `python scripts/run_tool.py agent-status`.
+3. Run `python scripts/run_tool.py agent-start`.
+4. Use `python scripts/run_tool.py agent-control status` to inspect progress without blocking chat.
 
 ## Troubleshooting
 
@@ -116,6 +114,7 @@ Use:
 python scripts/run_tool.py doctor
 python scripts/run_tool.py diagnose
 python scripts/run_tool.py agent-status
+awp-wallet unlock --duration 3600
 ```
 
 Windows LinkedIn preflight:

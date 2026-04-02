@@ -12,10 +12,13 @@ from pathlib import Path
 from common import (
     DEFAULT_MINER_ID,
     DEFAULT_PLATFORM_BASE_URL,
+    resolve_awp_registration,
     resolve_local_venv_python,
     resolve_miner_id,
     resolve_platform_base_url,
+    resolve_signature_config,
     resolve_wallet_bin,
+    resolve_wallet_config,
 )
 from install_guidance import awp_wallet_install_steps
 
@@ -66,7 +69,7 @@ def render_env_check() -> str:
     ]
 
     optional = [
-        ("AWP_WALLET_TOKEN", "Session token from awp-wallet unlock"),
+        ("AWP_WALLET_TOKEN", "Optional explicit wallet session token override"),
         ("AWP_WALLET_BIN", f"Resolved awp-wallet binary (current: {resolve_wallet_bin()})"),
         ("SOCIAL_CRAWLER_ROOT", "Mine runtime root (default: auto-detected)"),
         ("OPENCLAW_GATEWAY_BASE_URL", "LLM gateway for PoW challenges"),
@@ -139,9 +142,9 @@ def run_diagnosis() -> str:
     # 1. Check environment
     lines.append("1. Environment Variables")
     lines.append("-" * 30)
-    platform_url = os.environ.get("PLATFORM_BASE_URL", "").strip()
-    miner_id = os.environ.get("MINER_ID", "").strip()
-    wallet_token = os.environ.get("AWP_WALLET_TOKEN", "").strip()
+    platform_url = resolve_platform_base_url()
+    miner_id = resolve_miner_id()
+    _wallet_bin, wallet_token = resolve_wallet_config()
 
     if platform_url:
         lines.append(f"  ✓ PLATFORM_BASE_URL = {platform_url}")
@@ -155,9 +158,9 @@ def run_diagnosis() -> str:
         lines.append("  ✗ MINER_ID — NOT SET")
 
     if wallet_token:
-        lines.append(f"  ✓ AWP_WALLET_TOKEN = {wallet_token[:8]}...")
+        lines.append(f"  ✓ Wallet session = {wallet_token[:8]}...")
     else:
-        lines.append("  ! AWP_WALLET_TOKEN — not set (will try to get from wallet)")
+        lines.append("  ! Wallet session — not currently loaded (Mine will manage it automatically)")
 
     lines.append("")
 
@@ -268,13 +271,13 @@ def run_diagnosis() -> str:
                 if status == 401:
                     if error_code == "MISSING_HEADERS":
                         lines.append("    → Missing signature headers")
-                        lines.append("    Fix: awp-wallet unlock --duration 3600")
+                        lines.append("    Fix: rerun bootstrap or refresh the wallet session with awp-wallet unlock --duration 3600")
                     elif error_code in {"INVALID_SIGNATURE", "SIGNATURE_MISMATCH"}:
                         lines.append("    → Signature format/content mismatch")
                         lines.append("    This may indicate platform-side signature verification changed")
                     elif error_code in {"TOKEN_EXPIRED", "SESSION_EXPIRED", "UNAUTHORIZED"}:
                         lines.append("    → Session token expired")
-                        lines.append("    Fix: awp-wallet unlock --duration 3600")
+                        lines.append("    Fix: refresh the wallet session with awp-wallet unlock --duration 3600")
                     elif error_code == "WALLET_NOT_REGISTERED":
                         lines.append("    → This wallet is not registered on the platform")
                         lines.append("    Fix: Register your wallet at the platform website")
@@ -283,7 +286,7 @@ def run_diagnosis() -> str:
                         lines.append("    Contact: Platform support")
                     else:
                         lines.append("    → Unknown 401 error")
-                        lines.append("    • Session token may be expired — try: awp-wallet unlock --duration 3600")
+                        lines.append("    • Auto-managed wallet session may be expired — try: awp-wallet unlock --duration 3600")
                         lines.append("    • Wallet may not be registered on platform")
                         lines.append("    • Platform signature requirements may have changed")
 
@@ -366,39 +369,66 @@ def run_doctor() -> str:
         result["status"] = "error"
         result["fix_commands"].extend(awp_wallet_install_steps())
 
-    # Check 4: Environment variables
+    # Check 4: Runtime defaults and auth mode
     platform_url = resolve_platform_base_url()
     miner_id = resolve_miner_id()
-    wallet_token = os.environ.get("AWP_WALLET_TOKEN", "").strip()
+    _wallet_bin, wallet_token = resolve_wallet_config()
+    signature_config = resolve_signature_config()
+    try:
+        registration = resolve_awp_registration(auto_register=False)
+    except Exception as exc:
+        registration = {
+            "status": "unknown",
+            "registered": False,
+            "registration_required": False,
+            "wallet_address": "",
+            "message": str(exc),
+        }
+    signature_origin = str(signature_config.get("origin") or signature_config.get("source") or "fallback")
 
     result["checks"].append({
-        "name": "env_vars",
+        "name": "runtime_defaults",
         "ok": True,
         "PLATFORM_BASE_URL": platform_url,
         "MINER_ID": miner_id,
-        "AWP_WALLET_TOKEN": (wallet_token[:8] + "...") if wallet_token else "(not set)",
+        "auth_mode": "auto-managed wallet session",
+        "wallet_session": (wallet_token[:8] + "...") if wallet_token else "(auto-managed, not currently available)",
+        "signature_config_source": signature_config.get("source"),
+        "signature_config_origin": signature_origin,
+        "signature_config_status": signature_config.get("status"),
+        "signature_domain_name": signature_config.get("domain_name"),
+        "signature_chain_id": signature_config.get("chain_id"),
+        "signature_verifying_contract": signature_config.get("verifying_contract"),
+        "registration_status": registration.get("status"),
+        "registration_required": registration.get("registration_required"),
+        "wallet_address": registration.get("wallet_address"),
     })
     if not wallet_token and wallet_ok:
-        result["fix_commands"].append("awp-wallet unlock --duration 3600")
+        result["checks"].append({
+            "name": "wallet_session",
+            "ok": False,
+            "message": "Auto-managed wallet session unavailable",
+        })
+        result["fix_commands"].append(_bootstrap_command())
 
-    # Check 5: Wallet token expiry
+    # Check 5: Wallet session expiry
     token_expires = os.environ.get("AWP_WALLET_TOKEN_EXPIRES_AT", "").strip()
     if token_expires.isdigit():
         expires_at = int(token_expires)
         now = int(time.time())
         if expires_at <= now:
             result["checks"].append({
-                "name": "token_expiry",
+                "name": "wallet_session_expiry",
                 "ok": False,
-                "message": "Token expired",
+                "message": "Wallet session expired",
             })
             result["status"] = "error"
             result["fix_commands"].append("awp-wallet unlock --duration 3600")
         elif expires_at - now < 300:
             result["checks"].append({
-                "name": "token_expiry",
+                "name": "wallet_session_expiry",
                 "ok": False,
-                "message": f"Token expires in {expires_at - now}s",
+                "message": f"Wallet session expires in {expires_at - now}s",
             })
             result["fix_commands"].append("awp-wallet unlock --duration 3600")
 
@@ -474,6 +504,28 @@ def render_agent_status() -> str:
             "actions": [_bootstrap_command()],
         }, ensure_ascii=False, indent=2)
 
+    # 优先自动恢复本地钱包会话；只有自动托管失败时才提示人工介入
+    _, wallet_token = resolve_wallet_config()
+    platform_token = os.environ.get("PLATFORM_TOKEN", "").strip()
+    if not wallet_token.strip() and not platform_token:
+        return json.dumps({
+            "ready": False,
+            "state": "auth_required",
+            "message": "Mine 无法自动恢复钱包会话，请先完成 bootstrap 或手动检查 awp-wallet 状态。",
+            "next_action": "重新运行 bootstrap；若仍失败，再手动执行 awp-wallet unlock",
+            "next_command": _bootstrap_command(),
+            "actions": [
+                _bootstrap_command(),
+                "awp-wallet unlock --duration 3600",
+                "python scripts/run_tool.py doctor",
+            ],
+            "defaults": {
+                "platform_base_url": platform_url,
+                "miner_id": miner_id,
+                "wallet_bin": wallet_bin,
+            },
+        }, ensure_ascii=False, indent=2)
+
     if background.get("running"):
         return json.dumps({
             "ready": True,
@@ -531,9 +583,42 @@ def run_agent_start(dataset_arg: str = "") -> str:
     if existing:
         store.clear_background_session()
 
-    worker = build_worker_from_env()
+    try:
+        worker = build_worker_from_env(auto_register_awp=True)
+    except RuntimeError as exc:
+        return json.dumps({
+            "state": "error",
+            "error": "registration_required",
+            "message": str(exc),
+            "next_action": "先执行 doctor；若需要，再刷新钱包会话并重试",
+            "fix_actions": [
+                "python scripts/run_tool.py doctor",
+                "awp-wallet unlock --duration 3600",
+                "重新执行 python scripts/run_tool.py agent-start",
+            ],
+        }, ensure_ascii=False, indent=2)
     selected_dataset_ids = [item.strip() for item in dataset_arg.split(",") if item.strip()] if dataset_arg else None
-    payload = worker.start_working(selected_dataset_ids=selected_dataset_ids)
+
+    import httpx
+
+    try:
+        payload = worker.start_working(selected_dataset_ids=selected_dataset_ids)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            return json.dumps({
+                "state": "error",
+                "error": "unauthorized",
+                "message": "平台返回 401：自动托管的钱包会话失效，或服务器拒绝当前钱包身份。",
+                "next_action": "先执行 doctor；若需要，再手动刷新钱包会话",
+                "fix_actions": [
+                    "python scripts/run_tool.py doctor",
+                    "awp-wallet unlock --duration 3600",
+                    "重新执行 python scripts/run_tool.py agent-start",
+                ],
+                "http_status": 401,
+                "url": str(exc.request.url),
+            }, ensure_ascii=False, indent=2)
+        raise
 
     if payload.get("selection_required"):
         datasets = payload.get("datasets") or []
@@ -707,7 +792,15 @@ def run_agent_loop(max_iterations: int = 1) -> str:
 
     try:
         from agent_runtime import build_worker_from_env
-        worker = build_worker_from_env()
+        try:
+            worker = build_worker_from_env(auto_register_awp=True)
+        except RuntimeError as exc:
+            return json.dumps({
+                "success": False,
+                "error": "registration_required",
+                "message": str(exc),
+                "events": results,
+            })
 
         for i in range(max_iterations):
             results.append({"event": "iteration_start", "iteration": i + 1})
@@ -837,7 +930,11 @@ def main() -> int:
             return 1
         user_input = " ".join(namespace.args)
         from agent_runtime import build_worker_from_env
-        worker = build_worker_from_env()
+        try:
+            worker = build_worker_from_env(auto_register_awp=True)
+        except RuntimeError as exc:
+            print(str(exc))
+            return 1
         result = route_and_execute(user_input, worker)
         if result.get("executed"):
             print(result.get("output", ""))
@@ -848,7 +945,19 @@ def main() -> int:
         return 0
 
     from agent_runtime import build_worker_from_env, export_core_submissions
-    worker = build_worker_from_env()
+    runtime_registration_commands = {
+        "start-working",
+        "list-datasets",
+        "heartbeat",
+        "run-once",
+        "run-loop",
+        "run-worker",
+    }
+    try:
+        worker = build_worker_from_env(auto_register_awp=namespace.command in runtime_registration_commands)
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
 
     if namespace.command == "start-working":
         selected_dataset_ids = []

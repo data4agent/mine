@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from common import DEFAULT_EIP712_CHAIN_ID, DEFAULT_EIP712_DOMAIN_NAME, DEFAULT_EIP712_VERIFYING_CONTRACT
+
 
 @dataclass(frozen=True, slots=True)
 class TaskEnvelope:
@@ -89,9 +91,9 @@ class WorkerConfig:
     gateway_enrich_enabled: bool = False
     gateway_model_config: dict[str, Any] = field(default_factory=dict)
     # EIP-712 signature domain parameters
-    eip712_domain_name: str = "Platform Service"
-    eip712_chain_id: int = 1
-    eip712_verifying_contract: str = "0x0000000000000000000000000000000000000000"
+    eip712_domain_name: str = DEFAULT_EIP712_DOMAIN_NAME
+    eip712_chain_id: int = DEFAULT_EIP712_CHAIN_ID
+    eip712_verifying_contract: str = DEFAULT_EIP712_VERIFYING_CONTRACT
 
 
 @dataclass(frozen=True, slots=True)

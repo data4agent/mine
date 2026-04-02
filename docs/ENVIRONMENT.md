@@ -15,19 +15,20 @@ These are required for authenticated mining requests:
 
 | Variable | Required | Notes |
 |---|---|---|
-| `AWP_WALLET_TOKEN` | Usually yes | Session token from `awp-wallet unlock --duration 3600` |
-| `AWP_WALLET_TOKEN_SECRET_REF` | Alternative | SecretRef-based way to supply the wallet token |
+| `AWP_WALLET_TOKEN` | Usually no | Optional explicit override; Mine now prefers auto-managed local wallet sessions |
+| `AWP_WALLET_TOKEN_SECRET_REF` | Alternative | SecretRef-based way to supply the wallet token when the host manages secrets |
 | `AWP_WALLET_BIN` | No | Defaults to `awp-wallet` |
 
-## Known-good platform values
+## Signature config discovery
 
-The code defaults are still generic:
+Mine now discovers signature settings automatically:
 
-- `EIP712_DOMAIN_NAME=Platform Service`
-- `EIP712_CHAIN_ID=1`
-- `EIP712_VERIFYING_CONTRACT=0x0000000000000000000000000000000000000000`
+1. try `GET /api/public/v1/signature-config`
+2. if the fetch succeeds, persist the resolved config under worker state and use it as the active base
+3. if the platform is unavailable, fall back to the built-in aDATA defaults
+4. if explicit `EIP712_*` environment overrides are present, apply them last as manual overrides
 
-For the currently documented aDATA platform, the recommended values are:
+The current built-in fallback values are:
 
 ```bash
 EIP712_DOMAIN_NAME=aDATA
@@ -35,7 +36,40 @@ EIP712_CHAIN_ID=8453
 EIP712_VERIFYING_CONTRACT=0x0000000000000000000000000000000000000000
 ```
 
-If those values are missing, Mine falls back to the generic defaults above.
+The cached platform response is stored under:
+
+```bash
+<WORKER_STATE_ROOT>/signature_config.json
+```
+
+Only override `EIP712_*` manually if you are targeting a different environment or need an emergency compatibility override.
+
+`doctor`, `mine_setup`, and post-install checks now expose the effective signature config origin as `platform` or `fallback`, so the host can see whether runtime values came from the platform or the built-in defaults.
+
+## AWP registration discovery and auto-registration
+
+Mine also checks whether the current wallet is already registered on AWP:
+
+1. resolve the current wallet address through `awp-wallet receive`
+2. query `GET {AWP_API_URL}/address/{address}/check`
+3. if the wallet is unregistered and a wallet session is available, submit a gasless self-registration through `POST {AWP_API_URL}/relay/set-recipient`
+4. poll registration status until confirmed or timeout
+
+The default AWP API base URL is:
+
+```bash
+AWP_API_URL=https://api.awp.sh/api
+```
+
+You can override `AWP_API_URL` if your environment uses a different AWP deployment.
+
+The effective registration state is now surfaced by `doctor`, `mine_setup`, and post-install checks as values such as:
+
+- `registered`
+- `auto_registered`
+- `registration_pending`
+- `wallet_session_unavailable`
+- `status_check_failed`
 
 ## Known platform base URLs
 
@@ -73,10 +107,11 @@ Production note:
 | `PLATFORM_TOKEN` | empty | Optional bearer token added alongside wallet signatures |
 | `MINE_CONFIG_PATH` | `~/.mine/mine.json` or legacy config | Config root used for secret resolution |
 | `OPENCLAW_CONFIG_PATH` | fallback | Alternate config path for secret resolution |
+| `SIGNATURE_CONFIG_PATH` | `/api/public/v1/signature-config` | Public endpoint path used for signature auto-discovery |
 
 ## SecretRef support
 
-If you do not want to inject `AWP_WALLET_TOKEN` directly, Mine can resolve it from `AWP_WALLET_TOKEN_SECRET_REF`.
+If you do not want to rely on the auto-managed local wallet session, Mine can resolve the token from `AWP_WALLET_TOKEN_SECRET_REF`.
 
 Supported SecretRef sources:
 
@@ -101,10 +136,6 @@ Until those layers are unified, Mine auto-fills a stable helper value. You do no
 PLATFORM_BASE_URL=http://101.47.73.95
 MINER_ID=mine-agent
 AWP_WALLET_BIN=awp-wallet
-AWP_WALLET_TOKEN=
-EIP712_DOMAIN_NAME=aDATA
-EIP712_CHAIN_ID=8453
-EIP712_VERIFYING_CONTRACT=0x0000000000000000000000000000000000000000
 ```
 
 ## Verification commands

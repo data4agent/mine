@@ -1,0 +1,22 @@
+You normalize a LinkedIn job posting and return structured JSON.
+
+## Source Fields
+{% for key, value in source_fields.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+
+## Instructions
+1. Standardize the job title and remote policy.
+2. Parse location into coarse structured fields.
+
+## Null Rules
+1. Return null for unsupported scalars.
+2. Return {} for `location_parsed` when parsing is unreliable.
+
+## Output Format
+JSON only:
+{
+  "job_title_standardized": "string|null",
+  "remote_policy": "string|null",
+  "location_parsed": {}
+}

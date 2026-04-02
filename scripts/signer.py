@@ -11,6 +11,12 @@ from typing import Any
 from urllib.parse import parse_qsl, quote, urlsplit
 
 from Crypto.Hash import keccak
+from common import (
+    DEFAULT_EIP712_CHAIN_ID,
+    DEFAULT_EIP712_DOMAIN_NAME,
+    DEFAULT_EIP712_VERIFYING_CONTRACT,
+    persist_wallet_session,
+)
 
 EMPTY_HASH = f"0x{'0' * 64}"
 DEFAULT_SIGNED_HEADERS = ("content-type", "x-request-id")
@@ -95,8 +101,8 @@ class WalletSigner:
             stderr = result.stderr.strip()
             if "Invalid or expired session token" in stderr:
                 raise RuntimeError(
-                    "awpWalletToken expired or invalid; rerun "
-                    "`awp-wallet unlock --duration 3600` and update Mine runtime config before retrying. "
+                    "The auto-managed wallet session expired or is invalid; rerun "
+                    "`awp-wallet unlock --duration 3600` or rerun bootstrap before retrying. "
                     f"awp-wallet stderr: {stderr}"
                 )
             raise RuntimeError(f"awp-wallet failed (exit {result.returncode}): {stderr}")
@@ -140,6 +146,7 @@ class WalletSigner:
         os.environ["AWP_WALLET_TOKEN"] = session_token
         expires_at = issued_at + max(1, duration_seconds)
         os.environ["AWP_WALLET_TOKEN_EXPIRES_AT"] = str(expires_at)
+        persist_wallet_session(session_token, expires_at=expires_at)
         return {
             "session_token": session_token,
             "issued_at": issued_at,
@@ -156,10 +163,10 @@ class WalletSigner:
         request_id: str,
         now: int,
         nonce: int,
-        chain_id: int = 1,
-        domain_name: str = "Platform Service",
+        chain_id: int = DEFAULT_EIP712_CHAIN_ID,
+        domain_name: str = DEFAULT_EIP712_DOMAIN_NAME,
         domain_version: str = "1",
-        verifying_contract: str = "0x0000000000000000000000000000000000000000",
+        verifying_contract: str = DEFAULT_EIP712_VERIFYING_CONTRACT,
         signed_headers: tuple[str, ...] = DEFAULT_SIGNED_HEADERS,
     ) -> dict[str, Any]:
         split = urlsplit(url)
@@ -216,9 +223,9 @@ class WalletSigner:
         *,
         content_type: str = "application/json",
         request_id: str | None = None,
-        chain_id: int = 1,
-        domain_name: str = "Platform Service",
-        verifying_contract: str = "0x0000000000000000000000000000000000000000",
+        chain_id: int = DEFAULT_EIP712_CHAIN_ID,
+        domain_name: str = DEFAULT_EIP712_DOMAIN_NAME,
+        verifying_contract: str = DEFAULT_EIP712_VERIFYING_CONTRACT,
     ) -> dict[str, str]:
         now = int(time.time())
         nonce = secrets.randbits(52)
