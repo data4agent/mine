@@ -1,77 +1,39 @@
-# Test and build caches
+# ── Build / cache ──
+__pycache__/
+*.egg-info/
+dist/
+.coverage
+htmlcov/
 .pytest-tmp/
 .pytest_cache/
 pytest-cache-files-*/
 .tmp-openclaw-test/
-dist/
-__pycache__/
-scripts/__pycache__/
-.coverage
-htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Local virtualenvs
+# ── Local virtualenvs ──
 .venv/
 venv/
-*.egg-info/
 .mine-setup.json
 
-# Secrets and local config (do not commit; see .env.example)
+# ── Secrets (see .env.example) ──
 .env
 .env.*
 !.env.example
 
-# Runtime / tool-generated output
+# ── Runtime output ──
 output/
 .sessions/
 .omx/
 .tmp-debug*/
 
-# Local-only directories (maintain tests locally)
-tests/
-crawler/tests/
+# ── Dev artifacts (tests, drafts, temp output — all in .dev/) ──
+.dev/
 
-# Local planning drafts (personal notes)
-1.md
-my-task
-my-task.md
-mine-skill-plan-v3(1).md
-mine-skill-review.md
-mine-ux-preview.html
-social-data-crawler-code-review-optimization-2026-04-01.md
-会议记录.md
-schema(1)/
-
-# Ad-hoc debug scripts
+# ── Safety net (prevent stray dev files from being committed) ──
 test_*.py
 diagnose_*.py
-scripts/test_*.py
-scripts/test_*.sh
-scripts/test_*.cmd
-
-# Temporary docs during development
-AUTHENTICATION_DIAGNOSIS.md
-BATCH_PROGRESS_STATUS.md
-CHANGES_EIP712.md
-COMMANDS.md
-MINING_AGENT_DESIGN.md
-OPTIMIZATION_SUMMARY.md
-SCENE3_IMPLEMENTATION.md
-TOOL_COMMANDS_OPTIMIZED.md
-WORKING_CONFIG.md
-安装问题解决方案.md
-问题已解决.md
-解决方案.md
-docs/AWP_WALLET_AUTO_INSTALL.md
-docs/PLATFORM_REGISTRATION.md
-docs/superpowers/
-
-# Local analysis artifacts
-docs/amazon-extract-normalize-gap-analysis.md
-docs/amazon-phase1-implementation-complete.md
-docs/schema-coverage-gap.md
-docs/schema-coverage-report.json
-local_tasks/
+tests/
 test_data/
 test_output/
+local_tasks/

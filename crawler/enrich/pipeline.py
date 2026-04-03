@@ -295,12 +295,15 @@ class EnrichPipeline:
         start: float,
         document: dict[str, Any] | None = None,
     ) -> FieldGroupResult:
+        max_tokens = (spec.generative_config.max_tokens if spec.generative_config else 512) or 512
+        base_timeout = float(self._model_config.get("timeout", 120.0) or 120.0)
+        timeout = max(base_timeout, max_tokens * 0.05 + 30)
         try:
             response = await enrich_with_llm(
                 prompt,
                 model_config=self._model_config or None,
                 system_prompt=system_prompt or "",
-                timeout=float(self._model_config.get("timeout", 120.0) or 120.0),
+                timeout=timeout,
             )
         except Exception as exc:
             return FieldGroupResult(
@@ -333,6 +336,9 @@ class EnrichPipeline:
         result.latency_ms = int((time.monotonic() - start) * 1000)
         return result
 
+    # 大文本字段截断上限（字符数），防止 prompt 超过 LLM context window
+    _MAX_TEXT_CHARS = 30_000
+
     def _collect_source_fields(self, spec: FieldGroupSpec, document: dict[str, Any]) -> dict[str, Any]:
         """Collect all relevant source fields from the document."""
         source: dict[str, Any] = {}
@@ -340,11 +346,17 @@ class EnrichPipeline:
             value = document.get(field_name)
             if value is not None and value != "" and value != [] and value != {}:
                 source[field_name] = value
-        for key in ("plain_text", "markdown", "title", "summary", "headline", "about", "description"):
+        # plain_text 和 markdown 内容高度重复，只取一个以节省 token
+        text_key = "plain_text" if document.get("plain_text") else "markdown"
+        for key in (text_key, "title", "summary", "headline", "about", "description"):
             if key not in source and key in document:
                 value = document[key]
                 if value is not None and value != "" and value != [] and value != {}:
                     source[key] = value
+        # 截断超长文本防止 prompt 溢出
+        for key in ("plain_text", "markdown", "raw_text", "HTML"):
+            if key in source and isinstance(source[key], str) and len(source[key]) > self._MAX_TEXT_CHARS:
+                source[key] = source[key][:self._MAX_TEXT_CHARS] + f"\n\n[... truncated at {self._MAX_TEXT_CHARS} chars ...]"
         return source
 
     @staticmethod

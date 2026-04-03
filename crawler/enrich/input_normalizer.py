@@ -161,11 +161,14 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
 
     if platform == "wikipedia" and resource_type == "article":
         _setdefault_from_candidates(document, "extract", "summary", "plain_text")
+        _setdefault_from_candidates(document, "raw_text", "plain_text")
+        _setdefault_from_candidates(document, "HTML", "markdown")
         return
 
     if platform == "arxiv" and resource_type == "paper":
         _setdefault_from_candidates(document, "abstract", "summary", "description", "plain_text")
         _setdefault_from_candidates(document, "full_text", "plain_text")
+        _setdefault_from_candidates(document, "raw_text", "plain_text")
         return
 
     if platform == "amazon" and resource_type == "product":

@@ -185,13 +185,14 @@ Do not rely on `npm install -g @aspect/awp-wallet`. This repository currently in
 
 Windows no longer depends on the Linux VRD stack for LinkedIn login. The crawler now opens a local visible Chrome/Edge window, waits for a valid browser session, and then exports the session back into the crawler flow.
 
-Recommended preflight:
+Recommended agent entrypoint:
 
 ```powershell
-python auto-browser/scripts/vrd.py check
-python auto-browser/scripts/vrd.py start
-python auto-browser/scripts/vrd.py status
+python scripts/run_tool.py browser-session linkedin
+python scripts/run_tool.py browser-session-status linkedin
 ```
+
+`browser-session` reuses an existing browser session when possible. If user handoff is needed, it returns immediately with a temporary Cloudflare link when available; after the user finishes login, poll `browser-session-status` until it reports `ready`. Success also stops the temporary browser stack automatically.
 
 Expected flow:
 

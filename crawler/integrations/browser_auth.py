@@ -74,6 +74,10 @@ class AutoBrowserSession:
     switch_token: str
     login_url: str
     requires_user_action: bool
+    started_by_bridge: bool
+    cleanup_performed: bool
+    local_browser_mode: bool
+    guide_active: bool
 
 
 class AutoBrowserAuthError(RuntimeError):
@@ -106,11 +110,36 @@ class AutoBrowserAuthBridge:
         output_dir: Path,
         login_url: str | None = None,
         guide_text: str | None = None,
+        cleanup_on_success: bool = False,
+    ) -> AutoBrowserSession:
+        session = self.prepare_session(
+            platform=platform,
+            output_dir=output_dir,
+            login_url=login_url,
+            guide_text=guide_text,
+            cleanup_on_success=cleanup_on_success,
+        )
+        if not session.requires_user_action:
+            return session
+        return self.complete_prepared_session(
+            session,
+            cleanup_on_success=cleanup_on_success,
+        )
+
+    def prepare_session(
+        self,
+        *,
+        platform: str,
+        output_dir: Path,
+        login_url: str | None = None,
+        guide_text: str | None = None,
+        cleanup_on_success: bool = False,
     ) -> AutoBrowserSession:
         self._ensure_script_exists()
         resolved_login_url = (login_url or get_platform_login_url(platform)).strip()
+        started_by_bridge = False
         try:
-            self._ensure_vrd_running(resolved_login_url)
+            started_by_bridge = self._ensure_vrd_running(resolved_login_url)
             self._open_login_page(resolved_login_url)
         except AutoBrowserAuthError:
             raise
@@ -137,6 +166,7 @@ class AutoBrowserAuthBridge:
 
         session_path = output_dir / ".sessions" / f"{platform}.auto-browser.json"
         if self._try_export_existing_session(platform, session_path):
+            cleanup_performed = cleanup_on_success and started_by_bridge and self._stop_vrd()
             return AutoBrowserSession(
                 platform=platform,
                 session_path=session_path,
@@ -144,21 +174,53 @@ class AutoBrowserAuthBridge:
                 switch_token=switch_token,
                 login_url=resolved_login_url,
                 requires_user_action=False,
+                started_by_bridge=started_by_bridge,
+                cleanup_performed=cleanup_performed,
+                local_browser_mode=local_browser_mode,
+                guide_active=False,
             )
 
         prompt = guide_text or get_platform_login_guide_text(platform)
-        self._show_login_guide(
+        self._show_login_guide_message(
             public_url=public_url,
             switch_token=switch_token,
             guide_text=prompt,
-            platform=platform,
-            login_url=resolved_login_url,
-            session_path=session_path,
         )
+        return AutoBrowserSession(
+            platform=platform,
+            session_path=session_path,
+            public_url=public_url,
+            switch_token=switch_token,
+            login_url=resolved_login_url,
+            requires_user_action=True,
+            started_by_bridge=started_by_bridge,
+            cleanup_performed=False,
+            local_browser_mode=local_browser_mode,
+            guide_active=True,
+        )
+
+    def complete_prepared_session(
+        self,
+        session: AutoBrowserSession,
+        *,
+        cleanup_on_success: bool = False,
+    ) -> AutoBrowserSession:
         try:
-            if local_browser_mode:
-                self._wait_for_local_login(platform=platform, session_path=session_path, login_url=resolved_login_url)
-            self._export_session(platform, session_path)
+            if session.local_browser_mode:
+                self._wait_for_local_login(
+                    platform=session.platform,
+                    session_path=session.session_path,
+                    login_url=session.login_url,
+                )
+            elif session.public_url:
+                self._poll_continue_signal(
+                    session.switch_token,
+                    platform=session.platform,
+                    session_path=session.session_path,
+                    public_url=session.public_url,
+                    login_url=session.login_url,
+                )
+            self._export_session(session.platform, session.session_path)
         except AutoBrowserAuthError:
             raise
         except Exception as exc:
@@ -167,16 +229,25 @@ class AutoBrowserAuthBridge:
                 error_code="AUTH_SESSION_EXPORT_FAILED",
                 agent_hint="retry_export_session",
                 retryable=True,
-                public_url=public_url,
-                login_url=resolved_login_url,
+                public_url=session.public_url,
+                login_url=session.login_url,
             ) from exc
+        finally:
+            if session.guide_active:
+                self._clear_login_guide(session.switch_token)
+
+        cleanup_performed = session.cleanup_performed or (cleanup_on_success and session.started_by_bridge and self._stop_vrd())
         return AutoBrowserSession(
-            platform=platform,
-            session_path=session_path,
-            public_url=public_url,
-            switch_token=switch_token,
-            login_url=resolved_login_url,
-            requires_user_action=not self._session_has_login_cookie_or_none(platform, session_path),
+            platform=session.platform,
+            session_path=session.session_path,
+            public_url=session.public_url,
+            switch_token=session.switch_token,
+            login_url=session.login_url,
+            requires_user_action=not self._session_has_login_cookie_or_none(session.platform, session.session_path),
+            started_by_bridge=session.started_by_bridge,
+            cleanup_performed=cleanup_performed,
+            local_browser_mode=session.local_browser_mode,
+            guide_active=False,
         )
 
     def _ensure_script_exists(self) -> None:
@@ -211,10 +282,10 @@ class AutoBrowserAuthBridge:
             env=self._base_env(),
         )
 
-    def _ensure_vrd_running(self, login_url: str) -> None:
+    def _ensure_vrd_running(self, login_url: str) -> bool:
         status = self._run_vrd("status")
         if status.returncode == 0:
-            return
+            return False
 
         extra_env = {"AUTO_LAUNCH_CHROME": "1"}
         if login_url:
@@ -225,6 +296,14 @@ class AutoBrowserAuthBridge:
                 "auto-browser failed to start: "
                 + (start.stderr.strip() or start.stdout.strip() or "unknown error")
             )
+        return True
+
+    def _stop_vrd(self) -> bool:
+        try:
+            stopped = self._run_vrd("stop")
+        except Exception:
+            return False
+        return stopped.returncode == 0
 
     def _wait_for_state(self) -> dict[str, Any]:
         state_path = self.workdir / "state.json"
@@ -303,15 +382,11 @@ class AutoBrowserAuthBridge:
         except subprocess.TimeoutExpired:
             pass
 
-    def _show_login_guide(
+    def _show_login_guide_message(
         self,
         public_url: str,
         switch_token: str,
         guide_text: str,
-        *,
-        platform: str,
-        login_url: str,
-        session_path: Path,
     ) -> None:
         self._request_json(
             "/guide",
@@ -325,17 +400,14 @@ class AutoBrowserAuthBridge:
             print(public_url)
         else:
             print("[AUTH] Local browser opened; complete login there.")
+
+    def _clear_login_guide(self, switch_token: str) -> None:
+        if not switch_token:
+            return
         try:
-            if public_url:
-                self._poll_continue_signal(
-                    switch_token,
-                    platform=platform,
-                    session_path=session_path,
-                    public_url=public_url,
-                    login_url=login_url,
-                )
-        finally:
             self._request_json("/guide", token=switch_token, method="DELETE")
+        except Exception:
+            pass
 
     def _try_export_existing_session(self, platform: str, session_path: Path) -> bool:
         probe_path = session_path.with_suffix(".probe.json")

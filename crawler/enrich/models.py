@@ -45,18 +45,18 @@ class FieldGroupResult:
     """
 
     field_group: str
-    status: Literal["success", "partial", "failed", "skipped", "pending_agent"]
+    status: Literal["success", "partial", "failed", "skipped", "pending_agent", "completed"]
     fields: list[EnrichedField] = field(default_factory=list)
     error: str | None = None
     latency_ms: int = 0
     cost_usd: float | None = None
-    # For pending_agent status: the prompt and config for agent to execute
     agent_prompt: str | None = None
     agent_system_prompt: str | None = None
+    agent_response: str | None = None
     output_fields: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        result = {
+        result: dict[str, Any] = {
             "field_group": self.field_group,
             "status": self.status,
             "fields": [f.to_dict() for f in self.fields],
@@ -64,10 +64,12 @@ class FieldGroupResult:
             "latency_ms": self.latency_ms,
             "cost_usd": self.cost_usd,
         }
-        if self.status == "pending_agent":
+        if self.status in ("pending_agent", "completed"):
             result["agent_prompt"] = self.agent_prompt
             result["agent_system_prompt"] = self.agent_system_prompt
             result["output_fields"] = self.output_fields
+        if self.agent_response is not None:
+            result["agent_response"] = self.agent_response
         return result
 
 

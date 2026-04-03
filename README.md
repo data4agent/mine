@@ -83,6 +83,7 @@ python scripts/run_tool.py agent-control status
 python scripts/run_tool.py agent-control pause
 python scripts/run_tool.py agent-control resume
 python scripts/run_tool.py agent-control stop
+python scripts/run_tool.py browser-session <platform>
 python scripts/run_tool.py doctor
 python scripts/run_tool.py first-load
 python scripts/run_tool.py run-worker 60 0
@@ -131,10 +132,11 @@ On Windows, LinkedIn `--auto-login` now uses a local visible Chrome/Edge window 
 - the crawler opens the LinkedIn login page in a local browser window and waits for a valid browser session before exporting cookies
 - common failures still include LinkedIn CAPTCHA, missing Chrome/Edge, or a busy CDP port such as `9222`
 
-Recommended preflight on Windows:
+Recommended agent entrypoint on Windows:
 
 ```powershell
-python auto-browser/scripts/vrd.py check
-python auto-browser/scripts/vrd.py start
-python auto-browser/scripts/vrd.py status
+python scripts/run_tool.py browser-session linkedin
+python scripts/run_tool.py browser-session-status linkedin
 ```
+
+`browser-session` returns immediately when user handoff is needed, including a temporary Cloudflare link when available. After the user completes login, poll `browser-session-status` until it reports `ready`; the temporary browser stack is then closed automatically.

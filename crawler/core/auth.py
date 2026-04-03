@@ -74,6 +74,7 @@ def export_session_via_auto_browser(*, session_store: SessionStore, platform: st
     session = bridge.ensure_exported_session(
         platform=platform,
         output_dir=session_store.root.parent,
+        cleanup_on_success=True,
     )
     return str(session_store.import_cookies(platform, session.session_path))
 

@@ -174,7 +174,7 @@ _LEGACY_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
-            prompt_template="about_summary.jinja2",
+            prompt_template="summaries.jinja2",
             max_tokens=512,
             temperature=0.2,
         ),

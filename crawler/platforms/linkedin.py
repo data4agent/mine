@@ -710,7 +710,7 @@ def _extract_post_body_from_rsc_html(html: str) -> str | None:
             candidate = unescape(match.group(1)).replace("\\n", "\n").strip()
             if not candidate:
                 continue
-            if candidate in {"抱歉，出现错误。", "出了点问题。请重试。"}:
+            if candidate in {"抱歉，出现错误。", "出了点问题。请重试。", "Sorry, something went wrong.", "Something went wrong. Please try again."}:
                 continue
             candidates.append(candidate)
         start = idx + 1
@@ -793,7 +793,7 @@ def _extract_post_author_profile_url_from_html(html: str, author_name: str | Non
 
 
 def _extract_post_author_name_from_html(html: str) -> str | None:
-    matches = re.findall(r'aria-label(?:=(?:\\")?|\\":\\"|":")([^"\\]+?)\s+(?:旗舰帐号|职业档案)', html)
+    matches = re.findall(r'aria-label(?:=(?:\\")?|\\":\\"|":")([^"\\]+?)\s+(?:旗舰帐号|职业档案|Premium|Creator|Verified)', html)
     if matches:
         return matches[0].strip()
     return None
@@ -810,7 +810,7 @@ def _extract_post_author_headline_from_html(html: str, author_name: str | None) 
         candidate = match.group(1).strip()
         if candidate == author_name:
             continue
-        if re.search(r"(?:职业档案|旗舰帐号|度\\+|年\\s*•)", candidate):
+        if re.search(r"(?:职业档案|旗舰帐号|Premium|Creator|Verified|度\\+|年\\s*•)", candidate):
             continue
         if len(candidate) < 3:
             continue
@@ -1327,9 +1327,9 @@ def _extract_linkedin_profile_from_html(record: dict[str, Any], html_text: str) 
     raw_title = unescape(title_match.group(1)).strip() if title_match else ""
     title = raw_title.replace("| LinkedIn", "").strip() or str(record.get("public_identifier") or "")
     headline = _extract_profile_headline_from_html(soup, canonical_url, title)
-    about_match = re.search(r"个人简介\s*(.+?)(?:\s*(?:精选动态|活动|经验|教育|技能|兴趣|推荐内容)|\Z)", soup.get_text("\n", strip=True), re.DOTALL)
+    about_match = re.search(r"(?:个人简介|About)\s*(.+?)(?:\s*(?:精选动态|精选|活动|经验|教育|技能|兴趣|推荐内容|Featured|Activity|Experience|Education|Skills)|\Z)", soup.get_text("\n", strip=True), re.DOTALL)
     about = about_match.group(1).strip() if about_match else None
-    follower_match = re.search(r"([\d,]+)\s*位关注者", soup.get_text("\n", strip=True))
+    follower_match = re.search(r"([\d,]+)\s*(?:位关注者|followers?)", soup.get_text("\n", strip=True), re.IGNORECASE)
     avatar_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displayphoto-[^\s\"']+)", html_text)
     banner_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displaybackgroundimage-[^\s\"']+)", html_text)
     structured = {

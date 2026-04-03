@@ -60,7 +60,7 @@ def test_flatten_record_for_schema_uses_top_level_and_metadata_aliases() -> None
         }
     )
 
-    assert structured_data["page_id"] == "1164"
+    assert structured_data["page_id"] == 1164
     assert structured_data["title"] == "Artificial intelligence"
     assert structured_data["language"] == "en"
     assert structured_data["dedup_key"] == "1164:en"

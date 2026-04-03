@@ -80,6 +80,37 @@ python scripts/run_tool.py agent-control stop
 
 Queries or controls the current background mining session.
 
+### `browser-session`
+
+```bash
+python scripts/run_tool.py browser-session <platform>
+python scripts/run_tool.py browser-session <platform> <outputPath>
+```
+
+Prepares browser auth state through the runtime auto-browser bridge. The command reuses an existing session if possible; otherwise it launches the temporary browser stack, exposes a temporary Cloudflare handoff URL when needed, exports the final session, and stops the browser stack after success.
+
+### `browser-session-status`
+
+```bash
+python scripts/run_tool.py browser-session-status <platform>
+```
+
+Polls the current browser-session job. Use this after `browser-session` returns `awaiting_user_action`.
+
+Stable top-level fields for host integrations:
+
+- `status`
+- `platform`
+- `public_url`
+- `login_url`
+- `session_path`
+- `waiter_pid`
+- `waiter_running`
+- `cleanup_performed`
+- `error`
+- `retryable`
+- `status_command`
+
 ### `diagnose`
 
 ```bash

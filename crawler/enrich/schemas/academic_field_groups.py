@@ -451,7 +451,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
     "wikipedia_identity": FieldGroupSpec(
         name="wikipedia_identity",
         description="Disambiguated title, canonical entity name, entity type, and Wikidata ID",
-        required_source_fields=["title", "extract"],
+        required_source_fields=["title"],
         output_fields=[
             OutputFieldSpec(name="title_disambiguated", field_type="string"),
             OutputFieldSpec(name="canonical_entity_name", field_type="string"),
@@ -466,7 +466,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
     "wikipedia_content": FieldGroupSpec(
         name="wikipedia_content",
         description="Structured sections, table of contents, article summary, and reading level",
-        required_source_fields=["raw_text", "sections_structured"],
+        required_source_fields=["raw_text"],
         output_fields=[
             OutputFieldSpec(
                 name="sections_structured",
@@ -483,7 +483,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
         strategy="generative_only",
         generative_config=GenerativeConfig(
             prompt_template="wikipedia_content.jinja2",
-            max_tokens=1024,
+            max_tokens=4096,
         ),
         platform="wikipedia",
     ),
@@ -598,7 +598,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
     "wikipedia_relations": FieldGroupSpec(
         name="wikipedia_relations",
         description="Related entities with relation types and classified external links",
-        required_source_fields=["raw_text", "references"],
+        required_source_fields=["raw_text"],
         output_fields=[
             OutputFieldSpec(
                 name="related_entities",
@@ -615,7 +615,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
         strategy="generative_only",
         generative_config=GenerativeConfig(
             prompt_template="wikipedia_relations.jinja2",
-            max_tokens=1024,
+            max_tokens=2048,
         ),
         platform="wikipedia",
     ),
@@ -623,21 +623,21 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
     "wikipedia_quality": FieldGroupSpec(
         name="wikipedia_quality",
         description="Article quality class, neutrality score, citation density, edit controversy",
-        required_source_fields=["raw_text", "references_count"],
+        required_source_fields=["raw_text"],
         output_fields=[
             OutputFieldSpec(name="article_quality_class", field_type="string"),
             OutputFieldSpec(name="neutrality_score", field_type="number"),
             OutputFieldSpec(name="citation_density", field_type="number"),
             OutputFieldSpec(name="last_major_edit", field_type="string"),
             OutputFieldSpec(name="edit_controversy_score", field_type="number"),
-            OutputFieldSpec(name="internal_contradictions", field_type="array<string>"),
-            OutputFieldSpec(name="article_completeness_assessment", field_type="string"),
-            OutputFieldSpec(name="source_diversity_assessment", field_type="string"),
+            OutputFieldSpec(name="internal_contradictions", field_type="array<object>"),
+            OutputFieldSpec(name="article_completeness_assessment", field_type="object"),
+            OutputFieldSpec(name="source_diversity_assessment", field_type="object"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
             prompt_template="wikipedia_quality.jinja2",
-            max_tokens=512,
+            max_tokens=1024,
         ),
         platform="wikipedia",
     ),
@@ -709,7 +709,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
         strategy="generative_only",
         generative_config=GenerativeConfig(
             prompt_template="wikipedia_multi_level_summary.jinja2",
-            max_tokens=1024,
+            max_tokens=2048,
         ),
         platform="wikipedia",
     ),
@@ -739,7 +739,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
         strategy="generative_only",
         generative_config=GenerativeConfig(
             prompt_template="wikipedia_educational.jinja2",
-            max_tokens=1024,
+            max_tokens=3072,
         ),
         platform="wikipedia",
     ),
@@ -760,12 +760,12 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
                 field_type="array<object>",
                 description="phrase, location, issue",
             ),
-            OutputFieldSpec(name="citation_needed_gaps", field_type="array<string>"),
+            OutputFieldSpec(name="citation_needed_gaps", field_type="array<object>"),
         ],
         strategy="generative_only",
         generative_config=GenerativeConfig(
             prompt_template="wikipedia_bias_and_neutrality.jinja2",
-            max_tokens=1024,
+            max_tokens=2048,
         ),
         platform="wikipedia",
     ),
@@ -794,7 +794,7 @@ WIKIPEDIA_FIELD_GROUPS: dict[str, FieldGroupSpec] = {
     "wikipedia_cross_dataset_linkable_ids": FieldGroupSpec(
         name="wikipedia_cross_dataset_linkable_ids",
         description="Cross-platform identifiers: arXiv paper hints, LinkedIn person hints, Amazon product hints, Base on-chain hints, external DB IDs",
-        required_source_fields=["extract"],
+        required_source_fields=["plain_text"],
         output_fields=[
             OutputFieldSpec(
                 name="linkable_identifiers",

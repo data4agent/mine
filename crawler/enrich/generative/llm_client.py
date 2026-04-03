@@ -192,15 +192,107 @@ class LLMClient:
 
 
 def parse_json_response(content: str) -> dict[str, Any] | list[Any]:
-    """Try to parse JSON from LLM response, handling markdown code blocks."""
+    """Try to parse JSON from LLM response, handling markdown code blocks.
+
+    Handles multiple fenced code blocks, nested fences, and bare JSON.
+    Falls back to extracting the first ``{...}`` or ``[...]`` substring.
+    """
+    import re
+
     text = content.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = lines[1:]  # remove opening ```json
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
+
+    # 先尝试直接解析
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        return {"raw": content}
+        pass
+
+    # 剥离 markdown code fence（支持多层嵌套）
+    fence_pattern = re.compile(r"^```\w*\s*\n(.*?)```\s*$", re.DOTALL)
+    stripped = text
+    for _ in range(3):
+        m = fence_pattern.match(stripped)
+        if not m:
+            break
+        stripped = m.group(1).strip()
+    if stripped != text:
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+
+    # 提取第一个完整的 JSON 对象或数组
+    for start_char, end_char in [('{', '}'), ('[', ']')]:
+        start = text.find(start_char)
+        if start < 0:
+            continue
+        depth = 0
+        in_string = False
+        escape = False
+        found_end = -1
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape:
+                escape = False
+                continue
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+            if ch == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == start_char:
+                depth += 1
+            elif ch == end_char:
+                depth -= 1
+                if depth == 0:
+                    found_end = i
+                    break
+
+        if found_end > start:
+            try:
+                return json.loads(text[start:found_end + 1])
+            except json.JSONDecodeError:
+                pass
+
+        # JSON 被截断时：追踪括号栈并补全
+        if depth > 0 and start_char == '{':
+            bracket_stack: list[str] = []
+            in_str = False
+            esc = False
+            for i in range(start, len(text)):
+                ch = text[i]
+                if esc:
+                    esc = False
+                    continue
+                if ch == '\\' and in_str:
+                    esc = True
+                    continue
+                if ch == '"' and not esc:
+                    in_str = not in_str
+                    continue
+                if in_str:
+                    continue
+                if ch in ('{', '['):
+                    bracket_stack.append(ch)
+                elif ch == '}' and bracket_stack and bracket_stack[-1] == '{':
+                    bracket_stack.pop()
+                elif ch == ']' and bracket_stack and bracket_stack[-1] == '[':
+                    bracket_stack.pop()
+
+            if bracket_stack:
+                truncated = text[start:].rstrip()
+                # 去掉不完整的尾部元素
+                for trim_char in (',', '"', ':'):
+                    truncated = truncated.rstrip(trim_char)
+                # 逆序补全所有未闭合的括号
+                closing = {'[': ']', '{': '}'}
+                truncated += ''.join(closing[b] for b in reversed(bracket_stack))
+                try:
+                    return json.loads(truncated)
+                except json.JSONDecodeError:
+                    pass
+
+    return {"raw": content}

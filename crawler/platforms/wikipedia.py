@@ -28,6 +28,7 @@ NORMALIZE_PLAN = PlatformNormalizePlan(hook_name="wikipedia")
 ENRICH_PLAN = PlatformEnrichmentPlan(
     route="knowledge_base",
     field_groups=(
+        # ── passthrough（零成本直传字段）──
         "wikipedia_base_dedup_key",
         "wikipedia_base_canonical_url",
         "wikipedia_base_url",
@@ -48,9 +49,22 @@ ENRICH_PLAN = PlatformEnrichmentPlan(
         "wikipedia_base_references",
         "wikipedia_base_see_also",
         "wikipedia_base_images",
+        # ── generative（LLM enrichment）──
         "summaries",
+        "wikipedia_identity",
         "wikipedia_multi_level_summary",
+        "wikipedia_entities",
+        "wikipedia_facts",
+        "wikipedia_timeline",
         "wikipedia_relations",
+        "wikipedia_quality",
+        "wikipedia_categories",
+        "wikipedia_infobox",
+        "wikipedia_content",
+        "wikipedia_educational",
+        "wikipedia_bias_and_neutrality",
+        "wikipedia_content_freshness",
+        "wikipedia_cross_dataset_linkable_ids",
     ),
 )
 

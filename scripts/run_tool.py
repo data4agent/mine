@@ -121,6 +121,10 @@ def _default_state_root() -> Path:
     return Path(os.environ.get("WORKER_STATE_ROOT", str(_default_output_root() / "_worker_state"))).resolve()
 
 
+def _default_browser_auth_root() -> Path:
+    return (_default_output_root() / "_browser_auth").resolve()
+
+
 def _background_session_snapshot() -> dict[str, object]:
     from background_worker import process_is_running
     from worker_state import WorkerStateStore
@@ -133,6 +137,390 @@ def _background_session_snapshot() -> dict[str, object]:
     payload["pid"] = pid
     payload["running"] = process_is_running(pid)
     return payload
+
+
+def _browser_auth_dir(platform: str) -> Path:
+    return _default_browser_auth_root() / platform
+
+
+def _browser_auth_state_path(platform: str) -> Path:
+    return _browser_auth_dir(platform) / "status.json"
+
+
+def _browser_auth_log_path(platform: str) -> Path:
+    return _browser_auth_dir(platform) / "waiter.log"
+
+
+def _read_browser_auth_state(platform: str) -> dict[str, Any]:
+    path = _browser_auth_state_path(platform)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_browser_auth_state(platform: str, payload: dict[str, Any]) -> None:
+    path = _browser_auth_state_path(platform)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload["updated_at"] = int(time.time())
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _browser_waiter_running(payload: dict[str, Any]) -> bool:
+    from background_worker import process_is_running
+
+    pid = int(payload.get("waiter_pid") or 0)
+    return process_is_running(pid)
+
+
+def _browser_session_payload(
+    *,
+    session: Any,
+    state: str,
+    message: str,
+    target_session_path: str = "",
+    error: str = "",
+    retryable: bool = False,
+) -> dict[str, Any]:
+    return {
+        "platform": session.platform,
+        "state": state,
+        "message": message,
+        "public_url": session.public_url,
+        "switch_token": session.switch_token,
+        "login_url": session.login_url,
+        "session_path": str(session.session_path),
+        "target_session_path": target_session_path,
+        "requires_user_action": session.requires_user_action,
+        "started_by_bridge": session.started_by_bridge,
+        "cleanup_performed": session.cleanup_performed,
+        "local_browser_mode": session.local_browser_mode,
+        "guide_active": session.guide_active,
+        "error": error,
+        "retryable": retryable,
+        "created_at": int(time.time()),
+        "waiter_pid": 0,
+    }
+
+
+def _copy_browser_session_output(source_path: Path, target_path_text: str) -> Path:
+    if not target_path_text:
+        return source_path.resolve()
+    target_path = Path(target_path_text).resolve()
+    if target_path == source_path.resolve():
+        return target_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+    return target_path
+
+
+def _spawn_browser_session_waiter(platform: str) -> int:
+    from background_worker import _creationflags
+
+    log_path = _browser_auth_log_path(platform)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        process = subprocess.Popen(
+            [sys.executable, __file__, "browser-session-wait", platform],
+            cwd=SKILL_ROOT,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            creationflags=_creationflags(),
+        )
+    return process.pid
+
+
+def _payload_to_browser_session(payload: dict[str, Any]) -> Any:
+    from crawler.integrations.browser_auth import AutoBrowserSession
+
+    return AutoBrowserSession(
+        platform=str(payload.get("platform") or ""),
+        session_path=Path(str(payload.get("session_path") or "")),
+        public_url=str(payload.get("public_url") or ""),
+        switch_token=str(payload.get("switch_token") or ""),
+        login_url=str(payload.get("login_url") or ""),
+        requires_user_action=bool(payload.get("requires_user_action", False)),
+        started_by_bridge=bool(payload.get("started_by_bridge", False)),
+        cleanup_performed=bool(payload.get("cleanup_performed", False)),
+        local_browser_mode=bool(payload.get("local_browser_mode", False)),
+        guide_active=bool(payload.get("guide_active", False)),
+    )
+
+
+def _browser_session_response(
+    *,
+    platform: str,
+    state: str,
+    user_message: str,
+    user_actions: list[str],
+    public_url: str = "",
+    login_url: str = "",
+    session_path: str = "",
+    waiter_pid: int = 0,
+    waiter_running: bool = False,
+    cleanup_performed: bool = False,
+    error: str = "",
+    retryable: bool = False,
+    status_command: str = "",
+    extra_internal: dict[str, Any] | None = None,
+) -> str:
+    internal = {
+        "platform": platform,
+        "session_path": session_path,
+        "public_url": public_url,
+        "login_url": login_url,
+        "waiter_pid": waiter_pid,
+        "waiter_running": waiter_running,
+        "cleanup_performed": cleanup_performed,
+        "error": error,
+        "retryable": retryable,
+        "status_command": status_command,
+    }
+    if extra_internal:
+        internal.update(extra_internal)
+    return json.dumps({
+        "status": state,
+        "state": state,
+        "platform": platform,
+        "user_message": user_message,
+        "user_actions": user_actions,
+        "public_url": public_url,
+        "login_url": login_url,
+        "session_path": session_path,
+        "waiter_pid": waiter_pid,
+        "waiter_running": waiter_running,
+        "cleanup_performed": cleanup_performed,
+        "error": error,
+        "retryable": retryable,
+        "status_command": status_command,
+        "_internal": internal,
+    }, ensure_ascii=False, indent=2)
+
+
+def run_browser_session(platform: str, output_path: str = "") -> str:
+    from crawler.integrations.browser_auth import AutoBrowserAuthBridge, AutoBrowserAuthError
+    from crawler.integrations.browser_auth import get_default_auto_browser_script, get_default_auto_browser_workdir
+
+    normalized_platform = (platform or "").strip().lower()
+    if not normalized_platform:
+        return _browser_session_response(
+            platform="",
+            state="error",
+            user_message="Platform is required.",
+            user_actions=[],
+            error="missing_platform",
+        )
+
+    existing = _read_browser_auth_state(normalized_platform)
+    if existing.get("state") == "awaiting_user_action" and _browser_waiter_running(existing):
+        return run_browser_session_status(normalized_platform)
+
+    output_dir = _browser_auth_dir(normalized_platform)
+    target_session_path: Path | None = None
+    if output_path:
+        target_session_path = Path(output_path).resolve()
+        output_dir = target_session_path.parent
+
+    bridge = AutoBrowserAuthBridge(
+        script_path=get_default_auto_browser_script(),
+        workdir=get_default_auto_browser_workdir(),
+    )
+
+    try:
+        session = bridge.prepare_session(
+            platform=normalized_platform,
+            output_dir=output_dir,
+            cleanup_on_success=True,
+        )
+    except AutoBrowserAuthError as exc:
+        fetch_error = getattr(exc, "fetch_error", None)
+        return _browser_session_response(
+            platform=normalized_platform,
+            state="error",
+            user_message="Browser session was not completed.",
+            user_actions=["Retry browser session", "Diagnose"],
+            public_url=getattr(exc, "public_url", ""),
+            login_url=getattr(exc, "login_url", ""),
+            error=getattr(fetch_error, "error_code", "AUTH_AUTO_LOGIN_FAILED"),
+            retryable=bool(getattr(fetch_error, "retryable", False)),
+            extra_internal={
+                "message": str(exc),
+                "next_action": getattr(fetch_error, "agent_hint", ""),
+            },
+        )
+    except Exception as exc:
+        return _browser_session_response(
+            platform=normalized_platform,
+            state="error",
+            user_message="Browser session setup failed.",
+            user_actions=["Retry browser session", "Diagnose"],
+            error="browser_session_failed",
+            extra_internal={"message": str(exc)},
+        )
+
+    final_session_path = session.session_path.resolve()
+    target_path_text = str(target_session_path) if target_session_path is not None else ""
+    if not session.requires_user_action:
+        final_session_path = _copy_browser_session_output(final_session_path, target_path_text)
+        payload = _browser_session_payload(
+            session=session,
+            state="ready",
+            message="Browser session is ready and the browser stack has been cleaned up.",
+            target_session_path=str(final_session_path),
+        )
+        _write_browser_auth_state(normalized_platform, payload)
+        return _browser_session_response(
+            platform=normalized_platform,
+            state="ready",
+            user_message=payload["message"],
+            user_actions=["Continue task"],
+            public_url=session.public_url,
+            login_url=session.login_url,
+            session_path=str(final_session_path),
+            cleanup_performed=session.cleanup_performed,
+            status_command=f"python scripts/run_tool.py browser-session-status {normalized_platform}",
+            extra_internal={
+                "requires_user_action": session.requires_user_action,
+                "started_by_bridge": session.started_by_bridge,
+            },
+        )
+
+    payload = _browser_session_payload(
+        session=session,
+        state="awaiting_user_action",
+        message=(
+            "Open the temporary browser link and complete login."
+            if session.public_url
+            else "Complete login in the opened local browser."
+        ),
+        target_session_path=target_path_text,
+    )
+    _write_browser_auth_state(normalized_platform, payload)
+    waiter_pid = _spawn_browser_session_waiter(normalized_platform)
+    payload["waiter_pid"] = waiter_pid
+    _write_browser_auth_state(normalized_platform, payload)
+    return _browser_session_response(
+        platform=normalized_platform,
+        state="awaiting_user_action",
+        user_message=payload["message"],
+        user_actions=["Open login link", "Check browser session status"] if session.public_url else ["Complete login in browser", "Check browser session status"],
+        public_url=session.public_url,
+        login_url=session.login_url,
+        session_path=target_path_text or str(final_session_path),
+        waiter_pid=waiter_pid,
+        waiter_running=True,
+        cleanup_performed=False,
+        status_command=f"python scripts/run_tool.py browser-session-status {normalized_platform}",
+        extra_internal={
+            "requires_user_action": True,
+        },
+    )
+
+
+def run_browser_session_wait(platform: str) -> str:
+    from crawler.integrations.browser_auth import AutoBrowserAuthBridge, AutoBrowserAuthError
+    from crawler.integrations.browser_auth import get_default_auto_browser_script, get_default_auto_browser_workdir
+
+    normalized_platform = (platform or "").strip().lower()
+    payload = _read_browser_auth_state(normalized_platform)
+    if not payload:
+        return json.dumps({"state": "error", "message": "No pending browser session."}, ensure_ascii=False, indent=2)
+    if payload.get("state") != "awaiting_user_action":
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    bridge = AutoBrowserAuthBridge(
+        script_path=get_default_auto_browser_script(),
+        workdir=get_default_auto_browser_workdir(),
+    )
+    session = _payload_to_browser_session(payload)
+
+    try:
+        completed = bridge.complete_prepared_session(session, cleanup_on_success=True)
+        final_session_path = _copy_browser_session_output(completed.session_path.resolve(), str(payload.get("target_session_path") or ""))
+        ready_payload = _browser_session_payload(
+            session=completed,
+            state="ready",
+            message="Browser session is ready and the browser stack has been cleaned up.",
+            target_session_path=str(final_session_path),
+        )
+        ready_payload["waiter_pid"] = int(payload.get("waiter_pid") or 0)
+        _write_browser_auth_state(normalized_platform, ready_payload)
+        return json.dumps(ready_payload, ensure_ascii=False, indent=2)
+    except AutoBrowserAuthError as exc:
+        fetch_error = getattr(exc, "fetch_error", None)
+        error_payload = dict(payload)
+        error_payload.update({
+            "state": "error",
+            "message": str(exc),
+            "error": getattr(fetch_error, "error_code", "AUTH_SESSION_EXPORT_FAILED"),
+            "retryable": bool(getattr(fetch_error, "retryable", False)),
+            "public_url": getattr(exc, "public_url", "") or payload.get("public_url", ""),
+            "login_url": getattr(exc, "login_url", "") or payload.get("login_url", ""),
+            "guide_active": False,
+        })
+        _write_browser_auth_state(normalized_platform, error_payload)
+        return json.dumps(error_payload, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        error_payload = dict(payload)
+        error_payload.update({
+            "state": "error",
+            "message": str(exc),
+            "error": "browser_session_wait_failed",
+            "retryable": False,
+            "guide_active": False,
+        })
+        _write_browser_auth_state(normalized_platform, error_payload)
+        return json.dumps(error_payload, ensure_ascii=False, indent=2)
+
+
+def run_browser_session_status(platform: str) -> str:
+    normalized_platform = (platform or "").strip().lower()
+    if not normalized_platform:
+        return _browser_session_response(
+            platform="",
+            state="error",
+            user_message="Platform is required.",
+            user_actions=[],
+            error="missing_platform",
+        )
+
+    payload = _read_browser_auth_state(normalized_platform)
+    if not payload:
+        return _browser_session_response(
+            platform=normalized_platform,
+            state="idle",
+            user_message="No browser session job is active.",
+            user_actions=["Start browser session"],
+            status_command=f"python scripts/run_tool.py browser-session-status {normalized_platform}",
+        )
+
+    waiter_running = _browser_waiter_running(payload) if payload.get("state") == "awaiting_user_action" else False
+    user_actions = ["Continue task"]
+    if payload.get("state") == "awaiting_user_action":
+        user_actions = ["Open login link", "Check again"] if payload.get("public_url") else ["Complete login in browser", "Check again"]
+    elif payload.get("state") == "error":
+        user_actions = ["Retry browser session", "Diagnose"]
+
+    return _browser_session_response(
+        platform=normalized_platform,
+        state=str(payload.get("state", "idle")),
+        user_message=str(payload.get("message", "No browser session job is active.")),
+        user_actions=user_actions,
+        public_url=str(payload.get("public_url", "")),
+        login_url=str(payload.get("login_url", "")),
+        session_path=str(payload.get("target_session_path") or payload.get("session_path", "")),
+        waiter_pid=int(payload.get("waiter_pid") or 0),
+        waiter_running=waiter_running,
+        cleanup_performed=bool(payload.get("cleanup_performed", False)),
+        error=str(payload.get("error", "")),
+        retryable=bool(payload.get("retryable", False)),
+        status_command=f"python scripts/run_tool.py browser-session-status {normalized_platform}",
+    )
 
 
 def run_diagnosis() -> str:
@@ -463,6 +851,9 @@ def build_parser() -> argparse.ArgumentParser:
             "agent-start",
             "agent-control",
             "agent-run",
+            "browser-session",
+            "browser-session-status",
+            "browser-session-wait",
         ),
     )
     parser.add_argument("args", nargs="*")
@@ -957,6 +1348,29 @@ def main() -> int:
     if namespace.command == "agent-run":
         max_iter = int(namespace.args[0]) if namespace.args else 1
         print(run_agent_loop(max_iterations=max_iter))
+        return 0
+
+    if namespace.command == "browser-session":
+        if not namespace.args:
+            print("Usage: browser-session <platform> [outputPath]")
+            return 1
+        platform = namespace.args[0]
+        output_path = namespace.args[1] if len(namespace.args) > 1 else ""
+        print(run_browser_session(platform, output_path))
+        return 0
+
+    if namespace.command == "browser-session-status":
+        if not namespace.args:
+            print("Usage: browser-session-status <platform>")
+            return 1
+        print(run_browser_session_status(namespace.args[0]))
+        return 0
+
+    if namespace.command == "browser-session-wait":
+        if not namespace.args:
+            print("Usage: browser-session-wait <platform>")
+            return 1
+        print(run_browser_session_wait(namespace.args[0]))
         return 0
 
     if namespace.command == "diagnose":
