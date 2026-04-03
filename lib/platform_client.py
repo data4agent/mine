@@ -345,3 +345,71 @@ class PlatformClient:
         if last_error is not None:
             raise last_error
         raise RuntimeError(f"request failed for {method} {path}")
+
+    # === Validator Methods ===
+
+    def get_me(self) -> dict[str, Any]:
+        """GET /api/iam/v1/me"""
+        resp = self._request("GET", "/api/iam/v1/me", None)
+        data = resp.get("data")
+        return data if isinstance(data, dict) else {}
+
+    def submit_validator_application(self) -> dict[str, Any]:
+        """POST /api/iam/v1/validator-applications"""
+        return self._request("POST", "/api/iam/v1/validator-applications", {})
+
+    def get_my_validator_application(self) -> dict[str, Any]:
+        """GET /api/iam/v1/validator-applications/me"""
+        resp = self._request("GET", "/api/iam/v1/validator-applications/me", None)
+        data = resp.get("data")
+        return data if isinstance(data, dict) else {}
+
+    def join_ready_pool(self) -> dict[str, Any]:
+        """POST /api/mining/v1/validators/ready"""
+        return self._request("POST", "/api/mining/v1/validators/ready", {})
+
+    def leave_ready_pool(self) -> dict[str, Any]:
+        """POST /api/mining/v1/validators/unready"""
+        return self._request("POST", "/api/mining/v1/validators/unready", {})
+
+    def get_evaluation_task(self, task_id: str) -> dict[str, Any]:
+        """GET /api/mining/v1/evaluation-tasks/{id}"""
+        resp = self._request("GET", f"/api/mining/v1/evaluation-tasks/{task_id}", None)
+        data = resp.get("data")
+        return data if isinstance(data, dict) else {}
+
+    def report_evaluation(self, task_id: str, score: int) -> dict[str, Any]:
+        """POST /api/mining/v1/evaluation-tasks/{id}/report"""
+        return self._request("POST", f"/api/mining/v1/evaluation-tasks/{task_id}/report", {"score": score})
+
+    def create_validation_result(self, submission_id: str, verdict: str, score: int, comment: str, idempotency_key: str) -> dict[str, Any]:
+        """POST /api/core/v1/validation-results"""
+        return self._request("POST", "/api/core/v1/validation-results", {
+            "submission_id": submission_id,
+            "verdict": verdict,
+            "score": score,
+            "comment": comment,
+            "idempotency_key": idempotency_key,
+        })
+
+    def list_validation_results(self, **params: Any) -> list[dict[str, Any]]:
+        """GET /api/core/v1/validation-results"""
+        query = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
+        path = "/api/core/v1/validation-results"
+        if query:
+            path = f"{path}?{query}"
+        resp = self._request("GET", path, None)
+        data = resp.get("data")
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            items = data.get("items")
+            if isinstance(items, list):
+                return [item for item in items if isinstance(item, dict)]
+        return []
+
+    def get_validation_result(self, result_id: str) -> dict[str, Any]:
+        """GET /api/core/v1/validation-results/{id}"""
+        resp = self._request("GET", f"/api/core/v1/validation-results/{result_id}", None)
+        data = resp.get("data")
+        return data if isinstance(data, dict) else {}
