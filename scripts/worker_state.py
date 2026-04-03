@@ -341,3 +341,66 @@ class WorkerStateStore:
         if path in {self._backlog_path, self._auth_pending_path, self._submit_pending_path}:
             return []
         return {}
+
+
+class ValidatorStateStore:
+    """Persists validator session state across restarts."""
+
+    SESSION_FILE = "validator_session.json"
+    BACKGROUND_FILE = "validator_background.json"
+
+    def __init__(self, state_root: Path) -> None:
+        self._state_root = Path(state_root)
+        self._state_root.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def state_root(self) -> Path:
+        return self._state_root
+
+    def _session_path(self) -> Path:
+        return self._state_root / self.SESSION_FILE
+
+    def _background_path(self) -> Path:
+        return self._state_root / self.BACKGROUND_FILE
+
+    def save_session(self, data: dict[str, Any]) -> None:
+        self._write_json(self._session_path(), data)
+
+    def load_session(self) -> dict[str, Any]:
+        return self._read_json(self._session_path())
+
+    def update_session(self, **updates: Any) -> None:
+        current = self.load_session()
+        current.update(updates)
+        self.save_session(current)
+
+    def save_background_session(self, *, pid: int, session_id: str) -> None:
+        self._write_json(self._background_path(), {
+            "pid": pid,
+            "session_id": session_id,
+            "started_at": int(time.time()),
+        })
+
+    def load_background_session(self) -> dict[str, Any]:
+        return self._read_json(self._background_path())
+
+    def clear_background_session(self) -> None:
+        path = self._background_path()
+        if path.exists():
+            path.unlink()
+
+    def _write_json(self, path: Path, data: dict[str, Any]) -> None:
+        temp_path = path.with_suffix(".tmp")
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        temp_path.replace(path)
+
+    def _read_json(self, path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
