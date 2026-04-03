@@ -31,9 +31,10 @@ output/
 .dev/
 
 # ── Safety net (prevent stray dev files from being committed) ──
-test_*.py
-diagnose_*.py
-tests/
+# NOTE: tests/ directory for validator integration is explicitly tracked
+# test_*.py
+# diagnose_*.py
+# tests/
 test_data/
 test_output/
 local_tasks/
