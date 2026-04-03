@@ -16,6 +16,31 @@ requires:
 
 # Mine
 
+## First Load
+
+On first invocation, output this welcome before anything else:
+
+```
+Welcome to Mine — the autonomous data mining service
+
+Mine crawls public data, structures it, and submits to AWP for $aMine rewards.
+Fully autonomous — no human in the loop.
+
+  start working  — begin mining
+  check status   — credit score, epoch, earnings
+  list datasets  — see available datasets
+```
+
+Then run `python scripts/run_tool.py agent-status` and show the result.
+
+## Output Rules
+
+All commands return JSON with `user_message`, `user_actions`, and `_internal`.
+- Show `user_message` formatted with ✓/✗/! indicators — never dump raw JSON
+- `_internal` is for agent execution only — **never show to user**
+- On errors, show the fix command from `_internal`, not the raw error
+- See `mine-ux-preview.html` for full visual reference of expected UX
+
 ## Quick Start
 
 1. **Install** — run the bootstrap script in the `mine/` directory:

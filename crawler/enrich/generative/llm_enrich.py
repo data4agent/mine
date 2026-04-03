@@ -66,7 +66,11 @@ def _has_api_config(model_config: dict[str, Any] | None) -> bool:
 
 
 def llm_execution_available(model_config: dict[str, Any] | None = None) -> bool:
-    """Return whether any configured execution path can satisfy an enrich request."""
+    """Return whether any configured execution path can satisfy an enrich request.
+
+    auto 模式优先级: CLI > gateway > api
+    CLI 路径直接复用 openclaw agent 已配置的模型(如 OpenRouter)，无需用户配 key。
+    """
     mode = _requested_mode()
     if mode in {"benchmark_skill", "cli"}:
         return _openclaw_cli_available()
@@ -74,15 +78,15 @@ def llm_execution_available(model_config: dict[str, Any] | None = None) -> bool:
         return _has_gateway_config(model_config)
     if mode == "api":
         return _has_api_config(model_config)
-    return _openclaw_cli_available() or _has_api_config(model_config)
+    # auto: CLI 优先，有 openclaw 就够了
+    return _openclaw_cli_available() or _has_gateway_config(model_config) or _has_api_config(model_config)
 
 
 def _should_try_benchmark_skill() -> bool:
     mode = _requested_mode()
     if mode in {"gateway", "api"}:
         return False
-    if mode in {"benchmark_skill", "cli"}:
-        return True
+    # auto / cli / benchmark_skill → 只要 CLI 可用就优先走 CLI
     return _openclaw_cli_available()
 
 

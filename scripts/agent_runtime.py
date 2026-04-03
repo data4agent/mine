@@ -391,6 +391,10 @@ class CrawlerRunner:
             return None
         if not self.config.gateway_enrich_enabled or not self.config.gateway_model_config:
             return None
+        # CLI 可用时不传 model-config，让子进程 auto 模式直接走 openclaw agent CLI
+        import shutil
+        if shutil.which("openclaw") or shutil.which("openclaw.cmd") or shutil.which("openclaw.mjs"):
+            return None
         return write_model_config(output_dir / "_runtime" / "mine-model-config.json", self.config.gateway_model_config)
 
 

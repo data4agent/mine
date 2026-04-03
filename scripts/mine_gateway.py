@@ -41,7 +41,12 @@ def write_model_config(path: Path, model_config: dict[str, Any]) -> Path:
 
 def _mine_gateway_enabled() -> bool:
     mode = _env_value("MINE_ENRICH_MODE", "OPENCLAW_ENRICH_MODE", default="auto").lower()
-    return mode not in {"0", "false", "off", "disabled"}
+    if mode in {"0", "false", "off", "disabled"}:
+        return False
+    # auto 模式下优先走 openclaw CLI，只有明确指定 gateway 才启用 HTTP 网关
+    if mode == "gateway":
+        return True
+    return False
 
 
 def _read_gateway_token_from_config() -> str:
