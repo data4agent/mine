@@ -1608,14 +1608,72 @@ def main() -> int:
 
     if namespace.command == "run-validator-worker":
         session_id = namespace.args[0] if namespace.args else None
-        from common import resolve_validator_state_root
+        from common import (
+            resolve_validator_state_root,
+            resolve_platform_base_url,
+            resolve_validator_id,
+            resolve_ws_url,
+            resolve_eval_timeout,
+            resolve_wallet_config,
+            resolve_awp_registration,
+        )
         from worker_state import ValidatorStateStore
 
         state_root = resolve_validator_state_root()
         store = ValidatorStateStore(state_root)
         if session_id:
             store.update_session(session_id=session_id, status="running")
-        print(json.dumps({"status": "worker_started", "session_id": session_id}, ensure_ascii=False, indent=2))
+
+        # Run the actual validator runtime
+        try:
+            from validator_runtime import ValidatorRuntime
+            from evaluation_engine import EvaluationEngine
+            from ws_client import ValidatorWSClient
+            from lib.platform_client import PlatformClient
+            from signer import WalletSigner
+
+            # Get wallet config with session token (same as miner)
+            wallet_bin, wallet_token = resolve_wallet_config()
+            if wallet_token.strip():
+                # Try auto-register but don't block on failure
+                try:
+                    registration = resolve_awp_registration(auto_register=True)
+                    if registration.get("status") == "auto_register_failed":
+                        # Log warning but continue - wallet may already be registered
+                        print(json.dumps({"warning": "auto_register_failed", "message": registration.get("message")}, ensure_ascii=False), flush=True)
+                except Exception as reg_exc:
+                    print(json.dumps({"warning": "registration_check_failed", "error": str(reg_exc)}, ensure_ascii=False), flush=True)
+            signer = WalletSigner(wallet_bin=wallet_bin, session_token=wallet_token)
+            platform = PlatformClient(
+                base_url=resolve_platform_base_url(),
+                token="",
+                signer=signer,
+            )
+
+            ws_url = resolve_ws_url()
+            auth_headers = signer.build_auth_headers("GET", ws_url, None)
+            ws = ValidatorWSClient(
+                ws_url=ws_url,
+                auth_headers=auth_headers,
+            )
+
+            engine = EvaluationEngine(timeout=resolve_eval_timeout())
+
+            runtime = ValidatorRuntime(
+                platform_client=platform,
+                ws_client=ws,
+                eval_engine=engine,
+                validator_id=resolve_validator_id(),
+            )
+
+            print(json.dumps({"status": "worker_started", "session_id": session_id}, ensure_ascii=False, indent=2))
+            result = runtime.start()
+            store.update_session(status="stopped")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        except Exception as exc:
+            store.update_session(status="error", error=str(exc))
+            print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2))
+            return 1
         return 0
 
     if namespace.command == "diagnose":

@@ -83,7 +83,6 @@ def start_background(state_root: Path | None = None) -> dict[str, Any]:
         sys.executable,
         str(script_path),
         "run-validator-worker",
-        "--session-id",
         session_id,
     ]
 
