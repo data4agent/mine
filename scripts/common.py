@@ -746,3 +746,49 @@ def resolve_wallet_config() -> tuple[str, str]:
         wallet_token = _ensure_wallet_session(wallet_bin)
 
     return (wallet_bin, wallet_token)
+
+
+# === Validator-specific constants and functions ===
+
+DEFAULT_VALIDATOR_ID = "validator-agent"
+DEFAULT_EVAL_TIMEOUT = 120
+
+CREDIT_TIER_INTERVALS = {
+    "novice": 120,
+    "good": 30,
+    "excellent": 10,
+}
+
+def resolve_validator_id() -> str:
+    return os.environ.get("VALIDATOR_ID", "").strip() or DEFAULT_VALIDATOR_ID
+
+def resolve_validator_output_root() -> Path:
+    env_val = os.environ.get("VALIDATOR_OUTPUT_ROOT", "").strip()
+    if env_val:
+        return Path(env_val).resolve()
+    return resolve_crawler_root() / "output" / "validator-runs"
+
+def resolve_validator_state_root() -> Path:
+    return resolve_validator_output_root() / "_worker_state"
+
+def resolve_eval_timeout() -> int:
+    env_val = os.environ.get("EVAL_TIMEOUT_SECONDS", "").strip()
+    if env_val:
+        try:
+            return int(env_val)
+        except ValueError:
+            pass
+    return DEFAULT_EVAL_TIMEOUT
+
+def resolve_credit_interval(credit_tier: str) -> int:
+    return CREDIT_TIER_INTERVALS.get(credit_tier.lower(), CREDIT_TIER_INTERVALS["novice"])
+
+def resolve_ws_url() -> str:
+    base = resolve_platform_base_url()
+    if base.startswith("https://"):
+        ws_base = "wss://" + base[8:]
+    elif base.startswith("http://"):
+        ws_base = "ws://" + base[7:]
+    else:
+        ws_base = "ws://" + base
+    return ws_base.rstrip("/") + "/api/mining/v1/ws"
