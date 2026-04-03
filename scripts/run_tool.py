@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from common import (
     DEFAULT_MINER_ID,
@@ -1630,20 +1631,26 @@ def main() -> int:
             from evaluation_engine import EvaluationEngine
             from ws_client import ValidatorWSClient
             from lib.platform_client import PlatformClient
-            from signer import WalletSigner
 
-            # Get wallet config with session token (same as miner)
-            wallet_bin, wallet_token = resolve_wallet_config()
-            if wallet_token.strip():
-                # Try auto-register but don't block on failure
-                try:
-                    registration = resolve_awp_registration(auto_register=True)
-                    if registration.get("status") == "auto_register_failed":
-                        # Log warning but continue - wallet may already be registered
-                        print(json.dumps({"warning": "auto_register_failed", "message": registration.get("message")}, ensure_ascii=False), flush=True)
-                except Exception as reg_exc:
-                    print(json.dumps({"warning": "registration_check_failed", "error": str(reg_exc)}, ensure_ascii=False), flush=True)
-            signer = WalletSigner(wallet_bin=wallet_bin, session_token=wallet_token)
+            # Check for direct private key (bypass awp-wallet)
+            private_key = os.environ.get("VALIDATOR_PRIVATE_KEY", "").strip()
+            if private_key:
+                from pk_signer import PrivateKeySigner
+                signer = PrivateKeySigner(private_key)
+                print(json.dumps({"info": "using_private_key", "address": signer.signer_address}, ensure_ascii=False), flush=True)
+            else:
+                from signer import WalletSigner
+                # Get wallet config with session token (same as miner)
+                wallet_bin, wallet_token = resolve_wallet_config()
+                if wallet_token.strip():
+                    # Try auto-register but don't block on failure
+                    try:
+                        registration = resolve_awp_registration(auto_register=True)
+                        if registration.get("status") == "auto_register_failed":
+                            print(json.dumps({"warning": "auto_register_failed", "message": registration.get("message")}, ensure_ascii=False), flush=True)
+                    except Exception as reg_exc:
+                        print(json.dumps({"warning": "registration_check_failed", "error": str(reg_exc)}, ensure_ascii=False), flush=True)
+                signer = WalletSigner(wallet_bin=wallet_bin, session_token=wallet_token)
             platform = PlatformClient(
                 base_url=resolve_platform_base_url(),
                 token="",
@@ -1668,8 +1675,15 @@ def main() -> int:
 
             print(json.dumps({"status": "worker_started", "session_id": session_id}, ensure_ascii=False, indent=2))
             result = runtime.start()
+            print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
+            # Block until runtime stops (threads exit or stop() called)
+            try:
+                while runtime._running:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                runtime.stop()
             store.update_session(status="stopped")
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            print(json.dumps(runtime.status(), ensure_ascii=False, indent=2))
         except Exception as exc:
             store.update_session(status="error", error=str(exc))
             print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False, indent=2))

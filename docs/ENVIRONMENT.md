@@ -19,6 +19,24 @@ These are required for authenticated mining requests:
 | `AWP_WALLET_TOKEN_SECRET_REF` | Alternative | SecretRef-based way to supply the wallet token when the host manages secrets |
 | `AWP_WALLET_BIN` | No | Defaults to `awp-wallet` |
 
+## Validator variables
+
+These variables are used by the validator runtime:
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `VALIDATOR_ID` | No | Defaults to `validator-agent` |
+| `VALIDATOR_OUTPUT_ROOT` | No | Defaults to `output/validator-runs` |
+| `EVAL_TIMEOUT_SECONDS` | No | Defaults to `120` seconds |
+
+Validator also reuses:
+
+- `PLATFORM_BASE_URL`
+- `AWP_WALLET_BIN`
+- the same signature auto-discovery flow as the miner runtime
+
+For validator commands, runtime flow, and module layout, see [`VALIDATOR.md`](./VALIDATOR.md).
+
 ## Signature config discovery
 
 Mine now discovers signature settings automatically:

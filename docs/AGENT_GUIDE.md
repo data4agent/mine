@@ -89,6 +89,7 @@ Why `MINER_ID` is still listed:
 - only override it if your deployment truly needs a different value
 
 For a fuller variable reference, see [`ENVIRONMENT.md`](./ENVIRONMENT.md).
+For validator-specific runtime and protocol details, see [`VALIDATOR.md`](./VALIDATOR.md).
 
 ## 5. Verify readiness
 
@@ -223,3 +224,17 @@ If the host surface wants slash commands, map them to the canonical command laye
 ## 11. Production note
 
 The production platform URL currently requires wallet allow-listing. If you see `401` with `UNTRUSTED_HOST`, the wallet must be approved before mining will work there.
+
+## 12. Validator quick entry
+
+Validator now has a dedicated command group:
+
+```bash
+python scripts/run_tool.py validator-status
+python scripts/run_tool.py validator-start
+python scripts/run_tool.py validator-control status
+python scripts/run_tool.py validator-control stop
+python scripts/run_tool.py validator-doctor
+```
+
+Use [`VALIDATOR.md`](./VALIDATOR.md) as the source of truth for validator behavior, architecture, and troubleshooting.

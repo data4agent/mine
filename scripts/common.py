@@ -272,7 +272,7 @@ def _awp_request_json(method: str, base_url: str, path: str, payload: dict[str, 
         method=method.upper(),
     )
     try:
-        with urlopen(request, timeout=15) as response:
+        with urlopen(request, timeout=20) as response:
             body = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"AWP API request failed: {request_url} — {exc}") from exc
