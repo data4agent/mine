@@ -16,68 +16,71 @@ requires:
 
 # Mine
 
-面向 agent 的本地 mining skill 入口。OpenClaw 和其他 **plugin host** 应从仓库根目录加载这份 skill。
+Local mining skill entry for agents. OpenClaw and other **plugin hosts** should load this skill from the repository root.
 
-核心原则：
+Principles:
 
-- 优先理解用户意图，再执行内部命令
-- 对用户返回动作语义，不要默认把底层命令直接抛给用户
-- 把 `scripts/run_tool.py` 视为内部控制层，不是对话层 UX
-- 默认走 host-friendly 背景挖矿链路，不优先暴露低层 worker 命令
+- Infer user intent before running internal commands
+- Return action semantics to the user; do not dump low-level commands by default
+- Treat `scripts/run_tool.py` as the internal control plane, not conversational UX
+- Prefer the host-friendly background mining path; do not expose low-level worker commands first
 
 ## Agent Actions
 
-这个 skill 对外提供的标准动作是：
+Standard actions exposed by this skill:
 
-| 动作 | 适用场景 | 期望结果 |
+| Action | When to use | Expected outcome |
 | ----- | -------- | -------- |
-| `Initialize` | 首次使用、环境未初始化、钱包不可用 | 安装依赖、准备 wallet、完成初始化 |
-| `CheckReadiness` | 用户问“能不能开始”“现在状态如何” | 返回 readiness 状态和下一步动作 |
-| `StartMining` | 用户要开始挖矿 | 进入后台挖矿会话 |
-| `CheckStatus` | 用户问进度、当前状态、是否在跑 | 返回当前 session / epoch / action |
-| `PauseMining` | 用户要暂停 | 暂停当前挖矿会话 |
-| `ResumeMining` | 用户要继续 | 恢复已暂停会话 |
-| `StopMining` | 用户要停止 | 结束会话并保留摘要 |
-| `Diagnose` | 用户说出错、401、无法启动、状态异常 | 返回结构化诊断和修复建议 |
+| `Initialize` | First run, environment not initialized, wallet unavailable | Install deps, prepare wallet, finish setup |
+| `CheckReadiness` | User asks whether they can start or what the status is | Return readiness and next action |
+| `StartMining` | User wants to start mining | Enter background mining session |
+| `CheckStatus` | User asks about progress, current state, or whether it is running | Return session / epoch / action |
+| `PauseMining` | User wants to pause | Pause current mining session |
+| `ResumeMining` | User wants to resume | Resume a paused session |
+| `StopMining` | User wants to stop | End session and keep summary |
+| `Diagnose` | User reports errors, 401, cannot start, odd state | Return structured diagnosis and fixes |
+| `PrepareBrowserSession` | Crawl tasks need browser work, missing login, need cookies / storage state | Prepare a usable session and write it back |
 
-对用户的表达优先使用这些动作名或自然语言，例如：
+Prefer these action names or natural language, for example:
 
-- “初始化挖矿环境”
-- “检查是否已就绪”
-- “开始挖矿”
-- “查看状态”
-- “暂停挖矿”
-- “继续挖矿”
-- “停止挖矿”
-- “诊断问题”
+- “Initialize mining environment”
+- “Check if ready”
+- “Start mining”
+- “Check status”
+- “Pause mining”
+- “Resume mining”
+- “Stop mining”
+- “Diagnose issues”
+- “Prepare browser session”
 
-只有在用户明确要底层命令、或 host 需要执行映射时，才使用内部命令映射。
+Use internal command mapping only when the user explicitly wants low-level commands or the host must execute the mapping.
 
 ## Preferred Flow
 
-标准对话流：
+Typical conversation flow:
 
-1. 先执行 `CheckReadiness`
-2. 如果未初始化，执行 `Initialize`
-3. 初始化完成后再次执行 `CheckReadiness`
-4. 就绪后执行 `StartMining`
-5. 后续统一通过 `CheckStatus` / `PauseMining` / `ResumeMining` / `StopMining` 控制
+1. Run `CheckReadiness` first
+2. If not initialized, run `Initialize`
+3. Run `CheckReadiness` again after initialization
+4. When ready, run `StartMining`
+5. Then control via `CheckStatus` / `PauseMining` / `ResumeMining` / `StopMining`
+6. If a platform requires an authenticated browser during crawl, run `PrepareBrowserSession` and retry the task
 
-如果用户只是问“现在能不能挖”或“帮我看看状态”，不要直接启动，先走 `CheckReadiness` 或 `CheckStatus`。
+If the user only asks whether they can mine or wants status, do not start mining—use `CheckReadiness` or `CheckStatus` first.
 
 ## Readiness States
 
-`CheckReadiness` 和 `Diagnose` 共享统一 readiness 语义：
+`CheckReadiness` and `Diagnose` share the same readiness semantics:
 
 | State | can_diagnose | can_start | can_mine | Meaning |
 | ----- | ------------ | --------- | -------- | ------- |
-| `ready` | true | true | true | 完全可用 |
-| `registration_required` | true | true | false | 可启动，启动时会自动注册 |
-| `auth_required` | true | false | false | wallet session 缺失或过期 |
-| `agent_not_initialized` | false | false | false | awp-wallet 或 runtime 尚未准备好 |
-| `degraded` | true | true | false | 部分功能可用，但不完整 |
+| `ready` | true | true | true | Fully usable |
+| `registration_required` | true | true | false | Can start; registration runs on start |
+| `auth_required` | true | false | false | Wallet session missing or expired |
+| `agent_not_initialized` | false | false | false | awp-wallet or runtime not ready |
+| `degraded` | true | true | false | Partially usable |
 
-常见 warning：
+Common warnings:
 
 - `wallet session expired`
 - `wallet session expires in Ns`
@@ -85,18 +88,60 @@ requires:
 
 ## Behavior Rules
 
-1. 默认优先使用后台会话链路，不要优先调用低层 `run-worker`
-2. 默认优先返回“当前状态 + 下一步动作”，而不是一串命令
-3. 当 runtime 返回 `selection_required` 时，把它解释为“需要用户选择 dataset”，不要伪造选择
-4. 当 runtime 返回 `auth_required` 或 `401`，优先走 `Diagnose` 或 `Initialize`
-5. `StopMining` 是有副作用动作，如用户语义不明确，先确认再停
-6. 浏览器登录或 LinkedIn 自动登录只在对应场景下启用，不是本 skill 的全局前置条件
+1. Prefer the background session path; do not call low-level `run-worker` first
+2. Prefer returning “current state + next action” instead of a list of commands
+3. When runtime returns `selection_required`, interpret it as “user must choose a dataset”; do not invent a choice
+4. When runtime returns `auth_required` or `401`, prefer `Diagnose` or `Initialize`
+5. `StopMining` has side effects; confirm if the user’s intent is unclear
+6. Browser or LinkedIn auto-login applies only in those scenarios—not a global prerequisite for this skill
+7. For browser login, cookies, or storage state export, prefer `PrepareBrowserSession`; do not have the agent stitch low-level browser commands manually
+
+## Browser Session Policy
+
+When mining or crawl tasks need browser work, cookies, or storage state, follow this priority:
+
+1. Reuse an existing session file first
+2. If a reusable browser session exists locally, export it quietly without interrupting the user
+3. If none, launch the browser and open the platform login page
+4. After session is ready, export session and retry the original task automatically
+5. Only escalate to the user for CAPTCHA, risk controls, SMS verification, or explicit human confirmation
+
+Preferred automation:
+
+- Prefer `auto-browser` session bridging
+- `agent-browser` is the driver layer for open/wait/export
+- Do not expose `vrd.py` / `agent-browser` command chains to the user
+- Treat browser session as one high-level action, not many commands
+
+Automation boundaries:
+
+- The agent should automatically: launch browser, open login, wait for session, export session, import cookies, retry crawl
+- The agent should not stop by default only because “a browser is needed” or “cookies are missing”
+- The agent should stop for: CAPTCHA, SMS, forced human confirmation, risk pages, or export timeout
+
+Success means a valid session, not merely a loaded page. For LinkedIn, key cookies present is the main success signal.
+
+## Browser Flow Simplification
+
+Do not recommend this multi-step manual path in the skill:
+
+- `vrd.py check`
+- `vrd.py start`
+- `vrd.py status`
+- `agent-browser open ...`
+- `vrd.py export-session ...`
+
+Fold those into one action:
+
+- `PrepareBrowserSession(platform)`
+
+The goal is not “open a browser” but “obtain a usable session and continue.” If session can be obtained automatically, do not show intermediate commands.
 
 ## Internal Command Mapping
 
-下面这些是 host / agent 内部映射，不建议直接作为对用户的主要输出：
+Host/agent internal mapping—not the primary user-facing output:
 
-| 动作 | 内部命令 |
+| Action | Internal command |
 | ---- | -------- |
 | `Initialize` | `python scripts/run_tool.py init` |
 | `CheckReadiness` | `python scripts/run_tool.py agent-status` |
@@ -106,8 +151,9 @@ requires:
 | `ResumeMining` | `python scripts/run_tool.py agent-control resume` |
 | `StopMining` | `python scripts/run_tool.py agent-control stop` |
 | `Diagnose` | `python scripts/run_tool.py doctor` |
+| `PrepareBrowserSession` | Use the runtime auto-browser session export flow; do not require the agent to run `vrd.py` / `agent-browser` manually |
 
-扩展能力仍然存在，但属于高级或专项能力，不应覆盖上面的主动作契约。例如：
+Advanced capabilities still exist but must not override the main contract, for example:
 
 - `process-task-file`
 - `export-core-submissions`
@@ -118,12 +164,12 @@ requires:
 
 ## Bootstrap
 
-Bootstrap 负责安装依赖、准备 `awp-wallet`、建立本地 wallet session。
+Bootstrap installs dependencies, prepares `awp-wallet`, and establishes a local wallet session.
 
 - Unix: `./scripts/bootstrap.sh`
 - Windows: `./scripts/bootstrap.cmd`
 
-如果 host 支持 platform-specific bootstrap，优先走 frontmatter 中的 `bootstrap` / `windows_bootstrap` 字段，而不是在对话里要求用户手工敲命令。
+If the host supports platform-specific bootstrap, use the `bootstrap` / `windows_bootstrap` fields in frontmatter instead of asking the user to type commands.
 
 ## Environment (defaults work)
 
@@ -137,7 +183,9 @@ EIP-712 signature config is auto-fetched from platform; falls back to built-in d
 
 ## Optional Capability
 
-`auto-browser` 只在 LinkedIn / 浏览器登录等需要本地可见浏览器接管的场景下使用。它不是本 skill 的全局硬依赖，不应阻塞通用 mining 初始化、状态检查或后台运行。
+`auto-browser` is for LinkedIn / browser login scenarios that need a visible local browser. It is not a global hard dependency and must not block generic mining init, status checks, or background runs.
+
+If a visible local browser is available, prefer it for login and session export; in remote/VRD scenarios, use the same session export entry points from `auto-browser`. The agent should still see one high-level action: `PrepareBrowserSession`.
 
 ## Reference
 

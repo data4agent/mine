@@ -545,7 +545,7 @@ class JsonExtractor:
                 continue
             normalized_label = re.sub(r"[\s\u200e\u200f]+", "", label).strip(" :：").lower()
 
-            # CN locale: 上架时间 etc.
+            # Amazon.cn and other localized labels (CN UI strings)
             if "datefirstavailable" in normalized_label or "上架时间" in label:
                 set_field(
                     "date_first_available",

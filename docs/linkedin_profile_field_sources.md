@@ -1,117 +1,134 @@
-# LinkedIn Profile 字段来源分析
+# LinkedIn profile field sources
 
 **Last Updated**: 2026-04-03
 
-## Bug Fixes Applied
+## Bug fixes applied
 
-### About字段页脚内容Bug ✅ FIXED (2026-04-03)
-- **问题**: about字段提取到LinkedIn页脚内容而非用户简介
-- **原因**: HTML fallback提取时_section_text_by_heading返回页脚
-- **修复**: 添加_is_linkedin_footer_content()验证函数
-- **文件**: crawler/platforms/linkedin.py
+### About section pulling footer content — fixed (2026-04-03)
 
-## 1. API可直接提取的字段 (15个)
-从 voyager API 响应中直接获取：
+- **Issue**: The `about` field sometimes captured LinkedIn footer text instead of the bio
+- **Cause**: HTML fallback via `_section_text_by_heading` returned footer content
+- **Fix**: Added `_is_linkedin_footer_content()` validation
+- **File**: `crawler/platforms/linkedin.py`
 
-| 字段 | API路径 | 状态 |
+## 1. Fields available directly from the API (15)
+
+Taken from Voyager API responses:
+
+| Field | API path | Status |
 |------|---------|------|
-| name | firstName + lastName | ✅ |
-| headline | headline | ✅ |
-| linkedin_num_id | entityUrn | ✅ |
-| public_identifier | publicIdentifier | ✅ |
-| city | geoLocation.geo.defaultLocalizedName | ✅ |
-| country_code | geoLocation.countryISOCode | ✅ |
-| is_premium | premium | ✅ |
-| is_influencer | influencer | ✅ |
-| is_creator | creator | ✅ |
-| content_creator_tier | topVoiceBadge.badgeText | ✅ |
-| profile_url | 构造 | ✅ |
-| avatar | profilePicture | ✅ |
-| timestamp | created | ✅ |
-| personal_website | creatorInfo.creatorWebsite | ✅ |
-| featured_content_themes | 已提取 | ✅ |
+| name | firstName + lastName | OK |
+| headline | headline | OK |
+| linkedin_num_id | entityUrn | OK |
+| public_identifier | publicIdentifier | OK |
+| city | geoLocation.geo.defaultLocalizedName | OK |
+| country_code | geoLocation.countryISOCode | OK |
+| is_premium | premium | OK |
+| is_influencer | influencer | OK |
+| is_creator | creator | OK |
+| content_creator_tier | topVoiceBadge.badgeText | OK |
+| profile_url | constructed | OK |
+| avatar | profilePicture | OK |
+| timestamp | created | OK |
+| personal_website | creatorInfo.creatorWebsite | OK |
+| featured_content_themes | extracted | OK |
 
-## 2. 需要HTML提取的字段 (10个)
-API不返回，必须从页面HTML提取：
+## 2. Fields that require HTML extraction (10)
 
-| 字段 | 页面位置 | 当前状态 | 浏览器验证(2026-04-03) |
+Not returned by the API; must be parsed from page HTML:
+
+| Field | Page location | Current status | Browser check (2026-04-03) |
 |------|----------|----------|------------------------|
-| followers | "40,147,671 位关注者" | ✅ 已正确提取 | 确认存在 |
-| about | 个人简介section | ✅ 修复后可提取 | "Chair of the Gates Foundation..." |
-| banner_image | 封面照片URL | ✅ 已提取 | 确认存在 |
-| connections | 好友数(名人不显示) | ❌ 页面不显示 | Bill Gates页面无此字段 |
-| people_also_viewed | 推荐档案carousel | ⚠️ 部分提取 | 确认存在"更多职业档案推荐" |
-| recent_posts | 动态section | ❌ 需添加提取 | 确认存在"精选"动态 |
-| experience | 经验section | ❌ 留空 | Bill Gates页面无此section |
-| education | 教育section | ❌ 留空 | Bill Gates页面无此section |
-| skills | 技能section | ❌ 留空 | Bill Gates页面无此section |
-| certifications | 证书section | ❌ 留空 | Bill Gates页面无此section |
+| followers | e.g. "40,147,671 followers" / localized | OK | Present |
+| about | About section | OK after fix | "Chair of the Gates Foundation..." |
+| banner_image | Cover photo URL | OK | Present |
+| connections | Connection count (often hidden for celebrities) | Missing on page | Not on Bill Gates profile |
+| people_also_viewed | People also viewed carousel | Partial | Present |
+| recent_posts | Activity section | Not implemented | Featured posts visible |
+| experience | Experience section | Empty | Not on Bill Gates profile |
+| education | Education section | Empty | Not on Bill Gates profile |
+| skills | Skills section | Empty | Not on Bill Gates profile |
+| certifications | Certifications section | Empty | Not on Bill Gates profile |
 
-### 浏览器检查结果 (Bill Gates页面)
-**实际页面about内容**:
+### Browser check (Bill Gates profile)
+
+**Actual about text**:
+
 > Chair of the Gates Foundation. Founder of Breakthrough Energy. Co-founder of Microsoft. Voracious reader. Avid traveler. Active blogger.
 
-## 3. 需要LLM Enrich的字段 (59个)
-无法从原始数据提取，需要AI分析生成：
+## 3. Fields that need LLM enrichment (59)
 
-### 身份分析
+Cannot be derived from raw crawl data; produced by AI analysis:
+
+### Identity
+
 - name_gender_inference
 - name_ethnicity_estimation
 - profile_language_detected
 
-### About分析
+### About
+
 - about_summary
 - about_sentiment
 - about_topics
 - about_readability_score
 
-### 职业分析
+### Career
+
 - standardized_job_title
 - seniority_level
 - job_function_category
-- current_company (需推断)
+- current_company (inferred)
 - career_trajectory_vector
 - career_narrative_type
 - career_transition_detected
 - job_change_signal_strength
 - experience_gap_analysis
 
-### 教育分析
+### Education
+
 - education_structured
 - highest_degree
 - education_level
 
-### 影响力分析
+### Influence
+
 - influence_score
 - credibility_assessment
 - engagement_rate
 - content_activity_level
 
-### 招聘相关
-- open_to_work (可能在API)
+### Recruiting
+
+- open_to_work (may be in API)
 - cold_outreach_hooks
 - interview_questions_suggested
 - culture_fit_indicators
 
-### 完整性评估
+### Completeness
+
 - profile_completeness_score
 - internal_consistency_flags
 
-### 高级分析
+### Advanced
+
 - investor_brief
 - full_profile_narrative
-- skills_extracted (从about推断)
+- skills_extracted (from about)
 
-## 4. 行动计划
+## 4. Action plan
 
-### 短期 (修复现有代码)
-1. 修复schema_contract.py中的API字段映射
-2. 确保voyager API返回的字段都正确提取
+### Short term (fix current code)
 
-### 中期 (增强HTML提取)
-1. 在API失败时fallback到playwright/camoufox
-2. 添加HTML提取逻辑获取followers, about, banner_image
+1. Fix API field mapping in `schema_contract.py`
+2. Ensure all fields returned by Voyager are extracted
 
-### 长期 (LLM Enrich)
-1. 实现enrich pipeline处理59个分析字段
-2. 分组处理：identity, about_analysis, career_analysis等
+### Medium term (stronger HTML extraction)
+
+1. Fallback to Playwright/Camoufox when the API fails
+2. Add HTML extraction for followers, about, banner_image
+
+### Long term (LLM enrich)
+
+1. Implement enrich pipeline for the 59 analytical fields
+2. Process in groups: identity, about_analysis, career_analysis, etc.

@@ -351,6 +351,7 @@ class EnrichPipeline:
     def _build_missing_source_error(spec: FieldGroupSpec, document: dict[str, Any]) -> str:
         if spec.platform == "amazon" and spec.subdataset == "products" and "price" in spec.required_source_fields:
             availability = str(document.get("availability") or "")
+            # Include CN/JP out-of-stock phrases for localized Amazon pages
             if re.search(r"unavailable|out of stock|currently unavailable|目前无货|無貨", availability, re.IGNORECASE):
                 if spec.name == "amazon_products_pricing":
                     return "pricing unavailable on source page (product unavailable or no offer data)"
