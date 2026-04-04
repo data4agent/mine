@@ -27,14 +27,14 @@ output/
 .omx/
 .tmp-debug*/
 
-# ── Dev artifacts (tests, drafts, temp output — all in .dev/) ──
+# ── Dev artifacts (tests, drafts, temp output) ──
 .dev/
-
-# ── Safety net (prevent stray dev files from being committed) ──
-# NOTE: tests/ directory for validator integration is explicitly tracked
-# test_*.py
-# diagnose_*.py
-# tests/
+tests/
+crawler/tests/
 test_data/
 test_output/
 local_tasks/
+
+# ── Docs not needed in production ──
+docs/TEST_REPORT_*.md
+docs/superpowers/
