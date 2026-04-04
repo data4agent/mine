@@ -15,6 +15,7 @@ from common import (
     DEFAULT_EIP712_CHAIN_ID,
     DEFAULT_EIP712_DOMAIN_NAME,
     DEFAULT_EIP712_VERIFYING_CONTRACT,
+    WALLET_SESSION_DURATION_SECONDS,
     persist_wallet_session,
 )
 
@@ -136,7 +137,7 @@ class WalletSigner:
             raise RuntimeError("awp-wallet sign-typed-data returned empty signature")
         return sig
 
-    def renew_session(self, *, duration_seconds: int = 3600) -> dict[str, int | str]:
+    def renew_session(self, *, duration_seconds: int = WALLET_SESSION_DURATION_SECONDS) -> dict[str, int | str]:
         issued_at = int(time.time())
         resp = self._run("unlock", "--duration", str(max(1, duration_seconds)))
         session_token = str(resp.get("sessionToken") or "").strip()

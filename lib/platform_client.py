@@ -10,6 +10,7 @@ from common import (
     DEFAULT_EIP712_CHAIN_ID,
     DEFAULT_EIP712_DOMAIN_NAME,
     DEFAULT_EIP712_VERIFYING_CONTRACT,
+    WALLET_SESSION_DURATION_SECONDS,
     resolve_signature_config,
 )
 
@@ -336,7 +337,7 @@ class PlatformClient:
                     ):
                         renew_session = getattr(self._signer, "renew_session", None)
                         if callable(renew_session):
-                            self._last_wallet_refresh = renew_session(duration_seconds=3600)
+                            self._last_wallet_refresh = renew_session(duration_seconds=WALLET_SESSION_DURATION_SECONDS)
                             renewed_session = True
                             continue
                 if status_code < 500 or attempt >= self._max_retries:

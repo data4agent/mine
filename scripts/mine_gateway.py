@@ -43,10 +43,8 @@ def _mine_gateway_enabled() -> bool:
     mode = _env_value("MINE_ENRICH_MODE", "OPENCLAW_ENRICH_MODE", default="auto").lower()
     if mode in {"0", "false", "off", "disabled"}:
         return False
-    # auto 模式下优先走 openclaw CLI，只有明确指定 gateway 才启用 HTTP 网关
-    if mode == "gateway":
-        return True
-    return False
+    # auto and gateway both enable gateway; in auto mode CLI wins, gateway is fallback
+    return True
 
 
 def _read_gateway_token_from_config() -> str:

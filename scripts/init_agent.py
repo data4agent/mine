@@ -31,6 +31,7 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from common import (
+    WALLET_SESSION_DURATION_SECONDS,
     resolve_awp_api_base_url,
     resolve_awp_registration,
     resolve_wallet_bin,
@@ -134,7 +135,7 @@ def setup_wallet() -> tuple[str, str] | None:
     # Unlock wallet
     try:
         result = subprocess.run(
-            [wallet_bin, "unlock", "--duration", "3600"],
+            [wallet_bin, "unlock", "--duration", str(WALLET_SESSION_DURATION_SECONDS)],
             capture_output=True,
             text=True,
             timeout=30,

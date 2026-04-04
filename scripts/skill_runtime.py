@@ -184,18 +184,19 @@ def _version_lines() -> list[str]:
 
 
 def render_first_load_experience() -> str:
-    """
-    Scene 1: Welcome & Dependency Check
-    Matches the HTML mock welcome screen.
-    """
+    """Welcome screen with version check and fix hints."""
     wallet_ok, wallet_line, wallet_fixes = _wallet_ready()
     crawler_ok, crawler_line, crawler_fixes = _crawler_ready()
     platform_ok, platform_line, platform_fixes = _platform_line()
 
+    all_ok = wallet_ok and crawler_ok and platform_ok
+
     lines = [
-        "Welcome to Mine",
         "",
-        "Mine runs signed data-mining work in the background while the conversation stays interactive.",
+        f"  {SYM_BOX_H * 3} mine {SYM_BOX_H * 3}",
+        "",
+        "  Autonomous data mining on AWP.",
+        "  Crawl public data, structure it, and earn $aMine rewards.",
         "",
     ]
 
@@ -204,25 +205,28 @@ def render_first_load_experience() -> str:
 
     lines.extend([
         "",
-        "Status:",
+        f"{SYM_BOX_H * 2} environment {SYM_BOX_H * 25}",
         f"  {crawler_line}",
         f"  {wallet_line}",
         f"  {platform_line}",
+        SYM_DIVIDER,
     ])
 
-    if wallet_ok and crawler_ok and platform_ok:
+    if all_ok:
         lines.extend([
             "",
             f"{SYM_CHECK} Mine is ready.",
-            "Next action:",
-            "  python scripts/run_tool.py agent-start",
+            "",
+            f"{SYM_BOX_H * 2} quick start {SYM_BOX_H * 24}",
+            f'  "mine start"     {SYM_ARROW} begin mining',
+            f'  "mine status"    {SYM_ARROW} your stats',
+            f'  "mine help"      {SYM_ARROW} all commands',
+            SYM_DIVIDER,
             "",
             "Available actions:",
             "  python scripts/run_tool.py agent-start",
             "  python scripts/run_tool.py agent-control status",
             "  python scripts/run_tool.py agent-control stop",
-            "",
-            "OpenClaw aliases can map these to /mine-start, /mine-status, and /mine-stop.",
         ])
         return "\n".join(lines)
 
@@ -238,7 +242,12 @@ def render_first_load_experience() -> str:
         if all_fixes:
             all_fixes.append("")
         all_fixes.extend(platform_fixes)
-    lines.extend(["", f"{SYM_CROSS} Mine needs one fix before it can start.", "", "Next action:"])
+    lines.extend([
+        "",
+        f"{SYM_CROSS} Mine needs setup before it can start.",
+        "",
+        "Fix:",
+    ])
     for fix in all_fixes:
         lines.append(f"  {fix}")
 
@@ -694,10 +703,7 @@ def render_pause_response(
     epoch_target: int = 80,
     state_path: str = "mine/.state/session.json",
 ) -> str:
-    """
-    Scene 5: Pause & Resume
-    Matches the HTML mock pause screen.
-    """
+    """Pause response with session snapshot and progress."""
     lines = []
 
     if batch_remaining > 0:
@@ -706,18 +712,21 @@ def render_pause_response(
         lines.append(f"{SYM_CHECK} Batch completed and submitted.")
         lines.append(SYM_DIVIDER)
 
-    lines.append("Mining paused.")
+    lines.append(f"{SYM_CHECK} Mining paused.")
     lines.append("")
-    lines.append(SYM_DIVIDER)
-    lines.append("  Session Summary")
-    lines.append(f"  {SYM_BOX_H * 36}")
-    lines.append(f"  This session      {session_submitted} submitted ({session_ok} ok / {session_failed} failed)")
+
+    # Session snapshot
     percent = int(epoch_submitted / epoch_target * 100) if epoch_target > 0 else 0
-    lines.append(f"  Epoch progress    {epoch_submitted} / {epoch_target} ({percent}%)")
-    lines.append(f"  State saved       {state_path}")
-    lines.append(SYM_DIVIDER)
-    lines.append("")
-    lines.append("Commands: python scripts/run_tool.py agent-control resume | python scripts/run_tool.py agent-control stop")
+    bar = text_progress_bar(epoch_submitted, epoch_target, width=16)
+    lines.extend([
+        f"{SYM_BOX_H * 2} session snapshot {SYM_BOX_H * 20}",
+        f"  This session      {session_submitted} submitted ({session_ok} ok / {session_failed} failed)",
+        f"  Epoch progress    {bar} {epoch_submitted} / {epoch_target} ({percent}%)",
+        f"  State saved       {state_path}",
+        SYM_DIVIDER,
+        "",
+        "Say 'resume' to continue mining, or 'stop' to end the session.",
+    ])
 
     return "\n".join(lines)
 
@@ -732,26 +741,24 @@ def render_resume_response(
     batch_num: int = 1,
     dataset_ids: list[str] | None = None,
 ) -> str:
-    """
-    Scene 5: Resume
-    Matches the HTML mock resume screen.
-    """
+    """Resume response with confirmation lines."""
     lines = [
-        f"{SYM_CHECK} Restored state from previous session",
+        f"{SYM_CHECK} Restored state from previous session.",
     ]
 
     if credit_score is not None:
         lines.append(f"{SYM_CHECK} Heartbeat OK {SYM_DASH} credit score: {credit_score}")
 
     if epoch_id:
-        time_note = f", {remaining_time}" if remaining_time else ""
-        lines.append(f"{SYM_CHECK} Epoch {epoch_id} {SYM_DASH} {epoch_submitted}/{epoch_target} submitted{time_note}")
+        time_note = f", {remaining_time} remaining" if remaining_time else ""
+        bar = text_progress_bar(epoch_submitted, epoch_target, width=16)
+        lines.append(f"{SYM_CHECK} Epoch {epoch_id} {SYM_DASH} {bar} {epoch_submitted}/{epoch_target}{time_note}")
 
     if dataset_ids:
         lines.append("")
         lines.append(f"Resuming from batch {batch_num} with {' + '.join(dataset_ids)}.")
         lines.append("")
-        lines.append("Commands: python scripts/run_tool.py agent-control pause | python scripts/run_tool.py agent-control stop")
+        lines.append("Say 'pause' to pause again, or 'stop' to end the session.")
 
     return "\n".join(lines)
 
@@ -768,16 +775,11 @@ def render_session_summary(
     epoch_target: int = 80,
     target_reached: bool = False,
 ) -> str:
-    """
-    Scene 6: Stop Mining & Session Summary
-    Matches the HTML mock session-end screen.
-    """
+    """End-of-session summary with stats."""
     lines = [
         "Mining session ended.",
         "",
-        SYM_DIVIDER,
-        "  Session Summary",
-        f"  {SYM_BOX_H * 36}",
+        f"{SYM_BOX_H * 2} session summary {SYM_BOX_H * 21}",
         f"  Duration          {duration}",
         f"  Submitted         {submitted} ({accepted} accepted / {failed} failed)",
         f"  Crawled           {crawled} URLs across {dataset_count} DataSet(s)",
@@ -787,13 +789,14 @@ def render_session_summary(
         lines.append(f"  Epoch progress    {epoch_submitted} / {epoch_target} {SYM_DASH} target reached {SYM_CHECK}")
     else:
         percent = int(epoch_submitted / epoch_target * 100) if epoch_target > 0 else 0
-        bar = text_progress_bar(epoch_submitted, epoch_target, width=12)
-        lines.append(f"  Epoch progress    {bar} {epoch_submitted}/{epoch_target}")
+        bar = text_progress_bar(epoch_submitted, epoch_target, width=16)
+        lines.append(f"  Epoch progress    {bar} {epoch_submitted}/{epoch_target} ({percent}%)")
 
-    lines.append(SYM_DIVIDER)
-    lines.append("")
-    lines.append("Command: python scripts/run_tool.py agent-start")
-
+    lines.extend([
+        SYM_DIVIDER,
+        "",
+        "Say 'mine start' to begin a new session.",
+    ])
     return "\n".join(lines)
 
 
@@ -810,14 +813,9 @@ def render_epoch_settlement(
     new_epoch_id: str | None = None,
     new_epoch_hours: int | None = None,
 ) -> str:
-    """
-    Scene 6: Epoch Settlement
-    Matches the HTML mock epoch settlement screen.
-    """
+    """Epoch settlement details."""
     lines = [
-        SYM_DIVIDER,
-        f"  Epoch {epoch_id} Settlement",
-        f"  {SYM_BOX_H * 36}",
+        f"{SYM_BOX_H * 2} Epoch {epoch_id} Settlement {SYM_BOX_H * 16}",
         f"  Confirmed         {confirmed} {SYM_CHECK}",
         f"  Rejected          {rejected} {SYM_CROSS if rejected > 0 else ''}",
         f"  Reward            {reward_amount} {reward_unit}",
@@ -832,17 +830,18 @@ def render_epoch_settlement(
         lines.append(f"  Credit score      {credit_after}")
 
     if credit_tier:
-        tier_display = f"[{credit_tier}]"
-        lines.append(f"  Tier              {tier_display}")
+        lines.append(f"  Tier              [{credit_tier}]")
 
     lines.append(SYM_DIVIDER)
 
     if new_epoch_id:
         hours_ago = f" ({new_epoch_hours}h ago)" if new_epoch_hours else ""
-        lines.append("")
-        lines.append(f"New epoch {new_epoch_id} started{hours_ago}.")
-        lines.append("")
-        lines.append("Command: python scripts/run_tool.py agent-start")
+        lines.extend([
+            "",
+            f"New epoch {new_epoch_id} started{hours_ago}.",
+            "",
+            "Say 'mine start' to begin mining the new epoch.",
+        ])
 
     return "\n".join(lines)
 
@@ -919,7 +918,7 @@ INTENT_ACTIONS = {
     "C1": {
         "name": "configure",
         "description": "Configure mining preferences",
-        "command": None,  # Environment variables or mine.json
+        "command": None,
         "confirm_first_run": False,
         "keywords": ["config", "configure", "settings", "preferences", "setup"],
     },
@@ -929,6 +928,48 @@ INTENT_ACTIONS = {
         "command": "first-load",
         "confirm_first_run": False,
         "keywords": ["check", "verify", "check again", "dependencies", "ready"],
+    },
+    "role_miner": {
+        "name": "choose_miner",
+        "description": "Choose miner role",
+        "command": "agent-start",
+        "confirm_first_run": False,
+        "keywords": ["miner", "mine", "crawl", "1"],
+    },
+    "role_validator": {
+        "name": "choose_validator",
+        "description": "Choose validator role",
+        "command": "validator-start",
+        "confirm_first_run": False,
+        "keywords": ["validator", "validate", "evaluate", "2"],
+    },
+    "switch_role": {
+        "name": "switch_role",
+        "description": "Switch between miner and validator",
+        "command": "first-load",
+        "confirm_first_run": False,
+        "keywords": ["switch", "switch role", "change role"],
+    },
+    "V_start": {
+        "name": "start_validator",
+        "description": "Start validating",
+        "command": "validator-start",
+        "confirm_first_run": False,
+        "keywords": ["start validating", "validate start", "begin validating"],
+    },
+    "V_status": {
+        "name": "validator_status",
+        "description": "Check validator status",
+        "command": "validator-control status",
+        "confirm_first_run": False,
+        "keywords": ["validator status", "validate status"],
+    },
+    "V_stop": {
+        "name": "stop_validator",
+        "description": "Stop validator",
+        "command": "validator-control stop",
+        "confirm_first_run": False,
+        "keywords": ["stop validator", "validator stop", "stop validating"],
     },
 }
 
@@ -944,8 +985,24 @@ def classify_intent(user_input: str) -> dict[str, Any]:
     """
     text = user_input.lower().strip()
 
-    # Direct command matches (highest priority)
-    if text in {"start working", "start-working", "start mining"}:
+    # Role selection (highest priority)
+    if text in {"1", "miner", "mine", "i want to mine", "crawl"}:
+        return _intent_result("role_miner", "high")
+    if text in {"2", "validator", "validate", "i want to validate", "evaluate"}:
+        return _intent_result("role_validator", "high")
+    if text in {"switch role", "switch", "change role"}:
+        return _intent_result("switch_role", "high")
+
+    # Validator direct matches
+    if text in {"start validating", "validate start", "begin validating"}:
+        return _intent_result("V_start", "high")
+    if text in {"validator status", "validate status"}:
+        return _intent_result("V_status", "high")
+    if text in {"stop validator", "validator stop", "stop validating"}:
+        return _intent_result("V_stop", "high")
+
+    # Miner direct matches
+    if text in {"start working", "start-working", "start mining", "start"}:
         return _intent_result("A1", "high")
     if text in {"check status", "check-status", "status"}:
         return _intent_result("Q1", "high")
@@ -973,13 +1030,12 @@ def classify_intent(user_input: str) -> dict[str, Any]:
         confidence = "high" if best_match[1] >= 2 else "medium"
         return _intent_result(best_match[0], confidence)
 
-    # Default fallback
     return {
         "intent_id": None,
         "action": None,
         "confidence": "low",
         "suggested_command": None,
-        "message": "I didn't understand that. Try: start working, check status, list datasets, pause, resume, or stop.",
+        "message": "which role? say \"miner\" or \"validator\". or try: start, status, stop, help.",
     }
 
 
@@ -1003,19 +1059,29 @@ def _intent_result(intent_id: str, confidence: str) -> dict[str, Any]:
 
 
 def render_intent_help() -> str:
-    """Render available intents for user guidance."""
+    """Help text grouped by miner vs validator."""
     lines = [
         "Available commands:",
         "",
-        f"  {SYM_BULLET} start working {SYM_DASH} begin autonomous mining (A1)",
-        f"  {SYM_BULLET} check status {SYM_DASH} credit score, epoch progress, rewards (Q1-Q4)",
-        f"  {SYM_BULLET} list datasets {SYM_DASH} see available datasets (Q2)",
-        f"  {SYM_BULLET} pause {SYM_DASH} pause current mining session (A2)",
-        f"  {SYM_BULLET} resume {SYM_DASH} resume paused session (A2)",
-        f"  {SYM_BULLET} stop {SYM_DASH} end mining session (A3, requires confirmation)",
-        f"  {SYM_BULLET} check again {SYM_DASH} re-verify dependencies",
+        f"{SYM_BOX_H * 2} Miner Commands {SYM_BOX_H * 22}",
+        f"  start            {SYM_ARROW} Begin autonomous mining",
+        f"  status           {SYM_ARROW} Show mining stats and epoch progress",
+        f"  stop             {SYM_ARROW} Stop mining and show session summary",
+        f"  pause            {SYM_ARROW} Pause mining (saves state)",
+        f"  resume           {SYM_ARROW} Resume mining from saved state",
+        f"  datasets         {SYM_ARROW} List available datasets",
+        f"  doctor           {SYM_ARROW} Run diagnostics and fix issues",
         "",
-        "Or describe what you want to do in natural language.",
+        f"{SYM_BOX_H * 2} Validator Commands {SYM_BOX_H * 18}",
+        f"  start            {SYM_ARROW} Start validating submissions",
+        f"  status           {SYM_ARROW} Show validator stats",
+        f"  stop             {SYM_ARROW} Stop validator",
+        f"  doctor           {SYM_ARROW} Run validator diagnostics",
+        "",
+        f"{SYM_BOX_H * 2} General {SYM_BOX_H * 29}",
+        f"  switch role      {SYM_ARROW} Switch between Miner and Validator",
+        f"  help             {SYM_ARROW} Show this command list",
+        SYM_DIVIDER,
     ]
     return "\n".join(lines)
 
@@ -1185,14 +1251,8 @@ def _execute_intent(intent_id: str, command: str | None, worker: Any) -> str:
 
 
 def render_status_summary(worker: Any) -> str:
-    """
-    Enhanced status display matching HTML design
-    """
+    """Full mining status for display."""
     status = worker.check_status()
-    try:
-        datasets = worker.client.list_datasets()
-    except Exception:
-        datasets = []
 
     mining_state = status.get("mining_state", "idle")
     credit_score = status.get("credit_score")
@@ -1200,28 +1260,23 @@ def render_status_summary(worker: Any) -> str:
     epoch_submitted = int(status.get("epoch_submitted") or 0)
     epoch_target = int(status.get("epoch_target") or 80)
 
-    # Header
-    lines = [
-        SYM_DIVIDER,
-        "  Mine Status",
-        f"  {SYM_BOX_H * 36}",
-    ]
-
-    # Miner info
-    miner_id = getattr(worker.config, "miner_id", None) or "unknown"
-    lines.append(f"  Miner ID          {miner_id}")
-
-    # Platform with network detection
-    platform = worker.config.base_url
-    network = "testnet" if "101.47.73.95" in platform else "configured"
-    lines.append(f"  Platform          {platform} ({network})")
-
-    # Mining state with icon
+    # State icon
     state_icon = SYM_CHECK if mining_state == "running" else SYM_WARN if mining_state == "paused" else SYM_BULLET
     state_display = mining_state.upper() if mining_state == "running" else mining_state
-    lines.append(f"  Mining state      {state_icon} {state_display}")
 
-    # Credit score with tier
+    # Miner and platform
+    miner_id = getattr(worker.config, "miner_id", None) or "unknown"
+    platform = worker.config.base_url
+    network = "testnet" if "101.47.73.95" in platform else "configured"
+
+    lines = [
+        f"{SYM_BOX_H * 2} mine status {SYM_BOX_H * 24}",
+        f"  Miner ID          {miner_id}",
+        f"  Platform          {platform} ({network})",
+        f"  Mining state      {state_icon} {state_display}",
+    ]
+
+    # Credit score
     if credit_score is not None:
         tier_text = f" [{credit_tier}]" if credit_tier else ""
         lines.append(f"  Credit score      {credit_score}{tier_text}")
@@ -1229,7 +1284,7 @@ def render_status_summary(worker: Any) -> str:
     lines.append(SYM_DIVIDER)
     lines.append("")
 
-    # Epoch progress with bar
+    # Epoch progress
     epoch_id = status.get("epoch_id")
     epoch_remaining = status.get("progress", {}).get("epoch_remaining")
     if epoch_id:
@@ -1239,7 +1294,6 @@ def render_status_summary(worker: Any) -> str:
         lines.append("Epoch progress:")
 
     bar = text_progress_bar(epoch_submitted, epoch_target, width=20)
-    percent = int(epoch_submitted / epoch_target * 100) if epoch_target > 0 else 0
     lines.append(f"{bar} {epoch_submitted} / {epoch_target}")
 
     # Selected datasets
@@ -1269,13 +1323,13 @@ def render_status_summary(worker: Any) -> str:
         lines.append("")
         lines.append(f"Queues: backlog {backlog}, auth pending {auth_pending}, submit pending {submit_pending}")
 
-    # Rewards
+    # Pending rewards
     reward = status.get("reward")
     if isinstance(reward, dict) and reward.get("pending") is not None:
         lines.append("")
         lines.append(f"Pending rewards: {reward.get('pending')}")
 
-    # Settlement
+    # Last settlement
     settlement = status.get("settlement")
     if isinstance(settlement, dict):
         confirmed = settlement.get("confirmed")
@@ -1290,15 +1344,15 @@ def render_status_summary(worker: Any) -> str:
             if settlement.get("reward"):
                 lines.append(f"  {SYM_BULLET} Reward: {settlement.get('reward')}")
 
-    # Control hint
+    # Control hints
     lines.append("")
     if mining_state == "running":
-        lines.append("Commands: python scripts/run_tool.py agent-control pause | python scripts/run_tool.py agent-control stop")
+        lines.append("Say 'pause' to pause mining, or 'stop' to end the session.")
     elif mining_state == "paused":
-        lines.append("Commands: python scripts/run_tool.py agent-control resume | python scripts/run_tool.py agent-control stop")
+        lines.append("Say 'resume' to continue mining, or 'stop' to end the session.")
     elif mining_state == "stopped":
-        lines.append("Commands: python scripts/run_tool.py agent-start")
+        lines.append("Say 'mine start' to begin a new session.")
     else:
-        lines.append("Commands: python scripts/run_tool.py agent-start | python scripts/run_tool.py list-datasets")
+        lines.append("Say 'mine start' to begin mining, or 'mine datasets' to see available datasets.")
 
     return "\n".join(lines)

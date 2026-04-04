@@ -88,7 +88,6 @@ class WorkerConfig:
     discovery_max_pages: int = 25
     discovery_max_depth: int = 1
     auth_retry_interval_seconds: int = 300
-    gateway_enrich_enabled: bool = False
     gateway_model_config: dict[str, Any] = field(default_factory=dict)
     # EIP-712 signature domain parameters
     eip712_domain_name: str = DEFAULT_EIP712_DOMAIN_NAME

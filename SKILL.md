@@ -1,6 +1,12 @@
 ---
 name: mine
-description: Agent-first mining skill for signed platform work, data crawling, structured extraction, LLM enrichment, schema(1) field alignment, and submission export through awp-wallet.
+description: >
+  Launches autonomous data mining and validation workers that earn $aMine rewards.
+  Everything is automatic — wallet detection, registration, dataset discovery,
+  crawling, structuring, and submission. Use this skill for any mining or validation
+  request: start, stop, status, scores, datasets, logs, or troubleshooting.
+  Not for AWP wallet transfers, RootNet staking, or server monitoring.
+version: 0.4.0
 bootstrap: ./scripts/bootstrap.sh
 windows_bootstrap: ./scripts/bootstrap.cmd
 smoke_test: ./scripts/smoke_test.py
@@ -12,142 +18,266 @@ requires:
     - python
     - python3
     - py
+metadata:
+  emoji: "\u26CF\uFE0F"
+  homepage: https://github.com/clawtroop/mine
 ---
 
 # Mine
 
-## First Load
+Autonomous data mining & validation on AWP. Agents earn $aMine rewards by
+crawling public data and validating others' submissions.
 
-On first invocation, output this welcome before anything else:
+## SECURITY
 
+**NEVER print, echo, or display:** `AWP_WALLET_TOKEN`, `VALIDATOR_PRIVATE_KEY`,
+private keys, mnemonics, or `.env` contents. To check if set: `[ -n "$VAR" ] && echo "set"`.
+
+## Welcome Screen
+
+On first launch (no worker running), print this and **ask the user to choose a role**:
+
+```text
+⛏️  mine · autonomous data mining
+
+crawl data. earn rewards. fully autonomous.
+
+── choose your role ─────────────
+1. Miner      → crawl public data, earn $aMine
+2. Validator  → evaluate submissions, earn $aMine
+──────────────────────────────────
+
+which role? (1 or 2)
 ```
-Welcome to Mine — the autonomous data mining service
 
-Mine crawls public data, structures it, and submits to AWP for $aMine rewards.
-Fully autonomous — no human in the loop.
+**Do NOT skip this step.** The user must choose before any worker starts.
 
-  start working  — begin mining
-  check status   — credit score, epoch, earnings
-  list datasets  — see available datasets
+- If the user says "mine", "miner", "start mining", "1" → proceed to **Start Mining**
+- If the user says "validate", "validator", "start validating", "2" → proceed to **Start Validator**
+- If unclear, ask again
+
+Once the role is chosen, proceed to Decide What To Do.
+
+## Decide What To Do
+
+### If role is Miner
+
+Run readiness check:
+
+```bash
+cd {baseDir} && python scripts/run_tool.py agent-status
 ```
 
-Then run `python scripts/run_tool.py agent-status` and show the result.
+| User Intent | Action |
+| ----------- | ------ |
+| "start" / "go online" | → **Start Mining** |
+| "start" (already running) | → **Report Status** |
+| "status" / "how am I doing" | → **Report Status** |
+| "help" | → **Help** |
+| "stop" | → **Stop** |
+| "pause" | → **Pause** |
+| "resume" | → **Resume** |
+| "datasets" / "what can I mine" | → **List Datasets** |
+| "diagnose" / "doctor" | → **Diagnose** |
+| "logs" | → Read output from `output/agent-runs/` |
 
-## Output Rules
+### If role is Validator
 
-All commands return JSON with `user_message`, `user_actions`, and `_internal`.
-- Show `user_message` formatted with ✓/✗/! indicators — never dump raw JSON
-- `_internal` is for agent execution only — **never show to user**
-- On errors, show the fix command from `_internal`, not the raw error
-- See `mine-ux-preview.html` for full visual reference of expected UX
+Run readiness check:
 
-## Quick Start
-
-1. **Install** — run the bootstrap script in the `mine/` directory:
-   - Windows: `.\scripts\bootstrap.cmd`
-   - Unix: `./scripts/bootstrap.sh`
-2. **Check readiness**: `python scripts/run_tool.py agent-status`
-3. **Start mining** — use `sessions_spawn` to run mining in a background sub-agent:
-
+```bash
+cd {baseDir} && python scripts/run_tool.py validator-doctor
 ```
+
+| User Intent | Action |
+| ----------- | ------ |
+| "start" / "go online" | → **Start Validator** |
+| "status" | → **Validator Status** |
+| "stop" | → **Stop Validator** |
+| "diagnose" / "doctor" | → **Validator Doctor** |
+
+### Role-agnostic
+
+| User Intent | Action |
+| ----------- | ------ |
+| "switch to miner" / "switch to validator" | → **Welcome Screen** (re-choose) |
+| "help" | → **Help** |
+
+## Start Mining
+
+### Step 1: Check Readiness
+
+```bash
+cd {baseDir} && python scripts/run_tool.py agent-status
+```
+
+If not ready, the output contains fix instructions. Follow them.
+
+### Step 2: Start Worker
+
+**Preferred** (non-blocking sub-agent):
+
+```javascript
 sessions_spawn({
-  task: "cd mine && python scripts/run_tool.py agent-start",
+  task: "cd {baseDir} && python scripts/run_tool.py agent-start",
   label: "mine-worker",
   runTimeoutSeconds: 3600
 })
 ```
 
-This keeps the user conversation free. The sub-agent announces results back when done.
-
-If `sessions_spawn` is unavailable, fall back to direct execution:
-`python scripts/run_tool.py agent-start`
-
-That is the entire setup. Do NOT read source code or clone external repos.
-
-## Actions
-
-### Mining
-
-| Action | Command |
-| ------ | ------- |
-| Initialize | `python scripts/run_tool.py init` |
-| Check readiness | `python scripts/run_tool.py agent-status` |
-| Start mining | `python scripts/run_tool.py agent-start` |
-| Check status | `python scripts/run_tool.py agent-control status` |
-| Pause | `python scripts/run_tool.py agent-control pause` |
-| Resume | `python scripts/run_tool.py agent-control resume` |
-| Stop | `python scripts/run_tool.py agent-control stop` |
-| Diagnose | `python scripts/run_tool.py doctor` |
-| List datasets | `python scripts/run_tool.py list-datasets` |
-| Crawl URL | `python -m crawler run --input <input.jsonl> --output <output_dir>` |
-| Enrich records | `python -m crawler enrich --input <records.jsonl> --output <output_dir>` |
-| Validate schema | `python scripts/schema_tools.py validate` |
-| Export submissions | `python scripts/run_tool.py export-core-submissions <input> <output> <datasetId>` |
-
-### Validator
-
-| Action | Command |
-| ------ | ------- |
-| Initialize validator | `python scripts/run_tool.py validator-init` |
-| Start validating | `python scripts/run_tool.py validator-start` |
-| Check validator status | `python scripts/run_tool.py validator-control status` |
-| Pause validator | `python scripts/run_tool.py validator-control pause` |
-| Resume validator | `python scripts/run_tool.py validator-control resume` |
-| Stop validator | `python scripts/run_tool.py validator-control stop` |
-| Diagnose validator | `python scripts/run_tool.py validator-doctor` |
-
-## Flow
-
-### Mining Flow
-
-1. Run **Check readiness** first
-2. If not initialized → run **Initialize** → then check again
-3. When ready → **Start mining** via `sessions_spawn` (preferred) or direct command
-4. Control with **Check status** / **Pause** / **Resume** / **Stop**
-5. Sub-agent announces progress back to the main conversation automatically
-
-### Validator Flow
-
-1. Run **Initialize validator** — auto-configures wallet, applies as validator
-2. Run **Start validating** — connects via WebSocket, receives evaluation tasks
-3. Monitor with **Check validator status** / **Pause** / **Resume** / **Stop**
-
-The validator connects to the platform via WebSocket, receives evaluation tasks, scores miner submissions using 4-dimension LLM analysis (field completeness, value accuracy, type correctness, information sufficiency), and reports scores back.
-
-Use `/subagents list` to see active mining sub-agents, `/subagents kill <id>` to stop one.
-
-## Sub-Agent Pattern
-
-| Scenario | Method |
-| -------- | ------ |
-| OpenClaw host | `sessions_spawn` — non-blocking, result announced back |
-| Cursor / other hosts | `python scripts/run_tool.py agent-start` — forks background process via `subprocess.Popen` |
-
-Sub-agent guidelines:
-- **One mining worker per session** — do not spawn multiple concurrent miners
-- Use `runTimeoutSeconds` to set a hard cap (recommended: 3600)
-- Use `agent-control status` to poll progress from the main conversation
-- Use `agent-control stop` or `/subagents kill <id>` to terminate
-
-## Validator Environment (defaults work)
+**Fallback** (direct):
 
 ```bash
-VALIDATOR_ID=validator-agent            # default
-EVAL_LLM_MODEL=                         # LLM model for evaluation (auto-detected)
-EVAL_LLM_TEMPERATURE=0.0               # evaluation temperature
-EVAL_TIMEOUT_SECONDS=480                # single evaluation timeout (8 min)
+cd {baseDir} && python scripts/run_tool.py agent-start
 ```
 
-Shared settings (`PLATFORM_BASE_URL`, `AWP_WALLET_BIN`, EIP-712 config) are inherited from the mining configuration.
+If a dataset selection is required, the output lists options. Re-run with the dataset ID:
 
-## Reference
+```bash
+cd {baseDir} && python scripts/run_tool.py agent-start <datasetId>
+```
+
+### Step 3: Confirm Running
+
+```text
+[1/3] wallet       0x1234...5678 ✓
+[2/3] platform     connected ✓
+[3/3] worker       started (session: abc12) ✓
+
+mining. say "mine status" to check progress.
+```
+
+## Report Status
+
+```bash
+cd {baseDir} && python scripts/run_tool.py agent-control status
+```
+
+```text
+── mine status ───────────────────
+state:          RUNNING
+session:        abc12
+epoch:          E-42 · 18h remaining
+progress:       [████████░░░░] 60%  48/80
+datasets:       wiki-articles + arxiv-papers
+credit score:   850 [Good]
+──────────────────────────────────
+```
+
+## Help
+
+```text
+── miner ────────────────────────
+start            → begin mining
+status           → your stats
+stop             → stop mining
+pause / resume   → pause or resume
+datasets         → list datasets
+doctor           → diagnose issues
+
+── validator ────────────────────
+start            → start validating
+status           → validator stats
+stop             → stop validator
+doctor           → diagnose issues
+
+── general ──────────────────────
+switch role      → change miner ↔ validator
+help             → this list
+──────────────────────────────────
+```
+
+## Stop
+
+```bash
+cd {baseDir} && python scripts/run_tool.py agent-control stop
+```
+
+## Pause / Resume
+
+```bash
+cd {baseDir} && python scripts/run_tool.py agent-control pause
+cd {baseDir} && python scripts/run_tool.py agent-control resume
+```
+
+## List Datasets
+
+```bash
+cd {baseDir} && python scripts/run_tool.py list-datasets
+```
+
+## Diagnose
+
+```bash
+cd {baseDir} && python scripts/run_tool.py doctor
+```
+
+---
+
+## Validator
+
+### Start Validating
+
+```bash
+cd {baseDir} && python scripts/run_tool.py validator-start
+```
+
+Auto-installs dependencies, registers on AWP, and connects via WebSocket.
+
+### Validator Status
+
+```bash
+cd {baseDir} && python scripts/run_tool.py validator-control status
+```
+
+### Stop Validator
+
+```bash
+cd {baseDir} && python scripts/run_tool.py validator-control stop
+```
+
+### Validator Doctor
+
+```bash
+cd {baseDir} && python scripts/run_tool.py validator-doctor
+```
+
+---
+
+## Output Rules
+
+All commands return JSON with `user_message`, `user_actions`, and `_internal`.
+
+- Show `user_message` formatted with ✓/✗/! indicators — **never dump raw JSON**
+- `_internal` is for agent execution only — **never show to user**
+- On errors, show the fix command from `_internal`, not the raw error
+
+## Configuration
+
+**No environment variables needed.** Everything is auto-detected.
+
+Runtime overrides (optional, via `.env` or shell):
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `PLATFORM_BASE_URL` | auto-detected | Platform API endpoint |
+| `MINER_ID` | `mine-agent` | Miner identifier |
+| `WORKER_MAX_PARALLEL` | `3` | Concurrent crawl workers |
+
+For validator settings, see `docs/ENVIRONMENT.md`.
+
+## Sub-Agent Guidelines
+
+- **One mining worker per session** — do not spawn multiple concurrent miners
+- Use `agent-control status` to poll progress from the main conversation
+- Use `agent-control stop` to terminate
+
+## Advanced
 
 Read these docs only when needed for the specific topic:
 
-- [Browser session & login](./docs/BROWSER_SESSION.md) — cookie import, auto-login, PrepareBrowserSession
-- [Internal commands & rules](./docs/INTERNAL_COMMANDS.md) — full command mapping, readiness states, behavior rules
-- [Agent guide](./docs/AGENT_GUIDE.md) — detailed operational guide
-- [Environment](./docs/ENVIRONMENT.md) — environment variables and config
-- [OpenClaw integration](./docs/OPENCLAW_HOST_INTEGRATION.md) — host contract for OpenClaw
-- [Validator API](./references/api-validator.md) — validator API endpoints
-- [Validator Protocol](./references/protocol-validator.md) — WebSocket protocol and evaluation flow
+- [Browser session & login](./docs/BROWSER_SESSION.md)
+- [Internal commands & rules](./docs/INTERNAL_COMMANDS.md)
+- [Agent guide](./docs/AGENT_GUIDE.md)
+- [Environment](./docs/ENVIRONMENT.md)
+- [Validator Protocol](./references/protocol-validator.md)

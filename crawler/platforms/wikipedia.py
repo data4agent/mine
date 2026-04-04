@@ -28,7 +28,7 @@ NORMALIZE_PLAN = PlatformNormalizePlan(hook_name="wikipedia")
 ENRICH_PLAN = PlatformEnrichmentPlan(
     route="knowledge_base",
     field_groups=(
-        # ── passthrough（零成本直传字段）──
+        # Passthrough fields (no transform)
         "wikipedia_base_dedup_key",
         "wikipedia_base_canonical_url",
         "wikipedia_base_url",

@@ -97,12 +97,12 @@ class EvaluationEngine:
             )
         except Exception as e:
             # If scoring fails, reject the data
-            log.error("评分阶段失败: %s", str(e))
+            log.error("scoring phase failed: %s", str(e))
             return EvaluationResult(
                 verdict="rejected",
                 consistent=True,  # Passed consistency but failed scoring
                 score=0,
-                reason=f"评分失败: {str(e)}",
+                reason=f"scoring failed: {str(e)}",
             )
 
     def _check_consistency(
@@ -120,48 +120,49 @@ class EvaluationEngine:
         """
         structured_json = json.dumps(structured_data, ensure_ascii=False, indent=2)
 
-        prompt = f"""你是数据一致性检查器。判断 miner 提取的结构化数据是否与原始数据一致。
+        prompt = f"""You are a data consistency checker. Decide whether the miner's structured data
+is consistent with the original cleaned data.
 
-## 原始数据 (source of truth)
+## Original data (source of truth)
 {cleaned_data}
 
-## Miner 提取的结构化数据
+## Structured data extracted by miner
 {structured_json}
 
-## 判断标准
-- 一致 = 结构化数据中的值能在原始数据中找到对应信息,且没有明显捏造
-- 不一致 = 结构化数据包含原始数据中不存在的信息,或严重歪曲原意
+## Criteria
+- Consistent: values in structured data are supported by the original text without fabrication.
+- Inconsistent: structured data adds facts not in the original, or severely distorts meaning.
 
-## 输出 (strict JSON, 不要markdown)
-{{"consistent": true/false, "reason": "简要说明判断理由"}}"""
+## Output (strict JSON only, no markdown)
+{{"consistent": true/false, "reason": "brief rationale"}}"""
 
         try:
             response = self.llm_call(prompt)
             result = parse_json_response(response)
 
             if not result or "consistent" not in result:
-                log.error("一致性检查响应解析失败: %s", response[:200])
+                log.error("consistency check parse failed: %s", response[:200])
                 return {
                     "consistent": False,
-                    "reason": "一致性检查解析失败: LLM 返回格式错误",
+                    "reason": "consistency check parse failed: invalid LLM response",
                 }
 
             return {
                 "consistent": result.get("consistent", False),
-                "reason": result.get("reason", "无理由说明"),
+                "reason": result.get("reason", "no reason given"),
             }
 
         except TimeoutError as e:
-            log.error("一致性检查超时: %s", str(e))
+            log.error("consistency check timeout: %s", str(e))
             return {
                 "consistent": False,
-                "reason": f"一致性检查超时: {str(e)}",
+                "reason": f"consistency check timeout: {str(e)}",
             }
         except Exception as e:
-            log.error("一致性检查失败: %s", str(e))
+            log.error("consistency check failed: %s", str(e))
             return {
                 "consistent": False,
-                "reason": f"一致性检查错误: {str(e)}",
+                "reason": f"consistency check error: {str(e)}",
             }
 
     def _score_quality(
@@ -184,33 +185,33 @@ class EvaluationEngine:
         structured_json = json.dumps(structured_data, ensure_ascii=False, indent=2)
         schema_json = json.dumps({"fields": schema_fields}, ensure_ascii=False, indent=2)
 
-        prompt = f"""你是数据质量评分器。对 miner 提取的结构化数据进行质量评分。
+        prompt = f"""You are a data quality scorer. Score the miner's structured extraction.
 
-## Schema 定义
+## Schema
 {schema_json}
 
-## 原始数据
+## Original data
 {cleaned_data}
 
-## Miner 提取的结构化数据
+## Structured data extracted by miner
 {structured_json}
 
-## 评分维度
-1. 完整性 (30%): 必填字段是否齐全?
-2. 准确性 (40%): 提取的值是否准确?
-3. 类型正确性 (15%): 值的类型是否符合 schema?
-4. 信息充分性 (15%): 关键信息是否遗漏?
+## Dimensions
+1. Completeness (30%): are required fields present?
+2. Accuracy (40%): are extracted values correct?
+3. Type correctness (15%): do values match schema types?
+4. Information sufficiency (15%): is critical information missing?
 
-## 输出 (strict JSON, 不要markdown)
-{{"completeness": 0-100, "accuracy": 0-100, "type_correctness": 0-100, "sufficiency": 0-100, "final_score": 0-100, "notes": "评分说明"}}"""
+## Output (strict JSON only, no markdown)
+{{"completeness": 0-100, "accuracy": 0-100, "type_correctness": 0-100, "sufficiency": 0-100, "final_score": 0-100, "notes": "scoring notes"}}"""
 
         try:
             response = self.llm_call(prompt)
             result = parse_json_response(response)
 
             if not result or "final_score" not in result:
-                log.error("质量评分响应解析失败: %s", response[:200])
-                raise ValueError("质量评分解析失败: LLM 返回格式错误")
+                log.error("quality scoring parse failed: %s", response[:200])
+                raise ValueError("quality scoring parse failed: invalid LLM response")
 
             return {
                 "completeness": result.get("completeness", 0),
@@ -218,12 +219,12 @@ class EvaluationEngine:
                 "type_correctness": result.get("type_correctness", 0),
                 "sufficiency": result.get("sufficiency", 0),
                 "final_score": result.get("final_score", 0),
-                "notes": result.get("notes", "无评分说明"),
+                "notes": result.get("notes", "no scoring notes"),
             }
 
         except TimeoutError as e:
-            log.error("质量评分超时: %s", str(e))
-            raise ValueError(f"质量评分超时: {str(e)}")
+            log.error("quality scoring timeout: %s", str(e))
+            raise ValueError(f"quality scoring timeout: {str(e)}")
         except Exception as e:
-            log.error("质量评分失败: %s", str(e))
-            raise ValueError(f"质量评分错误: {str(e)}")
+            log.error("quality scoring failed: %s", str(e))
+            raise ValueError(f"quality scoring error: {str(e)}")

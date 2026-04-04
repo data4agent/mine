@@ -336,7 +336,7 @@ class EnrichPipeline:
         result.latency_ms = int((time.monotonic() - start) * 1000)
         return result
 
-    # 大文本字段截断上限（字符数），防止 prompt 超过 LLM context window
+    # Max chars for large text fields to avoid exceeding LLM context
     _MAX_TEXT_CHARS = 30_000
 
     def _collect_source_fields(self, spec: FieldGroupSpec, document: dict[str, Any]) -> dict[str, Any]:
@@ -346,14 +346,14 @@ class EnrichPipeline:
             value = document.get(field_name)
             if value is not None and value != "" and value != [] and value != {}:
                 source[field_name] = value
-        # plain_text 和 markdown 内容高度重复，只取一个以节省 token
+        # plain_text and markdown overlap; keep one to save tokens
         text_key = "plain_text" if document.get("plain_text") else "markdown"
         for key in (text_key, "title", "summary", "headline", "about", "description"):
             if key not in source and key in document:
                 value = document[key]
                 if value is not None and value != "" and value != [] and value != {}:
                     source[key] = value
-        # 截断超长文本防止 prompt 溢出
+        # Truncate very long text to avoid prompt overflow
         for key in ("plain_text", "markdown", "raw_text", "HTML"):
             if key in source and isinstance(source[key], str) and len(source[key]) > self._MAX_TEXT_CHARS:
                 source[key] = source[key][:self._MAX_TEXT_CHARS] + f"\n\n[... truncated at {self._MAX_TEXT_CHARS} chars ...]"

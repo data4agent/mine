@@ -201,13 +201,13 @@ def parse_json_response(content: str) -> dict[str, Any] | list[Any]:
 
     text = content.strip()
 
-    # 先尝试直接解析
+    # Try direct JSON parse first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # 剥离 markdown code fence（支持多层嵌套）
+    # Strip markdown code fences (may be nested)
     fence_pattern = re.compile(r"^```\w*\s*\n(.*?)```\s*$", re.DOTALL)
     stripped = text
     for _ in range(3):
@@ -221,7 +221,7 @@ def parse_json_response(content: str) -> dict[str, Any] | list[Any]:
         except json.JSONDecodeError:
             pass
 
-    # 提取第一个完整的 JSON 对象或数组
+    # Extract first complete JSON object or array
     for start_char, end_char in [('{', '}'), ('[', ']')]:
         start = text.find(start_char)
         if start < 0:
@@ -257,7 +257,7 @@ def parse_json_response(content: str) -> dict[str, Any] | list[Any]:
             except json.JSONDecodeError:
                 pass
 
-        # JSON 被截断时：追踪括号栈并补全
+        # Truncated JSON: track bracket stack and close
         if depth > 0 and start_char == '{':
             bracket_stack: list[str] = []
             in_str = False
@@ -284,10 +284,10 @@ def parse_json_response(content: str) -> dict[str, Any] | list[Any]:
 
             if bracket_stack:
                 truncated = text[start:].rstrip()
-                # 去掉不完整的尾部元素
+                # Trim incomplete trailing tokens
                 for trim_char in (',', '"', ':'):
                     truncated = truncated.rstrip(trim_char)
-                # 逆序补全所有未闭合的括号
+                # Close all unclosed brackets in reverse order
                 closing = {'[': ']', '{': '}'}
                 truncated += ''.join(closing[b] for b in reversed(bracket_stack))
                 try:

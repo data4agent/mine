@@ -19,9 +19,12 @@ def _load_openclaw_model_config() -> dict[str, Any]:
     config = _try_load_openclaw_model_config()
     if config:
         return config
-    raise ValueError(
-        "Mine gateway token not found. Set MINE_GATEWAY_TOKEN (or legacy OPENCLAW_GATEWAY_TOKEN) or configure gateway.auth.token in mine.json."
+    # No gateway token: empty config so CLI path takes over during enrich
+    import logging
+    logging.getLogger(__name__).info(
+        "[model_config] gateway token not found, falling back to CLI auto-detection"
     )
+    return {}
 
 
 def _try_load_openclaw_model_config() -> dict[str, Any]:

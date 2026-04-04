@@ -20,6 +20,8 @@ from common import (
     DEFAULT_EIP712_CHAIN_ID,
     DEFAULT_EIP712_DOMAIN_NAME,
     DEFAULT_EIP712_VERIFYING_CONTRACT,
+    WALLET_SESSION_DURATION_SECONDS,
+    WALLET_SESSION_RENEW_THRESHOLD_SECONDS,
     inject_crawler_root,
     resolve_awp_registration,
     resolve_miner_id,
@@ -71,9 +73,7 @@ class CrawlerRunner:
         input_path = output_dir / "task-input.jsonl"
         input_path.write_text(json.dumps(item.record, ensure_ascii=False) + "\n", encoding="utf-8")
         argv = [self.config.python_bin, "-m", "crawler", command, "--input", str(input_path), "--output", str(output_dir), "--auto-login"]
-        model_config_path = self._prepare_model_config_path(command=command, output_dir=output_dir)
-        if model_config_path is not None:
-            argv.extend(["--model-config", str(model_config_path)])
+        self._append_enrich_argv(argv, command=command, output_dir=output_dir)
         if item.resume:
             argv.append("--resume")
         if command == "discover-crawl":
@@ -105,16 +105,20 @@ class CrawlerRunner:
             stderr=completed.stderr,
         )
 
-    def _prepare_model_config_path(self, *, command: str, output_dir: Path) -> Path | None:
+    def _append_enrich_argv(self, argv: list[str], *, command: str, output_dir: Path) -> None:
+        """Attach LLM enrich args for run/enrich: prefer OpenClaw CLI, then gateway config."""
         if command not in {"run", "enrich"}:
-            return None
-        if not self.config.gateway_enrich_enabled or not self.config.gateway_model_config:
-            return None
-        # CLI 可用时不传 model-config，让子进程 auto 模式直接走 openclaw agent CLI
+            return
         import shutil
         if shutil.which("openclaw") or shutil.which("openclaw.cmd") or shutil.which("openclaw.mjs"):
-            return None
-        return write_model_config(output_dir / "_runtime" / "mine-model-config.json", self.config.gateway_model_config)
+            argv.append("--use-openclaw")
+            return
+        if self.config.gateway_model_config:
+            config_path = write_model_config(
+                output_dir / "_runtime" / "mine-model-config.json",
+                self.config.gateway_model_config,
+            )
+            argv.extend(["--model-config", str(config_path)])
 
 
 def _solve_pow_challenge(challenge: dict[str, Any]) -> str:
@@ -136,7 +140,6 @@ def _build_test_config(root: Path) -> WorkerConfig:
         crawler_root=CRAWLER_ROOT,
         python_bin="python",
         state_root=root / "state",
-        gateway_enrich_enabled=False,
         gateway_model_config={},
     )
 
@@ -459,6 +462,7 @@ class AgentWorker:
         consecutive_empty = 0
         while max_iterations == 0 or iteration < max_iterations:
             iteration += 1
+            self._proactive_session_renew()
             try:
                 summary = self.run_iteration(iteration)
                 result = json.dumps(summary, ensure_ascii=False)
@@ -498,6 +502,7 @@ class AgentWorker:
         iteration = 0
         while max_iterations == 0 or iteration < max_iterations:
             iteration += 1
+            self._proactive_session_renew()
             iterations.append(self.run_iteration(iteration))
             if str(self.state_store.load_session().get("mining_state") or "idle") == "stopped":
                 break
@@ -515,6 +520,25 @@ class AgentWorker:
                 "submit_pending": len(self.state_store.load_submit_pending()),
             },
         }
+
+    def _proactive_session_renew(self) -> None:
+        """Check wallet session before each iteration; renew if expired or near expiry."""
+        session = self.state_store.load_session()
+        expires_at = session.get("token_expires_at")
+        if not isinstance(expires_at, int):
+            return
+        remaining = expires_at - int(time.time())
+        if remaining > WALLET_SESSION_RENEW_THRESHOLD_SECONDS:
+            return
+        signer = getattr(self.client, "_signer", None)
+        renew_session = getattr(signer, "renew_session", None)
+        if not callable(renew_session):
+            return
+        try:
+            payload = renew_session(duration_seconds=WALLET_SESSION_DURATION_SECONDS)
+            self._sync_wallet_refresh_state(payload)
+        except Exception:
+            pass
 
     def _send_heartbeats(self, summary: WorkerIterationSummary) -> None:
         self._ensure_wallet_session(summary)
@@ -898,31 +922,36 @@ class AgentWorker:
         if not isinstance(expires_at, int):
             return
         now = int(time.time())
-        if expires_at - now > 300:
+        remaining = expires_at - now
+        if remaining > WALLET_SESSION_RENEW_THRESHOLD_SECONDS:
             return
+        if remaining <= 0:
+            summary.messages.append("wallet session expired, renewing now")
+        else:
+            summary.messages.append(f"wallet session expires in {remaining}s, renewing")
         refresh_if_needed = getattr(self.client, "refresh_wallet_session_if_needed", None)
         if callable(refresh_if_needed):
             try:
-                payload = refresh_if_needed(threshold_seconds=300)
+                payload = refresh_if_needed(threshold_seconds=WALLET_SESSION_RENEW_THRESHOLD_SECONDS)
             except TypeError:
-                payload = refresh_if_needed(300)
+                payload = refresh_if_needed(WALLET_SESSION_RENEW_THRESHOLD_SECONDS)
             except Exception as exc:
                 summary.errors.append(f"wallet session refresh failed: {exc}")
                 return
             self._sync_wallet_refresh_state(payload if isinstance(payload, dict) else None)
-            summary.messages.append("wallet session renewed before expiry")
+            summary.messages.append(f"wallet session renewed for {WALLET_SESSION_DURATION_SECONDS}s")
             return
         signer = getattr(self.client, "_signer", None)
         renew_session = getattr(signer, "renew_session", None)
         if not callable(renew_session):
             return
         try:
-            payload = renew_session(duration_seconds=3600)
+            payload = renew_session(duration_seconds=WALLET_SESSION_DURATION_SECONDS)
         except Exception as exc:
             summary.errors.append(f"wallet session refresh failed: {exc}")
             return
         self._sync_wallet_refresh_state(payload)
-        summary.messages.append("wallet session renewed before expiry")
+        summary.messages.append(f"wallet session renewed for {WALLET_SESSION_DURATION_SECONDS}s")
 
     def _sync_wallet_refresh_state(self, payload: dict[str, Any] | None = None) -> None:
         if isinstance(payload, dict):
@@ -1151,7 +1180,6 @@ def build_worker_from_env(*, auto_register_awp: bool = False) -> AgentWorker:
         discovery_max_pages=max(1, int(os.environ.get("DISCOVERY_MAX_PAGES", "25"))),
         discovery_max_depth=max(0, int(os.environ.get("DISCOVERY_MAX_DEPTH", "1"))),
         auth_retry_interval_seconds=max(30, int(os.environ.get("AUTH_RETRY_INTERVAL_SECONDS", "300"))),
-        gateway_enrich_enabled=bool(gateway_model_config),
         gateway_model_config=gateway_model_config,
         # Signature params follow platform discovery/cache; env vars override when set.
         eip712_domain_name=str(signature_config.get("domain_name") or DEFAULT_EIP712_DOMAIN_NAME),

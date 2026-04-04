@@ -39,6 +39,10 @@ SIGNATURE_CONFIG_CACHE_TTL_SECONDS = 24 * 60 * 60
 AWP_REGISTRATION_POLL_ATTEMPTS = 5
 AWP_REGISTRATION_POLL_INTERVAL_SECONDS = 2
 
+# Wallet session lifetime and renewal policy
+WALLET_SESSION_DURATION_SECONDS = 24 * 60 * 60      # 24 hours
+WALLET_SESSION_RENEW_THRESHOLD_SECONDS = 30 * 60  # renew when <= 30 minutes left
+
 
 def resolve_crawler_root() -> Path:
     import os
@@ -315,7 +319,7 @@ def _awp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[st
 
 
 def _registration_domain_from_registry(registry: dict[str, Any]) -> dict[str, Any]:
-    # AWP 合约部署在 Base 链 (chainId=8453)，registry API 可能返回错误的 chainId
+    # AWP contract is on Base (chainId=8453); registry API may return wrong chainId
     AWP_CHAIN_ID = 8453
     domain = registry.get("eip712Domain")
     if isinstance(domain, dict):
@@ -371,11 +375,11 @@ def _is_awp_registered(payload: dict[str, Any]) -> bool:
 
 
 def resolve_awp_registration(*, auto_register: bool = False, signer: Any | None = None) -> dict[str, Any]:
-    """检查并自动完成 AWP 注册。
+    """Check AWP registration and optionally auto-register.
 
-    当传入 *signer*（需实现 ``get_address()`` 与 ``sign_typed_data(typed_data)``）
-    时，使用 signer 直接签名 SetRecipient 交易，无需 awp-wallet CLI 和 session token。
-    未传入 signer 时退回原来的 awp-wallet CLI 流程。
+    When *signer* implements ``get_address()`` and ``sign_typed_data(typed_data)``,
+    use it to sign SetRecipient without awp-wallet CLI or session token.
+    Otherwise fall back to the awp-wallet CLI flow.
     """
     base_url = resolve_awp_api_base_url()
     result: dict[str, Any] = {
@@ -388,7 +392,7 @@ def resolve_awp_registration(*, auto_register: bool = False, signer: Any | None 
         "registration_required": False,
     }
 
-    # --- 阶段 1：获取钱包地址 ---
+    # --- Phase 1: resolve wallet address ---
     wallet_bin = ""
     wallet_token = ""
     if signer is not None:
@@ -414,7 +418,7 @@ def resolve_awp_registration(*, auto_register: bool = False, signer: Any | None 
 
     result["wallet_address"] = wallet_address
 
-    # --- 阶段 2：检查链上注册状态 ---
+    # --- Phase 2: on-chain registration status ---
     try:
         check = _awp_jsonrpc(base_url, "address.check", {"address": wallet_address})
     except RuntimeError as exc:
@@ -436,7 +440,7 @@ def resolve_awp_registration(*, auto_register: bool = False, signer: Any | None 
     if not auto_register:
         return result
 
-    # --- 阶段 3：自动注册（签名 SetRecipient 并 relay） ---
+    # --- Phase 3: auto-register (sign SetRecipient and relay) ---
     can_sign = signer is not None or bool(wallet_token.strip())
     if not can_sign:
         result["status"] = "wallet_session_unavailable"
@@ -555,8 +559,8 @@ def resolve_runtime_readiness() -> dict[str, Any]:
         if session_expiry_seconds <= 0:
             warnings.append("wallet session expired")
             wallet_session_ready = False
-        elif session_expiry_seconds < 300:
-            warnings.append(f"wallet session expires in {session_expiry_seconds}s")
+        elif session_expiry_seconds < WALLET_SESSION_RENEW_THRESHOLD_SECONDS:
+            warnings.append(f"wallet session expires in {session_expiry_seconds}s (auto-renew pending)")
 
     # Signature config warning
     if signature_origin == "fallback":
@@ -723,7 +727,7 @@ def _run_wallet_json(wallet_bin: str, *args: str) -> dict[str, Any]:
         raise RuntimeError(f"awp-wallet returned non-JSON output for {' '.join(args)}") from exc
 
 
-def _ensure_wallet_session(wallet_bin: str, *, duration_seconds: int = 3600) -> str:
+def _ensure_wallet_session(wallet_bin: str, *, duration_seconds: int = WALLET_SESSION_DURATION_SECONDS) -> str:
     try:
         _run_wallet_json(wallet_bin, "receive")
     except RuntimeError as exc:
@@ -822,7 +826,7 @@ def resolve_ws_url() -> str:
     return ws_base.rstrip("/") + "/api/mining/v1/ws"
 
 
-# === Validator 依赖检查与就绪状态 ===
+# === Validator dependencies and readiness ===
 
 VALIDATOR_REQUIRED_PACKAGES = {
     "websockets": "websockets>=16.0",
@@ -832,7 +836,7 @@ VALIDATOR_REQUIRED_PACKAGES = {
 
 
 def _check_python_package(import_name: str) -> bool:
-    """检查 Python 包是否可导入。"""
+    """Return True if the Python package can be imported."""
     import importlib
     try:
         importlib.import_module(import_name)
@@ -842,9 +846,9 @@ def _check_python_package(import_name: str) -> bool:
 
 
 def check_validator_dependencies() -> dict[str, Any]:
-    """检查 validator 运行所需的全部 Python 依赖。
+    """Check all Python packages required for the validator.
 
-    返回:
+    Returns:
         {"ok": bool, "missing": [...], "installed": [...]}
     """
     missing: list[dict[str, str]] = []
@@ -858,9 +862,9 @@ def check_validator_dependencies() -> dict[str, Any]:
 
 
 def install_validator_dependencies(*, venv_python: str | None = None) -> dict[str, Any]:
-    """自动安装缺失的 validator 依赖。
+    """Install missing validator dependencies via pip.
 
-    返回:
+    Returns:
         {"ok": bool, "installed": [...], "failed": [...]}
     """
     deps = check_validator_dependencies()
@@ -886,10 +890,10 @@ def install_validator_dependencies(*, venv_python: str | None = None) -> dict[st
 
 
 def resolve_validator_signer() -> tuple[Any, str]:
-    """解析 validator 签名器：优先使用 VALIDATOR_PRIVATE_KEY，否则退回 WalletSigner。
+    """Resolve validator signer: VALIDATOR_PRIVATE_KEY first, else WalletSigner.
 
-    返回:
-        (signer, signer_type)  signer_type 为 "pk" 或 "wallet"
+    Returns:
+        (signer, signer_type) where signer_type is "pk" or "wallet".
     """
     private_key = os.environ.get("VALIDATOR_PRIVATE_KEY", "").strip()
     if private_key:
@@ -898,18 +902,14 @@ def resolve_validator_signer() -> tuple[Any, str]:
     from signer import WalletSigner
     wallet_bin, wallet_token = resolve_wallet_config()
     if not wallet_token.strip():
-        raise RuntimeError("无可用签名方式: 未设置 VALIDATOR_PRIVATE_KEY 且钱包会话不可用")
+        raise RuntimeError("no signer available: VALIDATOR_PRIVATE_KEY not set and wallet session unavailable")
     return WalletSigner(wallet_bin=wallet_bin, session_token=wallet_token), "wallet"
 
 
 def resolve_validator_readiness(*, auto_install_deps: bool = False) -> dict[str, Any]:
-    """统一的 validator 就绪状态检查，对齐 miner 的 resolve_runtime_readiness。
+    """Unified validator readiness (aligned with miner resolve_runtime_readiness).
 
-    检查项:
-      1. Python 依赖 (websockets, eth_account, pycryptodome)
-      2. 签名器可用性 (pk / wallet)
-      3. AWP 注册状态
-      4. 平台连通性
+    Checks: Python deps, signer (pk/wallet), AWP registration, platform connectivity.
     """
     result: dict[str, Any] = {
         "state": "ready",
@@ -918,25 +918,25 @@ def resolve_validator_readiness(*, auto_install_deps: bool = False) -> dict[str,
         "checks": {},
     }
 
-    # 1. 依赖检查
+    # 1. Dependencies
     deps = check_validator_dependencies()
     if not deps["ok"] and auto_install_deps:
         install_result = install_validator_dependencies()
         deps = check_validator_dependencies()
         if install_result.get("installed"):
-            result["warnings"].append(f"自动安装了依赖: {', '.join(install_result['installed'])}")
+            result["warnings"].append(f"auto-installed dependencies: {', '.join(install_result['installed'])}")
         if install_result.get("failed"):
             for f in install_result["failed"]:
-                result["warnings"].append(f"依赖安装失败: {f['pip']} — {f['error']}")
+                result["warnings"].append(f"dependency install failed: {f['pip']} — {f['error']}")
     result["checks"]["dependencies"] = deps
 
     if not deps["ok"]:
         result["state"] = "missing_dependencies"
         missing_names = [m["pip"] for m in deps["missing"]]
-        result["warnings"].append(f"缺失依赖: {', '.join(missing_names)}")
+        result["warnings"].append(f"missing dependencies: {', '.join(missing_names)}")
         return result
 
-    # 2. 签名器
+    # 2. Signer
     signer_check: dict[str, Any] = {"ok": False, "type": "", "address": ""}
     try:
         signer, signer_type = resolve_validator_signer()
@@ -946,23 +946,23 @@ def resolve_validator_readiness(*, auto_install_deps: bool = False) -> dict[str,
     except Exception as exc:
         signer_check["error"] = str(exc)
         result["state"] = "signer_unavailable"
-        result["warnings"].append(f"签名器不可用: {exc}")
+        result["warnings"].append(f"signer unavailable: {exc}")
     result["checks"]["signer"] = signer_check
 
     if not signer_check["ok"]:
         return result
 
-    # 3. AWP 注册
+    # 3. AWP registration
     try:
         registration = resolve_awp_registration(auto_register=False, signer=signer)
         result["checks"]["registration"] = registration
         if registration.get("registration_required") and not registration.get("registered"):
-            result["warnings"].append("AWP 未注册，启动时将自动注册")
+            result["warnings"].append("AWP not registered; will auto-register on start")
     except Exception as exc:
         result["checks"]["registration"] = {"status": "check_failed", "error": str(exc)}
-        result["warnings"].append(f"AWP 注册检查失败: {exc}")
+        result["warnings"].append(f"AWP registration check failed: {exc}")
 
-    # 4. 平台连通性
+    # 4. Platform connectivity
     platform_url = resolve_platform_base_url()
     platform_check: dict[str, Any] = {"ok": False, "url": platform_url}
     try:
@@ -971,10 +971,10 @@ def resolve_validator_readiness(*, auto_install_deps: bool = False) -> dict[str,
             platform_check["status_code"] = resp.status
     except Exception as exc:
         platform_check["error"] = str(exc)
-        result["warnings"].append(f"平台连接失败: {exc}")
+        result["warnings"].append(f"platform connection failed: {exc}")
     result["checks"]["platform"] = platform_check
 
-    # 综合判定
+    # Final decision
     all_ok = deps["ok"] and signer_check["ok"]
     result["can_start"] = all_ok
     if all_ok:

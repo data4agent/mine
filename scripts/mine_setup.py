@@ -29,6 +29,7 @@ from typing import Any
 from common import (
     DEFAULT_MINER_ID,
     DEFAULT_PLATFORM_BASE_URL,
+    WALLET_SESSION_DURATION_SECONDS,
     format_wallet_bin_display,
     resolve_awp_registration,
     persist_wallet_session,
@@ -274,8 +275,7 @@ def step5_setup_wallet() -> tuple[bool, str, dict[str, Any]]:
 
         extra["wallet_address"] = address
 
-        # Now try to unlock and get token
-        duration = 3600
+        duration = WALLET_SESSION_DURATION_SECONDS
         unlock_result = subprocess.run(
             [wallet_bin, "unlock", "--duration", str(duration)],
             capture_output=True,

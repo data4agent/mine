@@ -78,7 +78,7 @@ class PrivateKeySigner:
         return self._address
 
     def get_address(self) -> str:
-        """与 WalletSigner.get_address() 兼容的地址获取接口。"""
+        """Address accessor compatible with WalletSigner.get_address()."""
         return self._address
 
     def sign_typed_data(self, typed_data: dict[str, Any]) -> str:

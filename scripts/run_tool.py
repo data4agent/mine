@@ -13,6 +13,7 @@ from typing import Any
 from common import (
     DEFAULT_MINER_ID,
     DEFAULT_PLATFORM_BASE_URL,
+    WALLET_SESSION_DURATION_SECONDS,
     resolve_awp_registration,
     resolve_local_venv_python,
     resolve_miner_id,
@@ -821,46 +822,48 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         choices=(
-            # Simple setup commands (structured JSON output for weak agents)
-            "init",            # One-command initialization
-            "setup",           # Full setup wizard
-            "setup-status",    # Check setup status
-            "setup-fix",       # Auto-fix issues
-            "doctor",          # Quick diagnosis with fix commands
-            # Original commands
+            # Core commands (user / agent)
+            "init",
+            "doctor",
+            "agent-status",
+            "agent-start",
+            "agent-control",
+            "list-datasets",
+            # Validator
+            "validator-start",
+            "validator-control",
+            "validator-doctor",
+            # Browser auth
+            "browser-session",
+            "browser-session-status",
+            "browser-session-wait",
+            # Internal (worker processes; not for end users)
+            "run-worker",
+            "run-validator-worker",
+            "run-once",
+            "run-loop",
+            "agent-run",
+            "process-task-file",
+            "export-core-submissions",
+            # Legacy aliases
+            "setup",
+            "setup-status",
+            "setup-fix",
             "first-load",
             "check-again",
             "start-working",
             "check-status",
             "status-json",
-            "list-datasets",
             "pause",
             "resume",
             "stop",
             "heartbeat",
-            "run-once",
-            "run-loop",
-            "run-worker",
-            "process-task-file",
-            "export-core-submissions",
             "route-intent",
             "classify-intent",
             "intent-help",
             "diagnose",
             "check-env",
-            "agent-status",
-            "agent-start",
-            "agent-control",
-            "agent-run",
-            "browser-session",
-            "browser-session-status",
-            "browser-session-wait",
-            # Validator commands
             "validator-status",
-            "validator-start",
-            "validator-control",
-            "validator-doctor",
-            "run-validator-worker",
         ),
     )
     parser.add_argument("args", nargs="*")
@@ -882,36 +885,33 @@ def render_agent_status() -> str:
     readiness = resolve_runtime_readiness()
     background = _background_session_snapshot()
 
-    # State: agent_not_initialized
     if not readiness["can_diagnose"]:
         return json.dumps({
             "ready": False,
             "state": readiness["state"],
             "user_message": "Mining environment not initialized. Setup required.",
-            "user_actions": ["Initialize"],
+            "user_actions": ["Initialize environment"],
             "_internal": {
                 "next_command": _bootstrap_command(),
-                "action_map": {"Initialize": _bootstrap_command()},
+                "action_map": {"Initialize environment": _bootstrap_command()},
             },
         }, ensure_ascii=False, indent=2)
 
-    # State: auth_required (session missing or expired)
     if not readiness["can_start"]:
         return json.dumps({
             "ready": False,
             "state": readiness["state"],
             "user_message": "Wallet session expired or unavailable. Re-initialization needed.",
-            "user_actions": ["Re-initialize", "Check status"],
+            "user_actions": ["Re-initialize", "Run diagnostics"],
             "_internal": {
                 "next_command": _bootstrap_command(),
                 "action_map": {
                     "Re-initialize": _bootstrap_command(),
-                    "Check status": "python scripts/run_tool.py doctor",
+                    "Run diagnostics": "python scripts/run_tool.py doctor",
                 },
             },
         }, ensure_ascii=False, indent=2)
 
-    # State: running (background session active)
     if background.get("running"):
         session_id = background.get("session_id", "")
         return json.dumps({
@@ -930,7 +930,6 @@ def render_agent_status() -> str:
             },
         }, ensure_ascii=False, indent=2)
 
-    # State: ready or registration_required
     if readiness["can_mine"]:
         user_msg = "Mining environment is ready. You can start mining now."
     else:
@@ -957,7 +956,6 @@ def run_agent_start(dataset_arg: str = "") -> str:
 
     readiness = json.loads(render_agent_status())
     if not readiness.get("ready"):
-        readiness["user_message"] = readiness.get("user_message", "Environment not ready. Please initialize first.")
         return json.dumps(readiness, ensure_ascii=False, indent=2)
 
     store = WorkerStateStore(_default_state_root())
@@ -986,13 +984,13 @@ def run_agent_start(dataset_arg: str = "") -> str:
     except RuntimeError as exc:
         return json.dumps({
             "state": "error",
-            "user_message": "Registration failed. Please check your network and try again.",
-            "user_actions": ["Check status", "Retry"],
+            "user_message": "Registration failed. Please check your network connection and try again.",
+            "user_actions": ["Run diagnostics", "Retry"],
             "_internal": {
                 "error": "registration_required",
                 "detail": str(exc),
                 "action_map": {
-                    "Check status": "python scripts/run_tool.py doctor",
+                    "Run diagnostics": "python scripts/run_tool.py doctor",
                     "Retry": "python scripts/run_tool.py agent-start",
                 },
             },
@@ -1004,31 +1002,59 @@ def run_agent_start(dataset_arg: str = "") -> str:
     try:
         payload = worker.start_working(selected_dataset_ids=selected_dataset_ids)
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 401:
+        status = exc.response.status_code
+        if status == 401:
             return json.dumps({
                 "state": "error",
                 "user_message": "Authentication failed. Wallet session may have expired. Please re-initialize.",
-                "user_actions": ["Re-initialize", "Check status"],
+                "user_actions": ["Re-initialize", "Run diagnostics"],
                 "_internal": {
                     "error": "unauthorized",
                     "http_status": 401,
                     "action_map": {
                         "Re-initialize": _bootstrap_command(),
-                        "Check status": "python scripts/run_tool.py doctor",
+                        "Run diagnostics": "python scripts/run_tool.py doctor",
                     },
                 },
             }, ensure_ascii=False, indent=2)
-        raise
+        return json.dumps({
+            "state": "error",
+            "user_message": f"Platform returned HTTP {status}. The service may be temporarily unavailable.",
+            "user_actions": ["Retry", "Run diagnostics"],
+            "_internal": {
+                "error": "http_error",
+                "http_status": status,
+                "detail": str(exc)[:200],
+                "action_map": {
+                    "Retry": "python scripts/run_tool.py agent-start",
+                    "Diagnose": "python scripts/run_tool.py doctor",
+                },
+            },
+        }, ensure_ascii=False, indent=2)
+    except (httpx.ConnectError, httpx.TimeoutException, OSError) as exc:
+        return json.dumps({
+            "state": "error",
+            "user_message": "Cannot reach the platform. Please check your network connection and try again.",
+            "user_actions": ["Retry", "Run diagnostics"],
+            "_internal": {
+                "error": "network_error",
+                "detail": str(exc)[:200],
+                "action_map": {
+                    "Retry": "python scripts/run_tool.py agent-start",
+                    "Diagnose": "python scripts/run_tool.py doctor",
+                },
+            },
+        }, ensure_ascii=False, indent=2)
 
     if payload.get("selection_required"):
         datasets = payload.get("datasets") or []
         dataset_names = [str(item.get("name") or item.get("id") or "").strip() for item in datasets[:5]]
         dataset_ids = [str(item.get("id") or "").strip() for item in datasets[:5]]
-        action_map = {f"Select {name}": f"python scripts/run_tool.py agent-start {did}" for name, did in zip(dataset_names, dataset_ids)}
+        action_map = {name: f"python scripts/run_tool.py agent-start {did}" for name, did in zip(dataset_names, dataset_ids)}
         return json.dumps({
             "state": "selection_required",
             "user_message": f"Please select a dataset to start mining. Available: {', '.join(dataset_names)}",
-            "user_actions": [f"Select {name}" for name in dataset_names[:3]],
+            "user_actions": dataset_names[:3],
             "_internal": {
                 "datasets": datasets,
                 "action_map": action_map,
@@ -1047,7 +1073,7 @@ def run_agent_start(dataset_arg: str = "") -> str:
     session_id = background["session_id"]
     return json.dumps({
         "state": "running",
-        "user_message": f"Mining started (session: {session_id}). Running in background.",
+        "user_message": f"Mining started successfully. Background worker launched (session: {session_id}).",
         "user_actions": ["Check status", "Pause mining", "Stop mining"],
         "_internal": {
             "next_command": "python scripts/run_tool.py agent-control status",
@@ -1074,7 +1100,7 @@ def run_agent_control(action: str = "status") -> str:
         if not background:
             return json.dumps({
                 "state": "idle",
-                "user_message": "No mining session is currently active.",
+                "user_message": "No active mining session. Start a new session to begin earning.",
                 "user_actions": ["Start mining"],
                 "_internal": {
                     "action_map": {"Start mining": "python scripts/run_tool.py agent-start"},
@@ -1085,14 +1111,14 @@ def run_agent_control(action: str = "status") -> str:
         is_running = background.get("running")
         session_id = background.get("session_id", "")
         if is_running:
-            user_msg = f"Mining is active (session: {session_id})."
+            user_msg = f"Mining is running in background (session: {session_id})."
             user_acts = ["Pause mining", "Stop mining"]
             action_map = {
                 "Pause mining": "python scripts/run_tool.py agent-control pause",
                 "Stop mining": "python scripts/run_tool.py agent-control stop",
             }
         else:
-            user_msg = f"Mining session {session_id} has stopped."
+            user_msg = f"Session {session_id} has stopped."
             user_acts = ["Start mining"]
             action_map = {"Start mining": "python scripts/run_tool.py agent-start"}
         return json.dumps({
@@ -1109,7 +1135,7 @@ def run_agent_control(action: str = "status") -> str:
     if normalized not in {"pause", "resume", "stop"}:
         return json.dumps({
             "state": "error",
-            "user_message": f"Unknown action: {normalized}",
+            "user_message": f"unknown action: {normalized}",
             "user_actions": ["Check status"],
             "_internal": {
                 "action_map": {"Check status": "python scripts/run_tool.py agent-control status"},
@@ -1119,7 +1145,7 @@ def run_agent_control(action: str = "status") -> str:
     if not background:
         return json.dumps({
             "state": "idle",
-            "user_message": "No mining session is currently active.",
+            "user_message": "No active mining session found. Start a new session to begin.",
             "user_actions": ["Start mining"],
             "_internal": {
                 "action_map": {"Start mining": "python scripts/run_tool.py agent-start"},
@@ -1129,7 +1155,7 @@ def run_agent_control(action: str = "status") -> str:
     worker = build_worker_from_env()
     if normalized == "pause":
         payload = worker.pause()
-        user_msg = "Mining paused."
+        user_msg = "Mining paused. Session state has been saved."
         user_acts = ["Resume mining", "Stop mining"]
         action_map = {
             "Resume mining": "python scripts/run_tool.py agent-control resume",
@@ -1137,7 +1163,7 @@ def run_agent_control(action: str = "status") -> str:
         }
     elif normalized == "resume":
         payload = worker.resume()
-        user_msg = "Mining resumed."
+        user_msg = "Mining resumed. Continuing from saved state."
         user_acts = ["Pause mining", "Stop mining"]
         action_map = {
             "Pause mining": "python scripts/run_tool.py agent-control pause",
@@ -1154,9 +1180,9 @@ def run_agent_control(action: str = "status") -> str:
                     break
                 time.sleep(0.1)
         store.save_background_session({"last_stop_requested_at": int(payload.get("last_state_change_at") or 0)})
-        user_msg = "Mining stopped."
-        user_acts = ["Start mining"]
-        action_map = {"Start mining": "python scripts/run_tool.py agent-start"}
+        user_msg = "Mining stopped. Background worker terminated."
+        user_acts = ["Start new session"]
+        action_map = {"Start new session": "python scripts/run_tool.py agent-start"}
 
     refreshed = _background_session_snapshot()
     if normalized == "stop" and refreshed and not refreshed.get("running"):
@@ -1206,7 +1232,7 @@ def run_agent_loop(max_iterations: int = 1) -> str:
             env = os.environ.copy()
             if not env.get("HOME") and env.get("USERPROFILE"):
                 env["HOME"] = env["USERPROFILE"]
-            proc = sp.run([wallet_bin, "unlock", "--duration", "3600"],
+            proc = sp.run([wallet_bin, "unlock", "--duration", str(WALLET_SESSION_DURATION_SECONDS)],
                          capture_output=True, text=True, timeout=30, env=env)
             if proc.returncode == 0:
                 data = json.loads(proc.stdout)
@@ -1289,7 +1315,7 @@ def _validator_background_snapshot() -> dict[str, object]:
 
 
 def render_validator_status() -> str:
-    """Validator 状态检查（对齐 miner 的 agent-status），含就绪判断。"""
+    """Validator readiness and background status (JSON for agents)."""
     from common import resolve_validator_readiness
 
     snapshot = _validator_background_snapshot()
@@ -1300,13 +1326,13 @@ def render_validator_status() -> str:
         return json.dumps({
             "ready": True,
             "state": "running",
-            "user_message": f"Validator 运行中 (session: {session_id})。",
-            "user_actions": ["Check status", "Stop validator"],
+            "user_message": f"Validator is running in the background (session: {session_id}).",
+            "user_actions": ["Check validator status", "Stop validator"],
             "_internal": {
                 "next_command": "python scripts/run_tool.py validator-control status",
                 "action_map": {
                     "Check status": "python scripts/run_tool.py validator-control status",
-                    "Stop validator": "python scripts/run_tool.py validator-control stop",
+                    "Stop": "python scripts/run_tool.py validator-control stop",
                 },
                 "session": snapshot,
             },
@@ -1318,12 +1344,12 @@ def render_validator_status() -> str:
         return json.dumps({
             "ready": False,
             "state": readiness["state"],
-            "user_message": f"Validator 未就绪: {'; '.join(readiness.get('warnings', []))}",
-            "user_actions": ["Run doctor", "Start validator"],
+            "user_message": f"Validator is not ready: {'; '.join(readiness.get('warnings', []))}",
+            "user_actions": ["Run diagnostics", "Start validator"],
             "_internal": {
                 "next_command": "python scripts/run_tool.py validator-doctor",
                 "action_map": {
-                    "Run doctor": "python scripts/run_tool.py validator-doctor",
+                    "Run diagnostics": "python scripts/run_tool.py validator-doctor",
                     "Start validator": "python scripts/run_tool.py validator-start",
                 },
                 "readiness": readiness,
@@ -1331,9 +1357,9 @@ def render_validator_status() -> str:
         }, ensure_ascii=False, indent=2)
 
     warnings = readiness.get("warnings", [])
-    msg = "Validator 就绪，可以启动。"
+    msg = "Validator environment is ready."
     if warnings:
-        msg += f" 注意: {'; '.join(warnings)}"
+        msg += f" Note: {'; '.join(warnings)}"
     return json.dumps({
         "ready": True,
         "state": "idle",
@@ -1358,13 +1384,13 @@ def run_validator_start() -> str:
         session_id = str(snapshot.get("session_id") or "")
         return json.dumps({
             "state": "running",
-            "user_message": f"Validator 已在运行中 (session: {session_id})。",
-            "user_actions": ["Check status", "Stop validator"],
+            "user_message": f"Validator is already running (session: {session_id}).",
+            "user_actions": ["Check validator status", "Stop validator"],
             "_internal": {
                 "next_command": "python scripts/run_tool.py validator-control status",
                 "action_map": {
                     "Check status": "python scripts/run_tool.py validator-control status",
-                    "Stop validator": "python scripts/run_tool.py validator-control stop",
+                    "Stop": "python scripts/run_tool.py validator-control stop",
                 },
                 "session": snapshot,
             },
@@ -1380,16 +1406,16 @@ def run_validator_start() -> str:
             pip_names = [m["pip"] for m in missing]
             fix_commands.append(f'pip install {" ".join(pip_names)}')
         elif state == "signer_unavailable":
-            fix_commands.append("# 设置 VALIDATOR_PRIVATE_KEY 或确保 awp-wallet 可用")
+            fix_commands.append("# set VALIDATOR_PRIVATE_KEY or ensure awp-wallet is available")
         return json.dumps({
             "state": state,
-            "user_message": f"Validator 未就绪: {'; '.join(readiness['warnings'])}",
-            "user_actions": ["Run doctor", "Retry"],
+            "user_message": f"Validator is not ready: {'; '.join(readiness['warnings'])}",
+            "user_actions": ["Run diagnostics", "Retry"],
             "_internal": {
                 "readiness": readiness,
                 "fix_commands": fix_commands,
                 "action_map": {
-                    "Run doctor": "python scripts/run_tool.py validator-doctor",
+                    "Diagnose": "python scripts/run_tool.py validator-doctor",
                     "Retry": "python scripts/run_tool.py validator-start",
                 },
             },
@@ -1400,31 +1426,31 @@ def run_validator_start() -> str:
     except Exception as exc:
         return json.dumps({
             "state": "error",
-            "user_message": f"启动 validator 失败: {exc}",
-            "user_actions": ["Retry", "Run doctor"],
+            "user_message": f"Validator failed to start: {exc}",
+            "user_actions": ["Retry", "Run diagnostics"],
             "_internal": {
                 "error": str(exc),
                 "action_map": {
                     "Retry": "python scripts/run_tool.py validator-start",
-                    "Run doctor": "python scripts/run_tool.py validator-doctor",
+                    "Diagnose": "python scripts/run_tool.py validator-doctor",
                 },
             },
         }, ensure_ascii=False, indent=2)
 
     session_id = str(result.get("session_id") or "")
     warnings = readiness.get("warnings", [])
-    msg = f"Validator 已启动 (session: {session_id})。"
+    msg = f"Validator started successfully (session: {session_id})."
     if warnings:
-        msg += f" 注意: {'; '.join(warnings)}"
+        msg += f" Note: {'; '.join(warnings)}"
     return json.dumps({
         "state": result.get("status", "started"),
         "user_message": msg,
-        "user_actions": ["Check status", "Stop validator"],
+        "user_actions": ["Check validator status", "Stop validator"],
         "_internal": {
             "next_command": "python scripts/run_tool.py validator-control status",
             "action_map": {
                 "Check status": "python scripts/run_tool.py validator-control status",
-                "Stop validator": "python scripts/run_tool.py validator-control stop",
+                "Stop": "python scripts/run_tool.py validator-control stop",
             },
             "session": result,
             "readiness": readiness,
@@ -1445,7 +1471,7 @@ def run_validator_control(action: str = "status") -> str:
     if normalized != "stop":
         return json.dumps({
             "state": "error",
-            "user_message": f"Unknown validator action: {normalized}",
+            "user_message": f"unknown action: {normalized}",
             "user_actions": ["Check status"],
             "_internal": {
                 "action_map": {"Check status": "python scripts/run_tool.py validator-control status"},
@@ -1455,7 +1481,7 @@ def run_validator_control(action: str = "status") -> str:
     if snapshot.get("status") != "running":
         return json.dumps({
             "state": "idle",
-            "user_message": "Validator is not running.",
+            "user_message": "Validator is not currently running.",
             "user_actions": ["Start validator"],
             "_internal": {
                 "action_map": {"Start validator": "python scripts/run_tool.py validator-start"},
@@ -1465,7 +1491,7 @@ def run_validator_control(action: str = "status") -> str:
     result = stop_background(state_root=_validator_state_root())
     return json.dumps({
         "state": result.get("status", "stopped"),
-        "user_message": "Validator stopped.",
+        "user_message": "Validator has been stopped.",
         "user_actions": ["Start validator"],
         "_internal": {
             "action_map": {"Start validator": "python scripts/run_tool.py validator-start"},
@@ -1475,17 +1501,10 @@ def run_validator_control(action: str = "status") -> str:
 
 
 def run_validator_doctor() -> str:
-    """完整的 validator 诊断，对齐 miner 的 doctor 命令。
+    """Full validator diagnostics (aligned with miner doctor).
 
-    检查项:
-      1. Python 版本
-      2. Python 依赖 (websockets, eth_account, pycryptodome)
-      3. 签名器 (VALIDATOR_PRIVATE_KEY 或 awp-wallet)
-      4. 平台连通性
-      5. 认证测试 (heartbeat)
-      6. AWP 注册状态
-      7. 配置项 (validator_id, ws_url, eval_timeout)
-      8. 后台进程状态
+    Checks: Python version, deps, signer, platform, auth heartbeat,
+    AWP registration, config, background process.
     """
     from common import (
         resolve_validator_id, resolve_ws_url, resolve_eval_timeout,
@@ -1499,12 +1518,12 @@ def run_validator_doctor() -> str:
     checks: list[dict[str, object]] = []
     fix_commands: list[str] = []
 
-    # 1. Python 版本
+    # 1. Python version
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
     py_ok = sys.version_info >= (3, 11)
     checks.append({"name": "python", "ok": py_ok, "value": py_ver, "required": "3.11+"})
 
-    # 2. 依赖
+    # 2. Dependencies
     deps = check_validator_dependencies()
     checks.append({
         "name": "dependencies",
@@ -1516,7 +1535,7 @@ def run_validator_doctor() -> str:
         pip_names = [m["pip"] for m in deps["missing"]]
         fix_commands.append(f'pip install {" ".join(pip_names)}')
 
-    # 3. 签名器
+    # 3. Signer
     signer_check = readiness.get("checks", {}).get("signer", {})
     checks.append({
         "name": "signer",
@@ -1526,9 +1545,9 @@ def run_validator_doctor() -> str:
         "error": signer_check.get("error", ""),
     })
     if not signer_check.get("ok"):
-        fix_commands.append("# 设置 VALIDATOR_PRIVATE_KEY 或运行 bootstrap 配置 awp-wallet")
+        fix_commands.append("# set VALIDATOR_PRIVATE_KEY or run bootstrap to configure awp-wallet")
 
-    # 4. 平台连通性
+    # 4. Platform connectivity
     platform_check = readiness.get("checks", {}).get("platform", {})
     checks.append({
         "name": "platform",
@@ -1537,7 +1556,7 @@ def run_validator_doctor() -> str:
         "error": platform_check.get("error", ""),
     })
 
-    # 5. 认证测试 (heartbeat)
+    # 5. Auth (heartbeat)
     auth_check: dict[str, object] = {"name": "auth_heartbeat", "ok": False}
     if signer_check.get("ok") and platform_check.get("ok"):
         try:
@@ -1558,7 +1577,7 @@ def run_validator_doctor() -> str:
             auth_check["error"] = str(exc)
     checks.append(auth_check)
 
-    # 6. AWP 注册状态
+    # 6. AWP registration
     reg_check = readiness.get("checks", {}).get("registration", {})
     checks.append({
         "name": "awp_registration",
@@ -1568,9 +1587,9 @@ def run_validator_doctor() -> str:
         "registration_required": reg_check.get("registration_required", False),
     })
     if reg_check.get("registration_required") and not reg_check.get("registered"):
-        fix_commands.append("python scripts/run_tool.py validator-start  # 启动时自动注册")
+        fix_commands.append("python scripts/run_tool.py validator-start  # auto-registers on start")
 
-    # 7. 配置项
+    # 7. Config
     validator_id = resolve_validator_id()
     ws_url = resolve_ws_url()
     eval_timeout = resolve_eval_timeout()
@@ -1583,7 +1602,7 @@ def run_validator_doctor() -> str:
         "platform_url": readiness.get("checks", {}).get("platform", {}).get("url", ""),
     })
 
-    # 8. 后台进程
+    # 8. Background process
     running = snapshot.get("status") == "running"
     checks.append({
         "name": "background_process",
@@ -1749,7 +1768,7 @@ def main() -> int:
         if session_id:
             store.update_session(session_id=session_id, status="starting")
 
-        # 阶段 1: 依赖检查与自动安装
+        # Phase 1: dependency check and optional install
         deps = check_validator_dependencies()
         if not deps["ok"]:
             print(json.dumps({"phase": "deps", "status": "installing", "missing": deps["missing"]}, ensure_ascii=False), flush=True)
@@ -1757,16 +1776,16 @@ def main() -> int:
             if install_result["ok"]:
                 print(json.dumps({"phase": "deps", "status": "installed", "packages": install_result["installed"]}, ensure_ascii=False), flush=True)
             else:
-                store.update_session(status="error", error=f"依赖安装失败: {install_result['failed']}")
+                store.update_session(status="error", error=f"dependency install failed: {install_result['failed']}")
                 print(json.dumps({"status": "error", "phase": "deps", "failed": install_result["failed"]}, ensure_ascii=False, indent=2))
                 return 1
             deps = check_validator_dependencies()
             if not deps["ok"]:
-                store.update_session(status="error", error=f"依赖仍缺失: {deps['missing']}")
+                store.update_session(status="error", error=f"dependencies still missing: {deps['missing']}")
                 print(json.dumps({"status": "error", "phase": "deps", "still_missing": deps["missing"]}, ensure_ascii=False, indent=2))
                 return 1
 
-        # 阶段 2: 签名器初始化
+        # Phase 2: signer initialization
         try:
             signer, signer_type = resolve_validator_signer()
             signer_address = signer.get_address() if hasattr(signer, "get_address") else str(getattr(signer, "signer_address", ""))
@@ -1776,7 +1795,7 @@ def main() -> int:
             print(json.dumps({"status": "error", "phase": "signer", "error": str(exc)}, ensure_ascii=False, indent=2))
             return 1
 
-        # 阶段 3: AWP 注册（自动注册）
+        # Phase 3: AWP registration (auto)
         try:
             registration = resolve_awp_registration(auto_register=True, signer=signer)
             reg_status = registration.get("status", "")
@@ -1791,7 +1810,7 @@ def main() -> int:
         if session_id:
             store.update_session(status="running")
 
-        # 阶段 4: 构建运行时组件并启动
+        # Phase 4: build runtime and start
         try:
             from validator_runtime import ValidatorRuntime
             from evaluation_engine import EvaluationEngine
