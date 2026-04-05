@@ -32,7 +32,6 @@ DEFAULT_SIGNATURE_REQUIRED_HEADERS = [
 DEFAULT_SIGNATURE_OPTIONAL_HEADERS = [
     "X-Chain-Id",
     "X-Signed-Headers",
-    "X-Request-ID",
     "Content-Type",
 ]
 SIGNATURE_CONFIG_CACHE_TTL_SECONDS = 24 * 60 * 60

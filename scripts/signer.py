@@ -20,7 +20,7 @@ from common import (
 )
 
 EMPTY_HASH = f"0x{'0' * 64}"
-DEFAULT_SIGNED_HEADERS = ("content-type", "x-request-id")
+DEFAULT_SIGNED_HEADERS = ("content-type",)
 
 
 def _normalize_header_value(value: Any) -> str:
@@ -161,7 +161,6 @@ class WalletSigner:
         url: str,
         body: Any,
         content_type: str,
-        request_id: str,
         now: int,
         nonce: int,
         chain_id: int = DEFAULT_EIP712_CHAIN_ID,
@@ -173,7 +172,6 @@ class WalletSigner:
         split = urlsplit(url)
         request_headers = {
             "content-type": content_type,
-            "x-request-id": request_id,
         }
 
         return {
@@ -223,20 +221,17 @@ class WalletSigner:
         body: Any = None,
         *,
         content_type: str = "application/json",
-        request_id: str | None = None,
         chain_id: int = DEFAULT_EIP712_CHAIN_ID,
         domain_name: str = DEFAULT_EIP712_DOMAIN_NAME,
         verifying_contract: str = DEFAULT_EIP712_VERIFYING_CONTRACT,
     ) -> dict[str, str]:
         now = int(time.time())
         nonce = secrets.randbits(52)
-        request_id = request_id or f"req-{now}"
         typed_data = self.build_typed_data(
             method=method,
             url=url,
             body=body,
             content_type=content_type,
-            request_id=request_id,
             now=now,
             nonce=nonce,
             chain_id=chain_id,
@@ -247,7 +242,6 @@ class WalletSigner:
         message = typed_data["message"]
         return {
             "Content-Type": content_type,
-            "X-Request-ID": request_id,
             "X-Signer": self.get_address(),
             "X-Signature": signature,
             "X-Nonce": str(message["nonce"]),

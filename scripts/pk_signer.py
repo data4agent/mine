@@ -13,7 +13,7 @@ from Crypto.Hash import keccak
 
 
 EMPTY_HASH = f"0x{'0' * 64}"
-DEFAULT_SIGNED_HEADERS = ("content-type", "x-request-id")
+DEFAULT_SIGNED_HEADERS = ("content-type",)
 
 
 def _normalize_header_value(value: Any) -> str:
@@ -94,7 +94,6 @@ class PrivateKeySigner:
         url: str,
         body: Any,
         content_type: str,
-        request_id: str,
         now: int,
         nonce: int,
         chain_id: int = 8453,
@@ -107,7 +106,6 @@ class PrivateKeySigner:
         split = urlsplit(url)
         request_headers = {
             "content-type": content_type,
-            "x-request-id": request_id,
         }
 
         return {
@@ -157,7 +155,6 @@ class PrivateKeySigner:
         body: dict[str, Any] | None = None,
         *,
         content_type: str = "application/json",
-        request_id: str | None = None,
         chain_id: int = 8453,
         domain_name: str = "aDATA",
         verifying_contract: str = "0x0000000000000000000000000000000000000000",
@@ -165,14 +162,12 @@ class PrivateKeySigner:
         """Build EIP-712 signed auth headers for API request."""
         now = int(time.time())
         nonce = secrets.randbits(52)
-        request_id = request_id or f"req-{now}"
 
         typed_data = self.build_typed_data(
             method=method,
             url=url,
             body=body,
             content_type=content_type,
-            request_id=request_id,
             now=now,
             nonce=nonce,
             chain_id=chain_id,
@@ -184,7 +179,6 @@ class PrivateKeySigner:
 
         return {
             "Content-Type": content_type,
-            "X-Request-ID": request_id,
             "X-Signer": self._address,
             "X-Signature": f"0x{signature}" if not signature.startswith("0x") else signature,
             "X-Nonce": str(message["nonce"]),
