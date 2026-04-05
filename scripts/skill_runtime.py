@@ -10,9 +10,6 @@ from typing import Any
 from common import resolve_platform_base_url, resolve_wallet_config
 
 
-# Platform URL
-PLATFORM_URL = "https://api.minework.net"
-
 # Unicode symbols for consistent UX
 SYM_CHECK = "✓"
 SYM_CROSS = "✗"
@@ -634,7 +631,7 @@ def render_epoch_progress(
     for ds in datasets:
         ds_id = str(ds.get("id") or "unknown")
         ds_submitted = int(ds.get("submitted") or 0)
-        ds_target = int(ds.get("target") or 30)
+        ds_target = int(ds.get("target") or 80)
         bar = text_progress_bar(ds_submitted, ds_target, width=16)
         lines.append(f"{ds_id:20} {bar} {ds_submitted} / {ds_target}")
 

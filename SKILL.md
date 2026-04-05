@@ -20,7 +20,7 @@ requires:
     - py
 metadata:
   emoji: "\u26CF\uFE0F"
-  homepage: https://github.com/clawtroop/mine
+  homepage: https://github.com/data4agent/mine
 ---
 
 # Mine
@@ -193,7 +193,7 @@ help             → this list
 cd {baseDir} && python scripts/run_tool.py agent-control stop
 ```
 
-## Pause / Resume
+## Pause / Resume (Miner only)
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-control pause
@@ -222,7 +222,9 @@ cd {baseDir} && python scripts/run_tool.py doctor
 cd {baseDir} && python scripts/run_tool.py validator-start
 ```
 
-Auto-installs dependencies, registers on AWP, and connects via WebSocket.
+Auto-installs dependencies, submits validator application, and connects via WebSocket.
+
+**Note:** If the application status is `pending_review`, the validator cannot start until approved by the platform admin or allowlist auto-approve. Re-run the start command after approval.
 
 ### Validator Status
 
@@ -260,7 +262,7 @@ Runtime overrides (optional, via `.env` or shell):
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `PLATFORM_BASE_URL` | auto-detected | Platform API endpoint |
+| `PLATFORM_BASE_URL` | `https://api.minework.net` | Platform API endpoint |
 | `MINER_ID` | `mine-agent` | Miner identifier |
 | `WORKER_MAX_PARALLEL` | `3` | Concurrent crawl workers |
 
