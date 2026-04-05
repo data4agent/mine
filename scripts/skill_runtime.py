@@ -10,9 +10,8 @@ from typing import Any
 from common import resolve_platform_base_url, resolve_wallet_config
 
 
-# Network URLs (user must explicitly choose)
-TESTNET_PLATFORM_URL = "http://101.47.73.95"
-MAINNET_PLATFORM_URL = ""  # TBD - will be announced when available
+# Platform URL
+PLATFORM_URL = "https://api.minework.net"
 
 # Unicode symbols for consistent UX
 SYM_CHECK = "✓"
@@ -154,7 +153,7 @@ def _platform_line() -> tuple[bool, str, list[str]]:
     configured = resolve_platform_base_url()
     if configured:
         # Detect network from URL
-        network = "testnet" if "101.47.73.95" in configured else "configured"
+        network = "mainnet" if "api.minework.net" in configured else "configured"
         return True, f"{SYM_CHECK} Platform API {SYM_DASH} {configured} ({network})", []
     return False, f"{SYM_CROSS} Platform API {SYM_DASH} could not be resolved", []
 
@@ -1267,7 +1266,7 @@ def render_status_summary(worker: Any) -> str:
     # Miner and platform
     miner_id = getattr(worker.config, "miner_id", None) or "unknown"
     platform = worker.config.base_url
-    network = "testnet" if "101.47.73.95" in platform else "configured"
+    network = "mainnet" if "api.minework.net" in platform else "configured"
 
     lines = [
         f"{SYM_BOX_H * 2} mine status {SYM_BOX_H * 24}",

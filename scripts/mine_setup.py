@@ -46,7 +46,7 @@ from post_install_check import attempt_install_awp_wallet
 # Configuration
 MIN_PYTHON_VERSION = (3, 11)
 MIN_NODE_VERSION = 20
-TESTNET_URL = DEFAULT_PLATFORM_BASE_URL
+DEFAULT_URL = DEFAULT_PLATFORM_BASE_URL
 STATE_FILE = Path(__file__).parent.parent / ".mine-setup.json"
 
 # Output helpers - ALL outputs go through these for consistency
@@ -535,8 +535,8 @@ def auto_fix() -> dict[str, Any]:
     # Fix 4: Set default env vars if missing
     env_fixed = []
     if not os.environ.get("PLATFORM_BASE_URL"):
-        os.environ["PLATFORM_BASE_URL"] = TESTNET_URL
-        env_fixed.append(f"PLATFORM_BASE_URL={TESTNET_URL}")
+        os.environ["PLATFORM_BASE_URL"] = DEFAULT_URL
+        env_fixed.append(f"PLATFORM_BASE_URL={DEFAULT_URL}")
 
     if not os.environ.get("MINER_ID"):
         os.environ["MINER_ID"] = DEFAULT_MINER_ID

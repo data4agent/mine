@@ -540,7 +540,7 @@ def run_diagnosis() -> str:
         lines.append(f"  ✓ PLATFORM_BASE_URL = {platform_url}")
     else:
         lines.append("  ✗ PLATFORM_BASE_URL — NOT SET")
-        lines.append("    Fix: export PLATFORM_BASE_URL=http://101.47.73.95")
+        lines.append("    Fix: export PLATFORM_BASE_URL=https://api.minework.net")
 
     if miner_id:
         lines.append(f"  ✓ MINER_ID = {miner_id}")

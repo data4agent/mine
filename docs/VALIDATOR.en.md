@@ -161,7 +161,7 @@ Main validator-related variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `PLATFORM_BASE_URL` | `http://101.47.73.95` | Platform API base URL |
+| `PLATFORM_BASE_URL` | `https://api.minework.net` | Platform API base URL |
 | `VALIDATOR_ID` | `validator-agent` | Validator identifier |
 | `VALIDATOR_OUTPUT_ROOT` | `output/validator-runs` | Validator output directory |
 | `EVAL_TIMEOUT_SECONDS` | `120` | Per-evaluation timeout (seconds) |

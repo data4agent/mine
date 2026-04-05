@@ -63,7 +63,7 @@ Mine signs requests through `awp-wallet`. Do not store seed phrases or private k
 You do not need a `.env` file or manual wallet token export for the normal path. Mine defaults to testnet, a helper-safe `MINER_ID`, and platform-discovered signature settings. Only set overrides when you need something custom:
 
 ```bash
-PLATFORM_BASE_URL=http://101.47.73.95
+PLATFORM_BASE_URL=https://api.minework.net
 MINER_ID=mine-agent
 AWP_WALLET_BIN=awp-wallet
 ```

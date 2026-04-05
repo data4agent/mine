@@ -6,10 +6,7 @@ Mine talks to the platform through signed HTTP requests built by `lib/platform_c
 
 Configured through `PLATFORM_BASE_URL`.
 
-Known values in current project docs:
-
-- test: `http://101.47.73.95`
-- production: `https://sd76fip34meovmfu5ftlg.apigateway-ap-southeast-1.volceapi.com`
+URL: `https://api.minework.net`
 
 ## Authentication model
 

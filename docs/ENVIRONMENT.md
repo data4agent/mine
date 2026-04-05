@@ -91,22 +91,9 @@ The effective registration state is now surfaced by `doctor`, `mine_setup`, and 
 
 ## Known platform base URLs
 
-Test environment:
-
 ```bash
-PLATFORM_BASE_URL=http://101.47.73.95
+PLATFORM_BASE_URL=https://api.minework.net
 ```
-
-Production environment:
-
-```bash
-PLATFORM_BASE_URL=https://sd76fip34meovmfu5ftlg.apigateway-ap-southeast-1.volceapi.com
-```
-
-Production note:
-
-- production access may return `401` with `UNTRUSTED_HOST`
-- that means the wallet address is not yet allow-listed for production
 
 ## Optional runtime variables
 
@@ -151,7 +138,7 @@ Until those layers are unified, Mine auto-fills a stable helper value. You do no
 ## Recommended `.env` template
 
 ```bash
-PLATFORM_BASE_URL=http://101.47.73.95
+PLATFORM_BASE_URL=https://api.minework.net
 MINER_ID=mine-agent
 AWP_WALLET_BIN=awp-wallet
 ```

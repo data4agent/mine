@@ -76,7 +76,7 @@ The data pipeline does not require `StartMining`; it runs independently.
 Defaults work out of the box:
 
 ```bash
-PLATFORM_BASE_URL=http://101.47.73.95   # testnet default
+PLATFORM_BASE_URL=https://api.minework.net
 MINER_ID=mine-agent                      # default
 AWP_WALLET_BIN=awp-wallet               # auto-detected
 ```

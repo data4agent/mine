@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 
 from secret_refs import read_mine_config, resolve_secret_ref
 
-DEFAULT_PLATFORM_BASE_URL = "http://101.47.73.95"
+DEFAULT_PLATFORM_BASE_URL = "https://api.minework.net"
 DEFAULT_MINER_ID = "mine-agent"
 DEFAULT_EIP712_DOMAIN_NAME = "aDATA"
 DEFAULT_EIP712_CHAIN_ID = 8453
