@@ -311,7 +311,7 @@ class PlatformClient:
                     code = error_obj.get("code", "unknown") if isinstance(error_obj, dict) else "unknown"
                     msg = error_obj.get("message", "") if isinstance(error_obj, dict) else str(error_obj)
                     category = error_obj.get("category", "") if isinstance(error_obj, dict) else ""
-                    status_map = {"not_found": 404, "authentication": 401, "permission": 403, "rate_limit": 429}
+                    status_map = {"not_found": 404, "authentication": 401, "permission": 403, "precondition": 428, "rate_limit": 429, "internal": 500, "dependency": 503}
                     raise PlatformApiError(code, msg, category, status_map.get(category, 400), response)
                 return body
             except PlatformApiError as api_err:
@@ -461,3 +461,36 @@ class PlatformClient:
         resp = self._request("GET", f"/api/core/v1/validation-results/{result_id}", None)
         data = resp.get("data")
         return data if isinstance(data, dict) else {}
+
+    # === Self-service endpoints (v2.1) ===
+
+    def fetch_my_miner_stats(self) -> dict[str, Any]:
+        """GET /api/mining/v1/miners/me/stats"""
+        return self._request_optional_data("GET", "/api/mining/v1/miners/me/stats")
+
+    def fetch_my_validator_stats(self) -> dict[str, Any]:
+        """GET /api/mining/v1/validators/me/stats"""
+        return self._request_optional_data("GET", "/api/mining/v1/validators/me/stats")
+
+    def fetch_my_submissions(self) -> list[dict[str, Any]]:
+        """GET /api/mining/v1/miners/me/submissions"""
+        resp = self._request_optional_data("GET", "/api/mining/v1/miners/me/submissions")
+        if isinstance(resp, list):
+            return resp
+        data = resp.get("items") if isinstance(resp, dict) else None
+        return data if isinstance(data, list) else []
+
+    def fetch_current_epoch(self) -> dict[str, Any]:
+        """GET /api/core/v1/epochs/current"""
+        return self._request_optional_data("GET", "/api/core/v1/epochs/current")
+
+    def fetch_dataset_stats(self, dataset_id: str) -> dict[str, Any]:
+        """GET /api/core/v1/datasets/:id/stats"""
+        return self._request_optional_data("GET", f"/api/core/v1/datasets/{dataset_id}/stats")
+
+    def check_url_occupancy_public(self, dataset_id: str, url: str) -> dict[str, Any]:
+        """GET /api/core/v1/url/check — public URL occupancy check"""
+        encoded_url = quote(url, safe="")
+        return self._request_optional_data(
+            "GET", f"/api/core/v1/url/check?dataset_id={quote(dataset_id, safe='')}&url={encoded_url}"
+        )
