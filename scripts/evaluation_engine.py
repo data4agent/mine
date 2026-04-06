@@ -93,13 +93,13 @@ class EvaluationEngine:
             sections.append("Major content differences (fabricated data, wrong page, missing core content) — report mismatch.")
             sections.append("")
             sections.append("### Original crawl (M0)")
-            sections.append(cleaned_data_str[:4000])
+            sections.append(cleaned_data_str)
             sections.append("")
             sections.append("### Re-crawl (M1)")
-            sections.append(str(repeat_cleaned_data)[:4000])
+            sections.append(str(repeat_cleaned_data))
         else:
             sections.append("## Original data")
-            sections.append(cleaned_data_str[:4000])
+            sections.append(cleaned_data_str)
 
         sections.append("")
         sections.append("## Structured data extracted by miner")
