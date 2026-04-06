@@ -56,6 +56,7 @@ class EvaluationEngine:
         structured_data: dict[str, Any],
         schema_fields: list[str],
         repeat_cleaned_data: str = "",
+        dataset_schema: dict[str, Any] | None = None,
     ) -> EvaluationResult:
         """
         Evaluate structured data quality per protocol.
@@ -69,6 +70,7 @@ class EvaluationEngine:
             structured_data: Miner-extracted structured data.
             schema_fields: List of field names from schema.
             repeat_cleaned_data: Re-crawled data from repeat crawl miner (M1).
+            dataset_schema: Full dataset schema definition with types and required fields.
         """
         if isinstance(cleaned_data, dict):
             cleaned_data_str = json.dumps(cleaned_data, ensure_ascii=False, indent=2)
@@ -103,7 +105,8 @@ class EvaluationEngine:
         # Phase 2: Quality Scoring
         try:
             scoring_result = self._score_quality(
-                cleaned_data_str, structured_data, schema_fields
+                cleaned_data_str, structured_data, schema_fields,
+                dataset_schema=dataset_schema,
             )
 
             return EvaluationResult(
@@ -217,6 +220,7 @@ is consistent with the original cleaned data.
         cleaned_data: str,
         structured_data: dict[str, Any],
         schema_fields: list[str],
+        dataset_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Phase 2: Score data quality on multiple dimensions.
@@ -225,12 +229,16 @@ is consistent with the original cleaned data.
             cleaned_data: Original cleaned data string.
             structured_data: Miner-extracted structured data.
             schema_fields: List of field names from schema.
+            dataset_schema: Full schema definition with types and required fields.
 
         Returns:
             Dict with dimension scores and final_score.
         """
         structured_json = json.dumps(structured_data, ensure_ascii=False, indent=2)
-        schema_json = json.dumps({"fields": schema_fields}, ensure_ascii=False, indent=2)
+        if dataset_schema:
+            schema_json = json.dumps(dataset_schema, ensure_ascii=False, indent=2)
+        else:
+            schema_json = json.dumps({"fields": schema_fields}, ensure_ascii=False, indent=2)
 
         prompt = f"""You are a data quality scorer. Score the miner's structured extraction.
 

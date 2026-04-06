@@ -257,6 +257,7 @@ class ValidatorRuntime:
         repeat_cleaned_data = str(claim_data.get("repeat_cleaned_data") or "")
         structured_data = claim_data.get("structured_data") or {}
         schema_fields = claim_data.get("schema_fields") or []
+        dataset_schema = claim_data.get("dataset_schema") or {}
 
         # Fallback: re-claim via HTTP to get full evaluation data
         if not cleaned_data or not structured_data:
@@ -267,16 +268,21 @@ class ValidatorRuntime:
                 structured_data = structured_data or claim_fallback.get("structured_data") or {}
                 if not schema_fields:
                     schema_fields = claim_fallback.get("schema_fields") or []
+                if not dataset_schema:
+                    dataset_schema = claim_fallback.get("dataset_schema") or {}
 
         if not isinstance(structured_data, dict):
             structured_data = {}
         if not isinstance(schema_fields, list):
             schema_fields = list(schema_fields) if schema_fields else []
+        if not isinstance(dataset_schema, dict):
+            dataset_schema = {}
 
         # Step 3: Evaluate (M0 vs M1 comparison + quality scoring)
         eval_result: EvaluationResult = self._engine.evaluate(
             cleaned_data, structured_data, schema_fields,
             repeat_cleaned_data=repeat_cleaned_data,
+            dataset_schema=dataset_schema,
         )
         self._stats["tasks_evaluated"] += 1
 
