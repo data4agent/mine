@@ -1,21 +1,103 @@
-"""OpenClaw CLI wrapper for LLM calls."""
+"""OpenClaw CLI wrapper for LLM calls.
+
+Optimized based on example-worker.py patterns:
+- Dedicated agent per validator instance (multi-instance safe)
+- Session purge before each call (prevents context overflow)
+- Popen with graceful timeout (abortable, not blocking)
+- Rate limit detection and backoff
+- Resolved binary path at init (nohup/background compat)
+"""
 from __future__ import annotations
 
 import json
 import logging
 import os
 import re
+import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("validator.llm")
 
-DEFAULT_OPENCLAW_CLI = "openclaw"
 DEFAULT_TIMEOUT = 120
 
+# Module-level state
+_agent_id: str = ""
+_openclaw_bin: str = "openclaw"
+_rate_limit_until: float = 0
+_initialized: bool = False
 
-def _purge_openclaw_sessions() -> None:
+
+def _resolve_openclaw_path() -> str:
+    """Find the absolute path to the openclaw binary."""
+    global _openclaw_bin
+
+    for name in ["openclaw", "openclaw.mjs"]:
+        path = shutil.which(name)
+        if path:
+            _openclaw_bin = path
+            log.info("openclaw found: %s", path)
+            return _openclaw_bin
+
+    search_dirs = [
+        os.path.expanduser("~/.local/bin"),
+        "/usr/local/bin",
+        os.path.expanduser("~/.openclaw/bin"),
+        os.path.expanduser("~/bin"),
+        os.path.expanduser("~/.openclaw"),
+        "/usr/bin",
+    ]
+    for d in search_dirs:
+        for name in ["openclaw", "openclaw.mjs"]:
+            candidate = os.path.join(d, name)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                _openclaw_bin = candidate
+                log.info("openclaw found at: %s", candidate)
+                return _openclaw_bin
+
+    log.warning("openclaw not found in PATH or common locations")
+    return _openclaw_bin
+
+
+def _agent_exists(agent_id: str) -> bool:
+    """Check if an OpenClaw agent exists."""
+    try:
+        result = subprocess.run(
+            [_openclaw_bin, "agents", "list"],
+            capture_output=True, text=True, timeout=60,
+        )
+        return result.returncode == 0 and agent_id in result.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _ensure_agent(agent_id: str) -> None:
+    """Create the dedicated agent if it does not exist."""
+    if _agent_exists(agent_id):
+        log.info("using existing agent: %s", agent_id)
+        return
+
+    log.info("creating agent: %s", agent_id)
+    try:
+        result = subprocess.run(
+            [
+                _openclaw_bin, "agents", "add", agent_id,
+                "--workspace", os.path.expanduser(f"~/.openclaw/workspace-{agent_id}"),
+                "--non-interactive",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            log.info("created agent: %s", agent_id)
+        else:
+            log.warning("failed to create agent: %s", result.stderr.strip()[:200])
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        log.warning("openclaw not available for agent creation")
+
+
+def _purge_agent_sessions() -> None:
     """Delete all session transcripts to prevent context overflow.
 
     OpenClaw session structure:
@@ -23,98 +105,190 @@ def _purge_openclaw_sessions() -> None:
         sessions.json   (index)
         {uuid}.jsonl     (transcript — grows unbounded)
         {uuid}.jsonl.lock
-
-    We purge ALL agent session dirs, not just a specific agent,
-    since `openclaw chat` may use different agent IDs.
     """
-    agents_dir = Path.home() / ".openclaw" / "agents"
-    if not agents_dir.is_dir():
+    if not _agent_id:
+        return
+    session_dir = Path.home() / ".openclaw" / "agents" / _agent_id / "sessions"
+    if not session_dir.is_dir():
         return
     count = 0
-    for agent_dir in agents_dir.iterdir():
-        session_dir = agent_dir / "sessions"
-        if not session_dir.is_dir():
-            continue
-        for f in session_dir.iterdir():
-            try:
-                if f.name == "sessions.json":
-                    f.write_text("{}")
-                    count += 1
-                elif f.suffix in (".jsonl", ".lock"):
-                    f.unlink()
-                    count += 1
-            except OSError:
-                pass
+    for f in session_dir.iterdir():
+        try:
+            if f.name == "sessions.json":
+                f.write_text("{}")
+                count += 1
+            elif f.suffix in (".jsonl", ".lock"):
+                f.unlink()
+                count += 1
+        except OSError:
+            pass
     if count > 0:
-        log.info("purged %d openclaw session files", count)
+        log.info("purged %d session files for agent %s", count, _agent_id)
+
+
+def init(instance_id: str = "") -> str:
+    """Initialize the OpenClaw integration. Call once at startup.
+
+    Args:
+        instance_id: Optional suffix for multi-instance isolation (e.g. wallet address).
+
+    Returns:
+        The agent ID that will be used for LLM calls.
+    """
+    global _agent_id, _initialized
+
+    _resolve_openclaw_path()
+
+    suffix = f"-{instance_id}" if instance_id else ""
+    _agent_id = f"mine-validator{suffix}"
+
+    _ensure_agent(_agent_id)
+    _purge_agent_sessions()
+
+    _initialized = True
+    return _agent_id
 
 
 def call_openclaw(
     prompt: str,
     *,
-    cli_path: str = DEFAULT_OPENCLAW_CLI,
+    cli_path: str = "",
     timeout: int = DEFAULT_TIMEOUT,
 ) -> str:
-    """
-    Call OpenClaw CLI with a prompt and return the response.
-    Purges session files before each call to prevent context overflow.
+    """Call OpenClaw agent CLI with a prompt and return the response.
+
+    - Creates a dedicated agent on first call (if not initialized via init())
+    - Purges session files before each call
+    - Uses Popen for graceful timeout (abortable)
+    - Detects rate limits and backs off
 
     Args:
         prompt: The prompt to send to the LLM.
-        cli_path: Path to the openclaw CLI binary.
+        cli_path: Ignored (kept for backward compat). Uses resolved path.
         timeout: Timeout in seconds.
 
     Returns:
-        Raw stdout from the CLI.
+        Raw text response from the LLM.
 
     Raises:
-        RuntimeError: If the CLI exits with non-zero status.
-        subprocess.TimeoutExpired: If the call times out.
+        RuntimeError: If the CLI is not available or fails.
+        TimeoutError: If the call times out.
     """
-    _purge_openclaw_sessions()
+    global _rate_limit_until
+
+    if not _initialized:
+        init()
+
+    # Rate limit backoff
+    if time.monotonic() < _rate_limit_until:
+        remaining = int(_rate_limit_until - time.monotonic())
+        raise RuntimeError(f"rate limit backoff, {remaining}s remaining")
+
+    _purge_agent_sessions()
 
     try:
-        result = subprocess.run(
-            [cli_path, "chat", "-m", prompt],
-            capture_output=True,
+        proc = subprocess.Popen(
+            [_openclaw_bin, "agent", "--agent", _agent_id, "--message", prompt],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(f"OpenClaw CLI not found at '{cli_path}'") from exc
+        raise RuntimeError(f"OpenClaw CLI not found at '{_openclaw_bin}'") from exc
 
-    if result.returncode != 0:
-        raise RuntimeError(f"OpenClaw CLI failed: {result.stderr}")
+    # Poll with timeout (abortable)
+    deadline = time.monotonic() + timeout
+    while proc.poll() is None:
+        if time.monotonic() > deadline:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            _purge_agent_sessions()
+            raise TimeoutError(f"OpenClaw CLI timeout ({timeout}s)")
+        time.sleep(0.5)
 
-    return result.stdout
+    stdout = proc.stdout.read() if proc.stdout else ""
+    stderr = proc.stderr.read() if proc.stderr else ""
+
+    _purge_agent_sessions()
+
+    if proc.returncode == 0 and stdout.strip():
+        text = stdout.strip()
+        # Try to extract from structured agent response
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict) and "output" in data:
+                extracted = _extract_text_from_agent_response(data)
+                if extracted:
+                    return extracted
+        except json.JSONDecodeError:
+            pass
+        return text
+
+    # Handle errors
+    err = stderr.strip() if stderr else ""
+    if err:
+        log.warning("OpenClaw CLI stderr: %s", err[:200])
+
+    # Detect rate limit
+    if "429" in err or "rate" in err.lower() or "Extra usage" in err:
+        _rate_limit_until = time.monotonic() + 60
+        log.warning("rate limit detected, backing off 60s")
+
+    raise RuntimeError(f"OpenClaw CLI failed (exit {proc.returncode}): {err[:200]}")
+
+
+def _extract_text_from_agent_response(data: dict[str, Any]) -> str | None:
+    """Extract text from a structured agent response."""
+    for item in reversed(data.get("output", [])):
+        for block in reversed(item.get("content", [])):
+            if "text" in block:
+                return block["text"]
+        if "text" in item:
+            return item["text"]
+    choices = data.get("choices", [])
+    if choices:
+        msg = choices[0].get("message", {})
+        return msg.get("content")
+    return None
 
 
 def parse_json_response(response: str) -> dict[str, Any]:
+    """Extract JSON object from LLM response.
+
+    Handles markdown code fences and embedded JSON in free text.
     """
-    Extract JSON object from LLM response.
+    stripped = response.strip()
 
-    LLM responses may contain markdown or explanatory text around the JSON.
-    This function finds and parses the first valid JSON object.
+    # Strip markdown code fences
+    if stripped.startswith("```"):
+        lines = stripped.split("\n")
+        inner = "\n".join(lines[1:])
+        if inner.rstrip().endswith("```"):
+            inner = inner.rstrip()[:-3]
+        stripped = inner.strip()
 
-    Args:
-        response: Raw LLM response text.
+    # Try direct parse
+    try:
+        result = json.loads(stripped)
+        if isinstance(result, dict):
+            return result
+    except json.JSONDecodeError:
+        pass
 
-    Returns:
-        Parsed JSON as dict, or empty dict if no valid JSON found.
-    """
-    # Try to find JSON object pattern
+    # Find first { ... } in text
     json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
     matches = re.findall(json_pattern, response, re.DOTALL)
-
     for match in matches:
         try:
-            return json.loads(match)
+            result = json.loads(match)
+            if isinstance(result, dict):
+                return result
         except json.JSONDecodeError:
             continue
 
-    # Fallback: try parsing the entire response
-    try:
-        return json.loads(response.strip())
-    except json.JSONDecodeError:
-        log.warning("Could not parse JSON from response: %s", response[:200])
-        return {}
+    log.warning("Could not parse JSON from response: %s", response[:200])
+    return {}

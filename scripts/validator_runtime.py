@@ -71,6 +71,14 @@ class ValidatorRuntime:
 
         log.info("ValidatorRuntime starting (id=%s)", self._validator_id)
 
+        # Initialize OpenClaw agent for LLM evaluation calls
+        try:
+            import openclaw_llm
+            agent_id = openclaw_llm.init(instance_id=self._validator_id)
+            log.info("OpenClaw agent initialized: %s", agent_id)
+        except Exception as exc:
+            log.warning("OpenClaw init failed: %s (will retry on first eval)", exc)
+
         # Check validator application status
         try:
             app = self._platform.get_my_validator_application()
