@@ -56,6 +56,7 @@ class ValidatorRuntime:
         self._running = False
         self._paused = False
         self._lock = threading.Lock()
+        self._platform_lock = threading.Lock()
         self._heartbeat_thread: threading.Thread | None = None
         self._main_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -490,11 +491,12 @@ class ValidatorRuntime:
         self._stats["tasks_evaluated"] += 1
 
         # Step 4: Report with result (match/mismatch) and score
-        self._platform.report_evaluation(
-            task_id, eval_result.score,
-            assignment_id=assignment_id,
-            result=eval_result.result,
-        )
+        with self._platform_lock:
+            self._platform.report_evaluation(
+                task_id, eval_result.score,
+                assignment_id=assignment_id,
+                result=eval_result.result,
+            )
 
         # Reset consecutive failures on success (#1)
         self._stats["consecutive_failures"] = 0
@@ -531,7 +533,8 @@ class ValidatorRuntime:
         if self._stop_event.wait(timeout=wait_seconds):
             return
         try:
-            self._platform.join_ready_pool()
+            with self._platform_lock:
+                self._platform.join_ready_pool()
             log.info("Rejoined ready pool")
         except Exception as exc:
             log.warning("Rejoin ready pool failed: %s", exc)
@@ -548,7 +551,8 @@ class ValidatorRuntime:
     def _send_heartbeat(self) -> None:
         """Send a single heartbeat and update runtime state from response."""
         try:
-            resp = self._platform.send_unified_heartbeat(client_name=f"validator-{self._validator_id}")
+            with self._platform_lock:
+                resp = self._platform.send_unified_heartbeat(client_name=f"validator-{self._validator_id}")
             data = resp.get("data") if isinstance(resp, dict) else None
             if isinstance(data, dict):
                 validator_info = data.get("validator")
@@ -563,19 +567,3 @@ class ValidatorRuntime:
         except Exception as exc:
             log.warning("Heartbeat failed: %s", exc)
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _extract_schema_fields(task_details: dict[str, Any]) -> list[str]:
-        """Extract schema field names from task details."""
-        schema = task_details.get("schema") or {}
-        if isinstance(schema, dict):
-            fields = schema.get("fields")
-            if isinstance(fields, list):
-                return [str(f) for f in fields if f]
-            props = schema.get("properties")
-            if isinstance(props, dict):
-                return list(props.keys())
-        return []

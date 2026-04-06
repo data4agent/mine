@@ -624,6 +624,7 @@ class AgentWorker:
         filtered = list(merged.values())[: self.config.max_parallel]
         summary.discovery_items = len([item for item in filtered if item.source == "dataset_discovery"])
         summary.resumed_items = len([item for item in filtered if item.source in ("backlog", "resume", "auth_pending")])
+        summary.claimed_items = len([item for item in filtered if item.source == "backend_claim"])
         return filtered
 
     def _process_items(self, items: list[WorkItem], summary: WorkerIterationSummary) -> None:
@@ -887,7 +888,7 @@ class AgentWorker:
         credit = source.get("credit")
         if "credit_score" not in update and isinstance(credit, (int, float)):
             update["credit_score"] = int(credit)
-        elif isinstance(credit, dict):
+        elif isinstance(credit, dict) and "credit" not in update:
             update["credit"] = dict(credit)
         elif "credit_score" not in update:
             credit_update = {
@@ -1334,6 +1335,8 @@ def _export_and_submit_core_submissions_for_task(
                     pass  # Unsupported challenge type, keep original response
                 except Exception:
                     pass  # PoW answer or retry failed, keep original response
+    # Re-derive resp_data in case PoW retry updated response
+    resp_data = response.get("data") if isinstance(response, dict) else None
     # Check for submission_too_frequent in per-entry rejections
     if isinstance(resp_data, dict):
         rejected = resp_data.get("rejected")

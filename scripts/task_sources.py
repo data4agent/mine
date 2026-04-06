@@ -160,8 +160,6 @@ def task_to_work_item(task: TaskEnvelope) -> WorkItem:
     )
 
 
-def claimed_task_to_work_item(task: TaskEnvelope) -> WorkItem:
-    return task_to_work_item(task)
 
 
 def build_report_payload(item: WorkItem, record: dict[str, Any]) -> dict[str, Any]:
@@ -224,7 +222,7 @@ class BackendClaimSource:
     def _safe_build_work_item(self, task_type: str, payload: dict[str, Any]) -> WorkItem | None:
         try:
             task = claimed_task_from_payload(task_type, payload, client=self.client)
-            return claimed_task_to_work_item(task)
+            return task_to_work_item(task)
         except SkipClaimedTask as exc:
             task_id = optional_string(payload.get("id")) or "unknown"
             self.last_skips.append(f"claim skipped {task_type} task {task_id}: {exc}")
@@ -402,6 +400,6 @@ def _discovery_seed_url(domain: str) -> str:
             host = "en.wikipedia.org"
         return canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page")
     # Amazon: redirect homepage to bestsellers page which links to actual products
-    if ("amazon.com" in host or "amazon.co.uk" in host or "amazon.de" in host) and normalized_path in {"", "/"}:
+    if (host.endswith(".amazon.com") or host == "amazon.com" or host.endswith(".amazon.co.uk") or host == "amazon.co.uk" or host.endswith(".amazon.de") or host == "amazon.de") and normalized_path in {"", "/"}:
         return canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/bestsellers/")
     return canonicalize_url(seed_url)

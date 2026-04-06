@@ -164,9 +164,12 @@ class PlatformClient:
         }
         try:
             resp = self._request("POST", "/api/core/v1/dedup-occupancies/check", dedup_payload)
+        except PlatformApiError as api_err:
+            if api_err.status_code in (400, 404, 422):
+                return {}
+            raise
         except httpx.HTTPStatusError as error:
             if error.response.status_code in (400, 404, 422):
-                # Degrade gracefully: treat as "not occupied" so submission can proceed
                 return {}
             raise
         else:
@@ -470,6 +473,10 @@ class PlatformClient:
         """GET /api/mining/v1/miners/me/submissions"""
         try:
             payload = self._request("GET", "/api/mining/v1/miners/me/submissions", None)
+        except PlatformApiError as api_err:
+            if api_err.status_code in (404, 409):
+                return []
+            raise
         except httpx.HTTPStatusError as error:
             if error.response.status_code == 404:
                 return []

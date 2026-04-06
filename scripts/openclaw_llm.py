@@ -145,6 +145,10 @@ def init(instance_id: str = "") -> str:
     _ensure_agent(_agent_id)
     _purge_agent_sessions()
 
+    # Verify agent was created successfully
+    if not _agent_exists(_agent_id):
+        log.warning("agent %s not available after creation attempt — CLI calls may fail", _agent_id)
+
     _initialized = True
     return _agent_id
 

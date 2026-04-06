@@ -319,7 +319,7 @@ def _awp_post_json(base_url: str, path: str, payload: dict[str, Any]) -> dict[st
     return _awp_request_json("POST", base_url, path, payload)
 
 
-def _registration_domain_from_registry(registry: dict[str, Any] | list[Any], chain_id: int = 8453) -> dict[str, Any]:
+def _registration_domain_from_registry(registry: dict[str, Any] | list[Any], chain_id: int = DEFAULT_EIP712_CHAIN_ID) -> dict[str, Any]:
     """Extract EIP-712 domain from registry API response.
 
     The registry.get RPC returns a list (multi-chain) or a single dict.
