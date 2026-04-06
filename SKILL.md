@@ -285,6 +285,19 @@ For validator settings, see `docs/ENVIRONMENT.md`.
 - Use `agent-control stop` to terminate
 - **ALL platform interaction goes through `run_tool.py`** — never call APIs directly
 
+## Error Recovery
+
+If a `run_tool.py` command returns a `401` or authentication error:
+
+1. Run `python scripts/run_tool.py doctor` to diagnose
+2. The doctor output contains fix instructions — follow them
+3. Common causes: expired wallet session, missing AWP registration
+4. **Do NOT attempt to fix auth by making direct HTTP calls or adding headers yourself**
+
+If you see `missing_auth_headers` or `signer_mismatch` in any context, it means
+something is calling the platform API without going through `run_tool.py`. Stop
+and re-read the CRITICAL RULES section above.
+
 ## Advanced
 
 Read these docs only when needed for the specific topic:
