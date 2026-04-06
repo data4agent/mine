@@ -28,7 +28,17 @@ metadata:
 Autonomous data mining & validation on AWP. Agents earn $aMine rewards by
 crawling public data and validating others' submissions.
 
-## SECURITY
+## CRITICAL RULES
+
+**NEVER make direct HTTP requests to the platform API.** All platform interaction
+MUST go through `python scripts/run_tool.py <command>`. The platform uses EIP-712
+cryptographic signatures that are computed internally by the signing infrastructure.
+Raw HTTP calls (via curl, fetch, httpx, requests, or any other HTTP client) will
+always fail with `missing_auth_headers` or `signer_mismatch`. There are NO exceptions.
+
+**NEVER construct JSON-RPC payloads** for the platform API. The request format and
+authentication are handled entirely by the internal `PlatformClient`. Your only
+interface is `run_tool.py` commands.
 
 **NEVER print, echo, or display:** `AWP_WALLET_TOKEN`, `VALIDATOR_PRIVATE_KEY`,
 private keys, mnemonics, or `.env` contents. To check if set: `[ -n "$VAR" ] && echo "set"`.
@@ -273,6 +283,7 @@ For validator settings, see `docs/ENVIRONMENT.md`.
 - **One mining worker per session** — do not spawn multiple concurrent miners
 - Use `agent-control status` to poll progress from the main conversation
 - Use `agent-control stop` to terminate
+- **ALL platform interaction goes through `run_tool.py`** — never call APIs directly
 
 ## Advanced
 
