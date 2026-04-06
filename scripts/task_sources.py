@@ -15,18 +15,6 @@ class SkipClaimedTask(Exception):
     pass
 
 
-def _is_placeholder_submission_id(submission_id: str) -> bool:
-    """Detect test/placeholder submissions to avoid useless requests and false worker errors."""
-    s = submission_id.strip().lower()
-    if not s:
-        return True
-    if s.startswith("sub_fake") or s.startswith("sub_test_") or s.startswith("sub_demo_"):
-        return True
-    if s.endswith("_not_created"):
-        return True
-    return False
-
-
 def optional_string(value: Any) -> str | None:
     if value in (None, ""):
         return None
@@ -37,19 +25,16 @@ def claimed_task_from_payload(
     task_type: str,
     payload: dict[str, Any],
     *,
-    client: Any | None = None,
+    client: Any | None = None,  # kept for backward compat, no longer used
 ) -> TaskEnvelope:
-    enriched_payload = enrich_task_payload(task_type, payload, client=client)
     task_id = str(payload.get("id") or "").strip()
     if not task_id:
         raise ValueError("task payload is missing id")
-    url = canonicalize_url(str(enriched_payload.get("url") or enriched_payload.get("target_url") or "").strip())
+    url = canonicalize_url(str(payload.get("url") or payload.get("target_url") or "").strip())
     if not url:
-        if task_type == "repeat_crawl":
-            raise SkipClaimedTask(f"repeat_crawl task {task_id} still has no valid url after enrichment")
-        raise ValueError(f"task {task_id} is missing url")
+        raise SkipClaimedTask(f"task {task_id} ({task_type}) has no url in claim response")
     platform, resource_type, _ = infer_platform_task(url)
-    metadata = dict(enriched_payload)
+    metadata = dict(payload)
     metadata.pop("id", None)
     metadata.pop("url", None)
     metadata.pop("target_url", None)
@@ -58,32 +43,13 @@ def claimed_task_from_payload(
         task_source="backend_claim",
         task_type=task_type,
         url=url,
-        dataset_id=optional_string(enriched_payload.get("dataset_id")),
-        platform=optional_string(enriched_payload.get("platform")) or platform,
-        resource_type=optional_string(enriched_payload.get("resource_type")) or resource_type,
+        dataset_id=optional_string(payload.get("dataset_id")),
+        platform=optional_string(payload.get("platform")) or platform,
+        resource_type=optional_string(payload.get("resource_type")) or resource_type,
         metadata=metadata,
     )
 
 
-def enrich_task_payload(task_type: str, payload: dict[str, Any], *, client: Any | None) -> dict[str, Any]:
-    enriched = dict(payload)
-    if enriched.get("url") or enriched.get("target_url"):
-        return enriched
-    submission_id = optional_string(enriched.get("submission_id"))
-    if task_type == "repeat_crawl" and submission_id and client is not None:
-        if _is_placeholder_submission_id(submission_id):
-            raise SkipClaimedTask(
-                f"repeat_crawl skipping placeholder submission_id={submission_id!r} (payload has no url)"
-            )
-        try:
-            submission = client.fetch_core_submission(submission_id)
-        except Exception as exc:
-            raise SkipClaimedTask(
-                f"repeat_crawl cannot resolve: submission {submission_id} fetch failed and payload has no url"
-            ) from exc
-        enriched.setdefault("dataset_id", submission.get("dataset_id"))
-        enriched.setdefault("url", submission.get("original_url") or submission.get("normalized_url"))
-    return enriched
 
 
 def infer_platform_task(url: str) -> tuple[str, str, dict[str, str]]:
