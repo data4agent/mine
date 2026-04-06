@@ -8,7 +8,7 @@ import secrets
 import subprocess
 import time
 from typing import Any
-from urllib.parse import parse_qsl, quote, urlsplit
+from urllib.parse import parse_qsl, quote_plus, urlsplit
 
 from Crypto.Hash import keccak
 from common import (
@@ -43,7 +43,7 @@ def _hash_query(url: str) -> str:
     split = urlsplit(url)
     pairs = []
     for key, value in parse_qsl(split.query, keep_blank_values=True):
-        pairs.append((quote(key, safe=""), quote(value, safe="")))
+        pairs.append((quote_plus(key), quote_plus(value)))
     if not pairs:
         return EMPTY_HASH
     pairs.sort()
@@ -67,10 +67,19 @@ def _canonical_body(body: Any, content_type: str) -> str | None:
         return None
     normalized_type = str(content_type or "").lower()
     if "application/json" in normalized_type:
-        return _canonical_json(body)
+        try:
+            return _canonical_json(body)
+        except (TypeError, ValueError):
+            # Canonicalization failed — fall back to raw bytes per spec
+            pass
     if isinstance(body, str):
         return body
-    return json.dumps(body, ensure_ascii=False)
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    try:
+        return json.dumps(body, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(body)
 
 
 def _hash_body(body: Any, content_type: str) -> str:

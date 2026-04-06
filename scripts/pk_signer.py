@@ -5,7 +5,7 @@ import json
 import secrets
 import time
 from typing import Any
-from urllib.parse import parse_qsl, quote, urlsplit
+from urllib.parse import parse_qsl, quote_plus, urlsplit
 
 from eth_account import Account
 from eth_account.messages import encode_typed_data
@@ -47,7 +47,7 @@ def _hash_query(url: str) -> str:
     split = urlsplit(url)
     pairs = []
     for key, value in parse_qsl(split.query, keep_blank_values=True):
-        pairs.append((quote(key, safe=""), quote(value, safe="")))
+        pairs.append((quote_plus(key), quote_plus(value)))
     if not pairs:
         return EMPTY_HASH
     pairs.sort()
@@ -71,10 +71,18 @@ def _hash_body(body: Any, content_type: str) -> str:
         return EMPTY_HASH
     normalized_type = str(content_type or "").lower()
     if "application/json" in normalized_type:
-        return _keccak_hex(_canonical_json(body))
+        try:
+            return _keccak_hex(_canonical_json(body))
+        except (TypeError, ValueError):
+            pass
     if isinstance(body, str):
         return _keccak_hex(body)
-    return _keccak_hex(json.dumps(body, ensure_ascii=False))
+    if isinstance(body, bytes):
+        return _keccak_hex(body)
+    try:
+        return _keccak_hex(json.dumps(body, ensure_ascii=False))
+    except (TypeError, ValueError):
+        return _keccak_hex(str(body))
 
 
 class PrivateKeySigner:

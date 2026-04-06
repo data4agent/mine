@@ -92,7 +92,7 @@ class EvaluationEngine:
 
         if not consistency_result["consistent"]:
             return EvaluationResult(
-                result="match",
+                result="mismatch",
                 verdict="rejected",
                 consistent=False,
                 score=0,
@@ -145,11 +145,11 @@ Major content differences (completely different text, missing core content, fabr
             result = parse_json_response(response)
             if not result or "match" not in result:
                 log.error("M0/M1 comparison parse failed: %s", response[:200])
-                return {"match": True, "reason": "comparison parse failed, defaulting to match"}
-            return {"match": result.get("match", True), "reason": result.get("reason", "")}
+                return {"match": False, "reason": "comparison parse failed, defaulting to mismatch"}
+            return {"match": result.get("match", False), "reason": result.get("reason", "")}
         except Exception as e:
             log.error("M0/M1 comparison failed: %s", str(e))
-            return {"match": True, "reason": f"comparison error: {e}, defaulting to match"}
+            return {"match": False, "reason": f"comparison error: {e}, defaulting to mismatch"}
 
     def _check_consistency(
         self, cleaned_data: str, structured_data: dict[str, Any]

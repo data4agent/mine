@@ -258,15 +258,15 @@ class ValidatorRuntime:
         structured_data = claim_data.get("structured_data") or {}
         schema_fields = claim_data.get("schema_fields") or []
 
-        # Fallback: fetch from server if claim payload is missing data
+        # Fallback: re-claim via HTTP to get full evaluation data
         if not cleaned_data or not structured_data:
-            task_details = self._platform.get_evaluation_task(task_id)
-            submission = self._platform.fetch_core_submission(submission_id)
-            cleaned_data = cleaned_data or str(submission.get("cleaned_data") or "")
-            repeat_cleaned_data = repeat_cleaned_data or str(task_details.get("repeat_cleaned_data") or "")
-            structured_data = structured_data or submission.get("structured_data") or {}
-            if not schema_fields:
-                schema_fields = self._extract_schema_fields(task_details)
+            claim_fallback = self._platform.claim_evaluation_task()
+            if isinstance(claim_fallback, dict):
+                cleaned_data = cleaned_data or str(claim_fallback.get("cleaned_data") or "")
+                repeat_cleaned_data = repeat_cleaned_data or str(claim_fallback.get("repeat_cleaned_data") or "")
+                structured_data = structured_data or claim_fallback.get("structured_data") or {}
+                if not schema_fields:
+                    schema_fields = claim_fallback.get("schema_fields") or []
 
         if not isinstance(structured_data, dict):
             structured_data = {}
