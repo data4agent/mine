@@ -326,6 +326,19 @@ class PlatformClient:
                 body = response.json()
                 if not isinstance(body, dict):
                     raise ValueError(f"unexpected response payload for {path}")
+                # Check success field in response envelope
+                if body.get("success") is False:
+                    error_obj = body.get("error", {})
+                    code = error_obj.get("code", "unknown") if isinstance(error_obj, dict) else "unknown"
+                    msg = error_obj.get("message", "") if isinstance(error_obj, dict) else str(error_obj)
+                    category = error_obj.get("category", "") if isinstance(error_obj, dict) else ""
+                    # Synthesize an HTTP error for consistent handling
+                    from httpx import Response as _Resp, Request as _Req
+                    fake_resp = response
+                    fake_resp.status_code = 404 if category == "not_found" else 400
+                    raise httpx.HTTPStatusError(
+                        f"{code}: {msg}", request=response.request, response=fake_resp
+                    )
                 return body
             except httpx.HTTPStatusError as error:
                 last_error = error
@@ -393,8 +406,13 @@ class PlatformClient:
         return self._request("POST", "/api/iam/v1/validator-applications", {})
 
     def get_my_validator_application(self) -> dict[str, Any]:
-        """GET /api/iam/v1/validator-applications/me"""
-        resp = self._request("GET", "/api/iam/v1/validator-applications/me", None)
+        """GET /api/iam/v1/validator-applications/me — returns {} if no application exists"""
+        try:
+            resp = self._request("GET", "/api/iam/v1/validator-applications/me", None)
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 404:
+                return {}
+            raise
         data = resp.get("data")
         return data if isinstance(data, dict) else {}
 
