@@ -16,8 +16,8 @@ from secret_refs import read_mine_config, resolve_secret_ref
 
 DEFAULT_PLATFORM_BASE_URL = "https://api.minework.net"
 DEFAULT_MINER_ID = "mine-agent"
-DEFAULT_EIP712_DOMAIN_NAME = "Platform Service"
-DEFAULT_EIP712_CHAIN_ID = 97
+DEFAULT_EIP712_DOMAIN_NAME = "aDATA"
+DEFAULT_EIP712_CHAIN_ID = 8453
 DEFAULT_EIP712_VERIFYING_CONTRACT = "0xAB41eE5C44D4568aD802D104A6dAB1Fe09C590D1"
 DEFAULT_SIGNATURE_SCHEME = "eip712-http-request"
 DEFAULT_SIGNATURE_CONFIG_PATH = "/api/public/v1/signature-config"
