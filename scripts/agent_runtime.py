@@ -840,12 +840,23 @@ class AgentWorker:
         # Miner sub-object takes precedence (new format), overrides top-level keys
         miner_info = source.get("miner")
         if isinstance(miner_info, dict):
-            for key in ("credit", "credit_score", "credit_tier", "epoch_submit_limit", "pow_probability"):
+            if "miner_id" in miner_info:
+                update["miner_id"] = miner_info["miner_id"]
+            for key in ("credit_tier", "epoch_submit_limit", "pow_probability"):
                 if key in miner_info:
                     update[key] = miner_info[key]
+            # Map miner.credit (integer) to credit_score for display consistency
+            if "credit" in miner_info:
+                credit_val = miner_info["credit"]
+                if isinstance(credit_val, (int, float)):
+                    update["credit_score"] = int(credit_val)
+                else:
+                    update["credit"] = credit_val
         credit = source.get("credit")
         if isinstance(credit, dict):
             update["credit"] = dict(credit)
+        elif isinstance(credit, (int, float)):
+            update["credit_score"] = int(credit)
         else:
             credit_update = {
                 key: source[key]

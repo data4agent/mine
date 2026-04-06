@@ -416,10 +416,11 @@ class PlatformClient:
         data = resp.get("data")
         return data if isinstance(data, dict) else {}
 
-    def report_evaluation(self, task_id: str, score: int, *, assignment_id: str) -> dict[str, Any]:
+    def report_evaluation(self, task_id: str, score: int, *, assignment_id: str, result: str = "match") -> dict[str, Any]:
         """POST /api/mining/v1/evaluation-tasks/{id}/report"""
         return self._request("POST", f"/api/mining/v1/evaluation-tasks/{task_id}/report", {
             "assignment_id": assignment_id,
+            "result": result,
             "score": score,
         })
 

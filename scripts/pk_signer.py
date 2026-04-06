@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import secrets
 import time
-from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlsplit
 
@@ -32,12 +31,14 @@ def _normalize_header_value(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
 
 
-def _keccak_hex(text: str) -> str:
-    if not text:
-        return EMPTY_HASH
+def _keccak_hex(data: str | bytes) -> str:
+    """keccak256 hash. For empty input, returns hash of empty bytes (not zero hash)."""
+    raw = data.encode("utf-8") if isinstance(data, str) else data
     digest = keccak.new(digest_bits=256)
-    digest.update(text.encode("utf-8"))
+    digest.update(raw)
     return "0x" + digest.hexdigest()
+
+KECCAK_EMPTY = _keccak_hex(b"")
 
 
 def _canonical_json(value: Any) -> str:
@@ -50,7 +51,7 @@ def _hash_query(url: str) -> str:
     for key, value in parse_qsl(split.query, keep_blank_values=True):
         pairs.append((quote(key, safe=""), quote(value, safe="")))
     if not pairs:
-        return EMPTY_HASH
+        return KECCAK_EMPTY
     pairs.sort()
     return _keccak_hex("&".join(f"{key}={value}" for key, value in pairs))
 
@@ -63,13 +64,13 @@ def _hash_headers(headers: dict[str, str], signed_headers: tuple[str, ...]) -> s
             continue
         lines.append(f"{header_name}:{_normalize_header_value(value)}")
     if not lines:
-        return EMPTY_HASH
+        return KECCAK_EMPTY
     return _keccak_hex("\n".join(lines))
 
 
 def _hash_body(body: Any, content_type: str) -> str:
     if body is None:
-        return EMPTY_HASH
+        return KECCAK_EMPTY
     normalized_type = str(content_type or "").lower()
     if "application/json" in normalized_type:
         return _keccak_hex(_canonical_json(body))
@@ -191,16 +192,14 @@ class PrivateKeySigner:
         )
         signature = self.sign_typed_data(typed_data)
         message = typed_data["message"]
-        issued_at = datetime.fromtimestamp(message["issuedAt"], tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        expires_at = datetime.fromtimestamp(message["expiresAt"], tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         return {
             "Content-Type": content_type,
             "X-Signer": self._address,
             "X-Signature": f"0x{signature}" if not signature.startswith("0x") else signature,
             "X-Nonce": nonce_str,
-            "X-Issued-At": issued_at,
-            "X-Expires-At": expires_at,
+            "X-Issued-At": str(message["issuedAt"]),
+            "X-Expires-At": str(message["expiresAt"]),
             "X-Chain-Id": str(chain_id),
             "X-Signed-Headers": ",".join(DEFAULT_SIGNED_HEADERS),
         }

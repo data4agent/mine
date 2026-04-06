@@ -251,38 +251,52 @@ class ValidatorRuntime:
             self._ws.send_ack_eval(assignment_id)
         log.info("Task claimed: assignment=%s task=%s http=%s", assignment_id, task_id, via_http)
 
-        # Step 2: Fetch task details and submission
-        task_details = self._platform.get_evaluation_task(task_id)
-        submission = self._platform.fetch_core_submission(submission_id)
+        # Step 2: Extract evaluation data from claim payload or fetch via HTTP
+        claim_data = msg.data
+        cleaned_data = str(claim_data.get("cleaned_data") or "")
+        repeat_cleaned_data = str(claim_data.get("repeat_cleaned_data") or "")
+        structured_data = claim_data.get("structured_data") or {}
+        schema_fields = claim_data.get("schema_fields") or []
 
-        cleaned_data = submission.get("cleaned_data") or submission.get("raw_data") or ""
-        structured_data = submission.get("structured_data") or {}
-        schema_fields = self._extract_schema_fields(task_details)
+        # Fallback: fetch from server if claim payload is missing data
+        if not cleaned_data or not structured_data:
+            task_details = self._platform.get_evaluation_task(task_id)
+            submission = self._platform.fetch_core_submission(submission_id)
+            cleaned_data = cleaned_data or str(submission.get("cleaned_data") or "")
+            repeat_cleaned_data = repeat_cleaned_data or str(task_details.get("repeat_cleaned_data") or "")
+            structured_data = structured_data or submission.get("structured_data") or {}
+            if not schema_fields:
+                schema_fields = self._extract_schema_fields(task_details)
 
-        # Step 3: Evaluate
-        result: EvaluationResult = self._engine.evaluate(
-            cleaned_data, structured_data, schema_fields
+        if not isinstance(structured_data, dict):
+            structured_data = {}
+        if not isinstance(schema_fields, list):
+            schema_fields = list(schema_fields) if schema_fields else []
+
+        # Step 3: Evaluate (M0 vs M1 comparison + quality scoring)
+        eval_result: EvaluationResult = self._engine.evaluate(
+            cleaned_data, structured_data, schema_fields,
+            repeat_cleaned_data=repeat_cleaned_data,
         )
         self._stats["tasks_evaluated"] += 1
 
-        # Step 4/5: Report based on consistency
-        if result.consistent:
-            self._platform.report_evaluation(task_id, result.score, assignment_id=assignment_id)
+        # Step 4: Report with result (match/mismatch) and score
+        self._platform.report_evaluation(
+            task_id, eval_result.score,
+            assignment_id=assignment_id,
+            result=eval_result.result,
+        )
+        if eval_result.result == "match":
             self._stats["tasks_accepted"] += 1
             log.info(
-                "Evaluation reported: task=%s score=%d verdict=%s",
-                task_id, result.score, result.verdict,
+                "Evaluation reported: task=%s result=%s score=%d",
+                task_id, eval_result.result, eval_result.score,
             )
         else:
-            idempotency_key = f"val-{self._validator_id}-{submission_id}-{uuid.uuid4().hex[:8]}"
-            self._platform.create_validation_result(
-                submission_id, "rejected", 0, result.reason, idempotency_key
-            )
-            self._platform.report_evaluation(task_id, 0, assignment_id=assignment_id)
             self._stats["tasks_rejected"] += 1
             log.info(
-                "Evaluation rejected: task=%s reason=%s",
-                task_id, result.reason[:120],
+                "Evaluation reported: task=%s result=%s reason=%s",
+                task_id, eval_result.result, eval_result.reason[:120],
             )
 
         # Step 6: Wait min_task_interval, then rejoin ready pool

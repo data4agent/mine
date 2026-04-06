@@ -16,9 +16,10 @@ DEFAULT_TIMEOUT = 120
 @dataclass
 class EvaluationResult:
     """Result of data evaluation."""
+    result: str  # "match" | "mismatch"
     verdict: str  # "accepted" | "rejected"
     consistent: bool
-    score: int  # 0-100, meaningful only when consistent=True
+    score: int  # 0-100, meaningful only when result="match"
     reason: str
 
 
@@ -54,29 +55,44 @@ class EvaluationEngine:
         cleaned_data: str | dict[str, Any],
         structured_data: dict[str, Any],
         schema_fields: list[str],
+        repeat_cleaned_data: str = "",
     ) -> EvaluationResult:
         """
-        Evaluate structured data quality.
+        Evaluate structured data quality per protocol.
+
+        Phase 0: Compare M0 (cleaned_data) vs M1 (repeat_cleaned_data) to determine match/mismatch.
+        Phase 1: If match, check consistency of structured_data against cleaned_data.
+        Phase 2: If consistent, score structured_data quality on 4 dimensions.
 
         Args:
-            cleaned_data: Original cleaned data (source of truth).
+            cleaned_data: Original miner submission (M0).
             structured_data: Miner-extracted structured data.
             schema_fields: List of field names from schema.
-
-        Returns:
-            EvaluationResult with verdict, consistency status, score, and reason.
+            repeat_cleaned_data: Re-crawled data from repeat crawl miner (M1).
         """
-        # Convert cleaned_data to string if it's a dict
         if isinstance(cleaned_data, dict):
             cleaned_data_str = json.dumps(cleaned_data, ensure_ascii=False, indent=2)
         else:
             cleaned_data_str = str(cleaned_data)
+
+        # Phase 0: M0 vs M1 comparison (match/mismatch)
+        if repeat_cleaned_data:
+            match_result = self._compare_m0_m1(cleaned_data_str, str(repeat_cleaned_data))
+            if not match_result["match"]:
+                return EvaluationResult(
+                    result="mismatch",
+                    verdict="rejected",
+                    consistent=False,
+                    score=0,
+                    reason=match_result.get("reason", "M0 and M1 data do not match"),
+                )
 
         # Phase 1: Consistency Check
         consistency_result = self._check_consistency(cleaned_data_str, structured_data)
 
         if not consistency_result["consistent"]:
             return EvaluationResult(
+                result="match",
                 verdict="rejected",
                 consistent=False,
                 score=0,
@@ -90,20 +106,50 @@ class EvaluationEngine:
             )
 
             return EvaluationResult(
+                result="match",
                 verdict="accepted",
                 consistent=True,
                 score=scoring_result["final_score"],
                 reason=scoring_result["notes"],
             )
         except Exception as e:
-            # If scoring fails, reject the data
             log.error("scoring phase failed: %s", str(e))
             return EvaluationResult(
+                result="match",
                 verdict="rejected",
-                consistent=True,  # Passed consistency but failed scoring
+                consistent=True,
                 score=0,
                 reason=f"scoring failed: {str(e)}",
             )
+
+    def _compare_m0_m1(self, m0_cleaned: str, m1_cleaned: str) -> dict[str, Any]:
+        """Phase 0: Compare original (M0) vs repeat crawl (M1) data for match/mismatch."""
+        prompt = f"""You are a data authenticity checker. Compare two independently crawled versions of the same URL.
+
+## Original crawl (M0)
+{m0_cleaned[:3000]}
+
+## Re-crawl (M1)
+{m1_cleaned[:3000]}
+
+## Task
+Determine if M0 and M1 represent the same content (match) or significantly different content (mismatch).
+Minor differences (timestamps, ads, layout changes) are normal and should be "match".
+Major content differences (completely different text, missing core content, fabricated data) are "mismatch".
+
+## Output (strict JSON only, no markdown)
+{{"match": true/false, "reason": "brief rationale"}}"""
+
+        try:
+            response = self.llm_call(prompt)
+            result = parse_json_response(response)
+            if not result or "match" not in result:
+                log.error("M0/M1 comparison parse failed: %s", response[:200])
+                return {"match": True, "reason": "comparison parse failed, defaulting to match"}
+            return {"match": result.get("match", True), "reason": result.get("reason", "")}
+        except Exception as e:
+            log.error("M0/M1 comparison failed: %s", str(e))
+            return {"match": True, "reason": f"comparison error: {e}, defaulting to match"}
 
     def _check_consistency(
         self, cleaned_data: str, structured_data: dict[str, Any]
