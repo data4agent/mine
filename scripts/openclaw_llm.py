@@ -3,14 +3,50 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("validator.llm")
 
 DEFAULT_OPENCLAW_CLI = "openclaw"
 DEFAULT_TIMEOUT = 120
+
+
+def _purge_openclaw_sessions() -> None:
+    """Delete all session transcripts to prevent context overflow.
+
+    OpenClaw session structure:
+      ~/.openclaw/agents/{agent_id}/sessions/
+        sessions.json   (index)
+        {uuid}.jsonl     (transcript — grows unbounded)
+        {uuid}.jsonl.lock
+
+    We purge ALL agent session dirs, not just a specific agent,
+    since `openclaw chat` may use different agent IDs.
+    """
+    agents_dir = Path.home() / ".openclaw" / "agents"
+    if not agents_dir.is_dir():
+        return
+    count = 0
+    for agent_dir in agents_dir.iterdir():
+        session_dir = agent_dir / "sessions"
+        if not session_dir.is_dir():
+            continue
+        for f in session_dir.iterdir():
+            try:
+                if f.name == "sessions.json":
+                    f.write_text("{}")
+                    count += 1
+                elif f.suffix in (".jsonl", ".lock"):
+                    f.unlink()
+                    count += 1
+            except OSError:
+                pass
+    if count > 0:
+        log.info("purged %d openclaw session files", count)
 
 
 def call_openclaw(
@@ -21,6 +57,7 @@ def call_openclaw(
 ) -> str:
     """
     Call OpenClaw CLI with a prompt and return the response.
+    Purges session files before each call to prevent context overflow.
 
     Args:
         prompt: The prompt to send to the LLM.
@@ -34,6 +71,8 @@ def call_openclaw(
         RuntimeError: If the CLI exits with non-zero status.
         subprocess.TimeoutExpired: If the call times out.
     """
+    _purge_openclaw_sessions()
+
     try:
         result = subprocess.run(
             [cli_path, "chat", "-m", prompt],
