@@ -366,6 +366,29 @@ class DatasetDiscoverySource:
         return [dataset for _score, dataset in scored]
 
 
+def _is_content_url(url: str) -> bool:
+    """Filter out obvious navigation/non-content pages that will fail dedup checks."""
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    path = parsed.path.lower().rstrip("/")
+
+    # Amazon: only product pages (/dp/ASIN or /gp/product/ASIN) are valid content
+    if "amazon." in host:
+        import re
+        if re.search(r"/(?:dp|gp/product)/[A-Z0-9]{10}", parsed.path, re.IGNORECASE):
+            return True
+        return False
+
+    # Wikipedia: only article pages (/wiki/ArticleName), not special pages
+    if "wikipedia.org" in host:
+        if path.startswith("/wiki/") and ":" not in path.split("/wiki/", 1)[-1]:
+            return True
+        return False
+
+    # Default: allow
+    return True
+
+
 def build_follow_up_items_from_discovery(parent: WorkItem, records: list[dict[str, Any]]) -> list[WorkItem]:
     items: list[WorkItem] = []
     for record in records:
@@ -373,6 +396,8 @@ def build_follow_up_items_from_discovery(parent: WorkItem, records: list[dict[st
         if not canonical_url:
             continue
         canonical_url = canonicalize_url(canonical_url)
+        if not _is_content_url(canonical_url):
+            continue
         platform = optional_string(record.get("platform")) or infer_platform_task(canonical_url)[0]
         resource_type = optional_string(record.get("resource_type")) or infer_platform_task(canonical_url)[1]
         items.append(
@@ -410,4 +435,7 @@ def _discovery_seed_url(domain: str) -> str:
         if host == "wikipedia.org":
             host = "en.wikipedia.org"
         return canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page")
+    # Amazon: redirect homepage to bestsellers page which links to actual products
+    if ("amazon.com" in host or "amazon.co.uk" in host or "amazon.de" in host) and normalized_path in {"", "/"}:
+        return canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/bestsellers/")
     return canonicalize_url(seed_url)
