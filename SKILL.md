@@ -178,6 +178,18 @@ cd {baseDir} && python scripts/run_tool.py validator-control stop
 cd {baseDir} && python scripts/run_tool.py validator-doctor
 ```
 
+## Debugging Background Workers
+
+Background mining/validation workers write all output (including errors) to log files.
+The `agent-control status` command automatically surfaces recent errors from the log.
+If you need more detail, the log path is in the `_internal.log_path` field of the status response:
+
+```bash
+cd {baseDir} && tail -50 output/agent-runs/<session_id>.log
+```
+
+Always check `agent-control status` first — it shows recent errors without needing to read the log directly.
+
 ## Error Recovery
 
 If any command returns a `401` or authentication error:

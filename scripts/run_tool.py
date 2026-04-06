@@ -1108,8 +1108,27 @@ def run_agent_control(action: str = "status") -> str:
         status = worker.check_status()
         is_running = background.get("running")
         session_id = background.get("session_id", "")
+        log_path = str(background.get("log_path") or "")
+
+        # Extract recent errors from background worker log
+        recent_errors: list[str] = []
+        if log_path:
+            try:
+                log_file = Path(log_path)
+                if log_file.exists():
+                    lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                    for line in lines[-50:]:
+                        lowered = line.lower()
+                        if any(kw in lowered for kw in ("error", "401", "403", "traceback", "failed", "exception")):
+                            recent_errors.append(line.strip())
+                    recent_errors = recent_errors[-10:]  # keep last 10
+            except Exception:
+                pass
+
         if is_running:
             user_msg = f"Mining is running in background (session: {session_id})."
+            if recent_errors:
+                user_msg += f" Warning: {len(recent_errors)} recent error(s) detected in worker log."
             user_acts = ["Pause mining", "Stop mining"]
             action_map = {
                 "Pause mining": "python scripts/run_tool.py agent-control pause",
@@ -1117,6 +1136,8 @@ def run_agent_control(action: str = "status") -> str:
             }
         else:
             user_msg = f"Session {session_id} has stopped."
+            if recent_errors:
+                user_msg += f" Last error: {recent_errors[-1][:120]}"
             user_acts = ["Start mining"]
             action_map = {"Start mining": "python scripts/run_tool.py agent-start"}
         return json.dumps({
@@ -1127,6 +1148,8 @@ def run_agent_control(action: str = "status") -> str:
                 "action_map": action_map,
                 "session": background,
                 "status": status,
+                "log_path": log_path,
+                "recent_errors": recent_errors,
             },
         }, ensure_ascii=False, indent=2)
 
