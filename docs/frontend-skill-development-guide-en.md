@@ -1,6 +1,6 @@
 # Frontend Skill Development Guide
 
-> **Version**: 2.0 (2026-04-06)  
+> **Version**: 2.1 (2026-04-06)  
 > **Base URL**: `http://<host>:8080`  
 > **Framework**: Gin (Go)
 
@@ -320,7 +320,28 @@ See Appendix A for which model each permission uses.
 
 ### 3.4 Address Registration
 
-Non-admin users must have their address registered on-chain before accessing protected APIs. Unregistered addresses receive a `403 address_not_registered` error. Once the identity has a role set locally (miner/validator), the RPC registration check is skipped for performance.
+Non-admin users must have their address registered on-chain before accessing protected APIs. Unregistered addresses receive a `428 address_not_registered` error with registration guidance (Base chainId=8453, registration URL). Once the identity has a role set locally (miner/validator), the RPC registration check is skipped for performance.
+
+**428 Response:**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "address_not_registered",
+    "category": "precondition",
+    "message": "address is not registered on-chain; please register on Base (chainId=8453) at https://api.awp.sh/v2 first, then retry",
+    "retryable": true,
+    "recoverable": true,
+    "recovery_strategy": "register_address",
+    "hint": "Visit https://api.awp.sh/v2 to register your address on Base (chainId=8453). After registration is confirmed on-chain, retry the request.",
+    "requirements": {
+      "chain_id": 8453,
+      "chain_name": "Base",
+      "registration_url": "https://api.awp.sh/v2"
+    }
+  }
+}
+```
 
 ---
 
@@ -346,8 +367,48 @@ All health endpoints are **public** (no authentication required).
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/signature-config` | Get EIP-712 signature configuration |
+| `GET` | `/protocol-info` | Protocol info (min_stake, chain, registration URL) |
+| `GET` | `/stats` | Network overview (online miners/validators, current epoch) |
 
-See [Section 1.1](#11-signature-configuration) for response details.
+See [Section 1.1](#11-signature-configuration) for signature-config response details.
+
+### 5.1 Protocol Info
+
+```
+GET /api/public/v1/protocol-info
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "min_stake": "10000000000000000000000",
+    "min_stake_formatted": "10000 AWP",
+    "chain_id": 8453,
+    "chain_name": "Base",
+    "registration_url": "https://api.awp.sh/v2"
+  }
+}
+```
+
+### 5.2 Network Stats
+
+```
+GET /api/public/v1/stats
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "online_miners": 42,
+    "online_validators": 8,
+    "current_epoch": "2026-04-06"
+  }
+}
+```
 
 ---
 
@@ -451,7 +512,33 @@ GET /api/iam/v1/validator-applications/me
 
 **Important**: This endpoint returns HTTP 200 even for not-found errors. Frontend must check `success` field, not HTTP status code.
 
-### 6.4 Review Validator Application (Admin)
+### 6.4 List Validator Applications (Admin)
+
+```
+GET /api/iam/v1/validator-applications
+```
+
+**Permission**: `iam.validator.list` (min role: `admin`)  
+**Query Parameters**: `page`, `page_size`, `sort`, `order`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "app-uuid",
+      "address": "0x1234...abcd",
+      "status": "approved",
+      "submitted_at": "2026-04-06T10:00:00Z",
+      "reviewed_at": "2026-04-06T10:00:00Z",
+      "reviewed_by": "auto"
+    }
+  ]
+}
+```
+
+### 6.5 Review Validator Application (Admin)
 
 ```
 POST /api/iam/v1/validator-applications/:id/review
@@ -705,6 +792,7 @@ POST /api/core/v1/submissions
 - `dedup_hash_in_cooldown` — Dedup hash in cooldown period
 - `url_already_occupied` — URL already occupied
 - `malformed` — Entry validation failed
+- `submission_too_frequent` — Submission interval too short (min_interval = max(avg_interval/5, 30s))
 - `dataset_not_active` — Dataset is not active
 - `internal_error` — Server error
 
@@ -734,8 +822,10 @@ The `challenge` field contains:
 GET /api/core/v1/submissions
 ```
 
-**Permission**: `core.submissions.read` (allowed: `miner` only)  
+**Permission**: `core.submissions.read` (min role: `member`)  
 **Query Parameters**: `page`, `page_size`, `sort`, `order`
+
+**Note**: Non-admin callers automatically see only their own submissions (the server filters by the caller's miner_id).
 
 **Response item (SubmissionQueryResponse):**
 ```json
@@ -762,7 +852,39 @@ GET /api/core/v1/submissions/:id
 
 **Permission**: `core.submissions.read`
 
-### 7.3 Deduplication
+**Note**: Non-admin callers can only view their own submissions. Attempting to view another miner's submission returns `403 ownership_required` with an LLM-friendly message that includes the owner and requester addresses.
+
+### 7.3 Dataset Stats (Public)
+
+```
+GET /api/core/v1/datasets/:id/stats
+```
+
+**Authentication**: Not required
+
+Returns submission statistics for a specific dataset.
+
+### 7.4 Current Epoch Shortcut (Public)
+
+```
+GET /api/core/v1/epochs/current
+```
+
+**Authentication**: Not required
+
+Returns the current epoch without needing to list all epochs.
+
+### 7.5 URL Occupancy Check (Public)
+
+```
+GET /api/core/v1/url/check?dataset_id=ds_posts&url=https://x.com/user/status/12345
+```
+
+**Authentication**: Not required
+
+Checks whether a URL is already occupied for a given dataset.
+
+### 7.6 Deduplication
 
 #### Check Dedup Hash
 
@@ -770,7 +892,7 @@ GET /api/core/v1/submissions/:id
 GET /api/core/v1/dedup/check?dataset_id=ds_posts&dedup_hash=abc123
 ```
 
-**Permission**: `core.dedup.check` (allowed: `miner` only)
+**Authentication**: Not required (public endpoint)
 
 **Response:**
 ```json
@@ -790,7 +912,7 @@ GET /api/core/v1/dedup/check?dataset_id=ds_posts&dedup_hash=abc123
 GET /api/core/v1/dedup-occupancies
 ```
 
-**Permission**: `core.dedup_occupancies.read`  
+**Authentication**: Not required (public endpoint)  
 **Query Parameters**: `page`, `page_size`, `sort`, `order`
 
 **Response item:**
@@ -811,7 +933,7 @@ GET /api/core/v1/dedup-occupancies
 GET /api/core/v1/dedup-occupancies/:datasetId/:dedupHash
 ```
 
-**Permission**: `core.dedup_occupancies.read`
+**Authentication**: Not required (public endpoint)
 
 #### Check Dedup Occupancy by Structured Data
 
@@ -819,7 +941,7 @@ GET /api/core/v1/dedup-occupancies/:datasetId/:dedupHash
 POST /api/core/v1/dedup-occupancies/check
 ```
 
-**Permission**: `core.dedup_occupancies.read`
+**Authentication**: Not required (public endpoint)
 
 **Request:**
 ```json
@@ -844,7 +966,7 @@ POST /api/core/v1/dedup-occupancies/check
 }
 ```
 
-### 7.4 Validation Results
+### 7.7 Validation Results
 
 #### Create Validation Result
 
@@ -877,7 +999,12 @@ POST /api/core/v1/validation-results
 GET /api/core/v1/validation-results
 ```
 
-**Permission**: `core.validation_results.read`
+**Permission**: `core.validation_results.read` (allowed: `miner`, `validator`, `admin`)
+
+**Note**: Results are auto-filtered by role:
+- **Miner**: sees validation results for their own submissions only
+- **Validator**: sees their own evaluations only
+- **Admin**: sees all results
 
 #### Get Validation Result
 
@@ -887,7 +1014,12 @@ GET /api/core/v1/validation-results/:id
 
 **Permission**: `core.validation_results.read`
 
-### 7.5 Epochs
+**Note**: Ownership is enforced per role:
+- **Miner**: can only view results for their own submissions (returns `403 ownership_required` otherwise)
+- **Validator**: can only view their own evaluations (returns `403 ownership_required` otherwise)
+- **Admin**: can view all results
+
+### 7.8 Epochs
 
 #### List Epochs (Public)
 
@@ -934,7 +1066,7 @@ POST /api/core/v1/epochs/:epochID/settle
 
 **Permission**: `core.epochs.settle` (min role: `admin`)
 
-### 7.6 Protocol Configuration (Admin)
+### 7.9 Protocol Configuration (Admin)
 
 #### List Protocol Configs
 
@@ -1137,13 +1269,13 @@ GET /api/mining/v1/miners/online
 }
 ```
 
-#### List Online Validators
+#### List Online Validators (Public)
 
 ```
 GET /api/mining/v1/validators/online
 ```
 
-**Permission**: `mining.validators.online.read` (min role: `admin`)
+**Authentication**: Not required
 
 **Response item:**
 ```json
@@ -1257,6 +1389,8 @@ POST /api/mining/v1/pow-challenges/:id/answer
     "id": "task-uuid",
     "epoch_id": "2026-04-06",
     "submission_id": "sub-uuid",
+    "dataset_id": "ds_posts",
+    "url": "https://x.com/user/status/12345",
     "step": 1,
     "assigned_miner_id": "0x1234...",
     "status": "in_progress",
@@ -1324,7 +1458,7 @@ POST /api/mining/v1/evaluation-tasks/claim
     "task_id": "eval-task-uuid",
     "assignment_id": "assign-uuid",
     "validator_id": "0x5678...",
-    "golden": false,
+    "dataset_id": "ds_posts",
     "cleaned_data": "Original miner submission content (M0)...",
     "repeat_cleaned_data": "Re-crawled content (M1) for comparison...",
     "structured_data": {
@@ -1332,7 +1466,12 @@ POST /api/mining/v1/evaluation-tasks/claim
       "content": "Original content...",
       "author": "user"
     },
-    "schema_fields": ["author", "content", "post_id"]
+    "schema_fields": ["author", "content", "post_id"],
+    "dataset_schema": {
+      "post_id": { "type": "string", "required": true },
+      "content": { "type": "string", "required": true },
+      "author": { "type": "string", "required": true }
+    }
   }
 }
 ```
@@ -1342,11 +1481,12 @@ POST /api/mining/v1/evaluation-tasks/claim
 | `task_id` | string | Evaluation task ID |
 | `assignment_id` | string | Assignment ID (use in report) |
 | `validator_id` | string | Validator address |
-| `golden` | bool | Whether this is a golden (benchmark) task |
+| `dataset_id` | string | Dataset ID |
 | `cleaned_data` | string | Original miner submission (M0) |
 | `repeat_cleaned_data` | string | Re-crawled data (M1) for comparison; empty if Step 1 |
 | `structured_data` | object | Original structured data |
 | `schema_fields` | string[] | Schema field names (sorted) |
+| `dataset_schema` | object | Full dataset schema definition |
 
 #### Report Evaluation Task
 
@@ -1486,13 +1626,13 @@ GET /api/mining/v1/epochs/:id/settlement-results
 
 ### 8.9 Participant Stats
 
-#### Get Miner Stats
+#### Get Miner Stats (Admin)
 
 ```
 GET /api/mining/v1/miners/:id/stats
 ```
 
-**Permission**: `mining.miners.stats.read`
+**Permission**: `mining.miners.stats.read` (min role: `admin`)
 
 **Response:**
 ```json
@@ -1512,13 +1652,13 @@ GET /api/mining/v1/miners/:id/stats
 }
 ```
 
-#### Get Validator Stats
+#### Get Validator Stats (Admin)
 
 ```
 GET /api/mining/v1/validators/:id/stats
 ```
 
-**Permission**: `mining.validators.stats.read`
+**Permission**: `mining.validators.stats.read` (min role: `admin`)
 
 **Response:**
 ```json
@@ -1547,6 +1687,51 @@ GET /api/mining/v1/validators/:id/stats
 }
 ```
 
+### 8.10 Self-Service Endpoints
+
+These endpoints allow miners and validators to view their own stats without admin privileges.
+
+#### Get My Miner Stats
+
+```
+GET /api/mining/v1/miners/me/stats
+```
+
+**Permission**: `mining.miner.stats.self` (allowed: `miner` only)
+
+Returns the same response shape as `GET /api/mining/v1/miners/:id/stats`, but automatically scoped to the authenticated miner.
+
+#### Get My Validator Stats
+
+```
+GET /api/mining/v1/validators/me/stats
+```
+
+**Permission**: `mining.validator.stats.self` (allowed: `validator` only)
+
+Returns the same response shape as `GET /api/mining/v1/validators/:id/stats`, but automatically scoped to the authenticated validator.
+
+#### Get My Submissions (Miner)
+
+```
+GET /api/mining/v1/miners/me/submissions
+```
+
+**Permission**: `mining.miner.submissions.self` (allowed: `miner` only)
+
+Returns submission summaries for the authenticated miner.
+
+**Response item:**
+```json
+{
+  "id": "sub-uuid",
+  "dataset_id": "ds_posts",
+  "miner_id": "0x1234...",
+  "epoch_id": "2026-04-06",
+  "status": "confirmed"
+}
+```
+
 ---
 
 ## 9. WebSocket Realtime Channel
@@ -1570,6 +1755,8 @@ GET /api/mining/v1/ws
     "id": "task-uuid",
     "epoch_id": "2026-04-06",
     "submission_id": "sub-uuid",
+    "dataset_id": "ds_posts",
+    "url": "https://x.com/user/status/12345",
     "step": 1,
     "assigned_miner_id": "0x1234...",
     "status": "pending",
@@ -1588,11 +1775,12 @@ GET /api/mining/v1/ws
     "task_id": "eval-task-uuid",
     "assignment_id": "assign-uuid",
     "validator_id": "0x5678...",
-    "golden": false,
+    "dataset_id": "ds_posts",
     "cleaned_data": "M0 content...",
     "repeat_cleaned_data": "M1 content...",
     "structured_data": { ... },
-    "schema_fields": ["field1", "field2"]
+    "schema_fields": ["field1", "field2"],
+    "dataset_schema": { ... }
   }
 }
 ```
@@ -1806,10 +1994,11 @@ rewardAmount = epochEmission * validatorRewardShare * (weight / totalValidatorWe
 | 201 | Created (POST with accepted entries) |
 | 400 | Bad request / validation error |
 | 401 | Authentication failed |
-| 403 | Forbidden / insufficient permissions |
+| 403 | Forbidden / insufficient permissions / ownership required |
 | 404 | Resource not found |
 | 409 | State conflict |
 | 422 | Validation error (semantic) |
+| 428 | Precondition required (e.g. address not registered) |
 | 429 | Rate limit exceeded |
 | 500 | Internal server error |
 | 503 | Service not ready / persistence required |
@@ -1825,8 +2014,13 @@ rewardAmount = epochEmission * validatorRewardShare * (weight / totalValidatorWe
 | `nonce_reused` | authentication | Nonce already used |
 | `forbidden` | permission | Insufficient role |
 | `role_suspended` | permission | Identity suspended |
-| `address_not_registered` | permission | Address not registered on-chain |
+| `address_not_registered` | precondition | Address not registered on-chain (HTTP 428, includes registration guidance for Base chainId=8453) |
 | `insufficient_stake` | permission | Stake below minimum |
+| `ownership_required` | permission | Caller does not own the requested resource (includes owner/requester addresses in message) |
+| `submission_too_frequent` | rate_limit | Submission interval too short; min_interval = max(avg_interval/5, 30s) |
+| `registration_backend_unavailable` | dependency | On-chain registration check backend is down |
+| `identity_store_unavailable` | dependency | Identity store is unavailable |
+| `nonce_store_unavailable` | dependency | Nonce store is unavailable |
 | `invalid_request` | validation | Malformed request |
 | `invalid_review_decision` | validation | Invalid decision value |
 | `dataset_inactive` | state_conflict | Dataset not active |
@@ -1880,7 +2074,13 @@ rewardAmount = epochEmission * validatorRewardShare * (weight / totalValidatorWe
 
 7. Leave Ready Pool (optional)
    POST /api/mining/v1/miners/unready
+
+8. View Own Stats
+   GET /api/mining/v1/miners/me/stats
+   GET /api/mining/v1/miners/me/submissions
 ```
+
+**Submission Rate Limit**: Submissions are rate-limited per miner. The minimum interval is `max(avg_interval/5, 30s)`. If exceeded, the preflight returns `allowed: false` with `reason: "submission_too_frequent"`.
 
 ### 15.2 Key Display Fields
 
@@ -1928,6 +2128,9 @@ rewardAmount = epochEmission * validatorRewardShare * (weight / totalValidatorWe
 
 7. Leave Ready Pool (optional)
    POST /api/mining/v1/validators/unready
+
+8. View Own Stats
+   GET /api/mining/v1/validators/me/stats
 ```
 
 ### 16.2 Evaluation Logic
@@ -1937,7 +2140,7 @@ When evaluating a claimed task:
 1. **Compare M0 vs M1**: Check if `cleaned_data` (original submission) and `repeat_cleaned_data` (re-crawled data) represent the same content
 2. **Determine result**: `"match"` if authentic, `"mismatch"` if data appears fabricated or significantly different
 3. **Score quality**: Rate the structured_data quality (0-100) based on completeness, accuracy, and adherence to schema_fields
-4. **Golden tasks**: When `golden=true`, the system knows the expected score; your accuracy contributes to your reputation
+4. **Golden tasks**: Some tasks are golden (benchmark) tasks where the system knows the expected score; your accuracy contributes to your reputation. Golden status is not exposed in the claim response
 
 ### 16.3 Key Display Fields
 
@@ -1996,10 +2199,11 @@ GET /api/mining/v1/miners/:id/stats          # Miner details
 GET /api/mining/v1/validators/:id/stats      # Validator details
 ```
 
-### 17.5 Validator Application Review
+### 17.5 Validator Application Management
 
 ```
-POST /api/iam/v1/validator-applications/:id/review
+GET  /api/iam/v1/validator-applications           # List all applications
+POST /api/iam/v1/validator-applications/:id/review # Review application
 ```
 
 ### 17.6 Task Management
@@ -2020,6 +2224,7 @@ GET  /api/mining/v1/refresh-tasks            # List refresh tasks
 | `iam.me.read` | min: member | `GET /api/iam/v1/me` |
 | `iam.validator.apply` | min: member | `POST /api/iam/v1/validator-applications`, `GET .../me` |
 | `iam.validator.review` | min: admin | `POST /api/iam/v1/validator-applications/:id/review` |
+| `iam.validator.list` | min: admin | `GET /api/iam/v1/validator-applications` |
 | `core.datasets.create` | min: member | `POST /api/core/v1/datasets` |
 | `core.datasets.review` | min: admin | `POST .../datasets/:id/review` |
 | `core.datasets.status` | min: admin | `POST .../datasets/:id/status` |
@@ -2027,18 +2232,20 @@ GET  /api/mining/v1/refresh-tasks            # List refresh tasks
 | `core.datasets.pause` | min: admin | `POST .../datasets/:id/pause` |
 | `core.datasets.archive` | min: admin | `POST .../datasets/:id/archive` |
 | `core.datasets.reject` | min: admin | `POST .../datasets/:id/reject` |
-| `core.submissions.read` | allowed: miner, admin | `GET .../submissions`, `GET .../submissions/:id` |
+| `core.submissions.read` | min: member | `GET .../submissions`, `GET .../submissions/:id` (auto-filtered by miner_id for non-admin; ownership enforced on /:id) |
 | `core.submissions.create` | allowed: miner | `POST .../submissions` |
-| `core.dedup.check` | allowed: miner | `GET .../dedup/check` |
-| `core.dedup_occupancies.read` | allowed: miner | `GET/POST .../dedup-occupancies/...` |
-| `core.validation_results.read` | allowed: validator | `GET .../validation-results/...` |
+| _(removed)_ `core.dedup.check` | **public** (no auth) | `GET .../dedup/check` |
+| _(removed)_ `core.dedup_occupancies.read` | **public** (no auth) | `GET/POST .../dedup-occupancies/...` |
+| `core.url_occupancies.read` | allowed: miner | `GET .../url-occupancies/...` |
+| `core.validation_results.read` | allowed: miner, validator, admin | `GET .../validation-results/...` (auto-filtered by role; ownership enforced on /:id) |
 | `core.validation_results.create` | allowed: validator | `POST .../validation-results` |
 | `core.epochs.read` | min: admin | `GET .../epochs` (protected), `GET .../epochs/:id` |
 | `core.epochs.settle` | min: admin | `POST .../epochs/:epochID/settle` |
 | `core.protocol_configs.read` | min: admin | `GET .../protocol-configs/...` |
 | `core.protocol_configs.write` | min: admin | `PUT/DELETE .../protocol-configs/...` |
 | `mining.heartbeat` | allowed: member, miner, validator | `POST /api/mining/v1/heartbeat` |
-| `mining.miners.online.read` | **public** (no auth) | `GET .../miners/online` |
+| `mining.miners.online.read` | min: admin | `GET .../miners/online` (policy exists but endpoint is public) |
+| `mining.validators.online.read` | min: admin | `GET .../validators/online` (policy exists but endpoint is public) |
 | `mining.miner.ready` | allowed: miner | `POST .../miners/ready` |
 | `mining.miner.unready` | allowed: miner | `POST .../miners/unready` |
 | `mining.pow.answer` | allowed: miner | `POST .../pow-challenges/:id/answer` |
@@ -2054,7 +2261,6 @@ GET  /api/mining/v1/refresh-tasks            # List refresh tasks
 | `mining.repeat.list` | min: admin | `GET .../repeat-crawl-tasks/...` |
 | `mining.validator.ready` | allowed: validator | `POST .../validators/ready` |
 | `mining.validator.unready` | allowed: validator | `POST .../validators/unready` |
-| `mining.validators.online.read` | min: admin | `GET .../validators/online` |
 | `mining.evaluation.create` | min: admin | `POST .../evaluation-tasks` |
 | `mining.evaluation.claim` | allowed: validator | `POST .../evaluation-tasks/claim` |
 | `mining.evaluation.report` | allowed: validator | `POST .../evaluation-tasks/:id/report` |
@@ -2065,12 +2271,39 @@ GET  /api/mining/v1/refresh-tasks            # List refresh tasks
 | `mining.epoch.settlement.read` | **public** (no auth) | `GET .../epochs/:id/settlement-results` |
 | `mining.miners.stats.read` | min: admin | `GET .../miners/:id/stats` |
 | `mining.validators.stats.read` | min: admin | `GET .../validators/:id/stats` |
+| `mining.miner.stats.self` | allowed: miner | `GET .../miners/me/stats` |
+| `mining.validator.stats.self` | allowed: validator | `GET .../validators/me/stats` |
+| `mining.miner.submissions.self` | allowed: miner | `GET .../miners/me/submissions` |
 | `mining.ws` | min: member | `GET .../ws` |
 
+**Public endpoints (no authentication required):**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/public/v1/signature-config` | EIP-712 signature configuration |
+| `GET /api/public/v1/protocol-info` | Protocol info (min_stake, chain, registration URL) |
+| `GET /api/public/v1/stats` | Network overview (online miners/validators, current epoch) |
+| `GET /api/core/v1/datasets` | List datasets |
+| `GET /api/core/v1/datasets/:id` | Get dataset |
+| `GET /api/core/v1/datasets/:id/stats` | Dataset submission stats |
+| `GET /api/core/v1/epochs` | List epochs |
+| `GET /api/core/v1/epochs/current` | Current epoch shortcut |
+| `GET /api/core/v1/epochs/:epochID` | Get epoch |
+| `GET /api/core/v1/dedup/check` | Check dedup hash |
+| `GET /api/core/v1/url/check` | URL occupancy check |
+| `GET /api/core/v1/dedup-occupancies` | List dedup occupancies |
+| `GET /api/core/v1/dedup-occupancies/:datasetId/:dedupHash` | Get dedup occupancy |
+| `POST /api/core/v1/dedup-occupancies/check` | Check dedup occupancy by structured data |
+| `GET /api/mining/v1/miners/online` | List online miners |
+| `GET /api/mining/v1/validators/online` | List online validators |
+| `GET /api/mining/v1/epochs/:id/snapshot` | Epoch snapshot |
+| `GET /api/mining/v1/epochs/:id/settlement-results` | Epoch settlement results |
+
 **Notes**:
-- Public endpoints (marked **public** above) are registered without authentication middleware — the policy store entry exists but is not enforced.
 - `allowed:` permissions use **exact role matching** — admin does NOT inherit. Only the listed roles can access.
 - `min:` permissions use **role hierarchy** — admin inherits all lower roles.
+- Ownership enforcement: `submissions/:id` and `validation-results/:id` return `403 ownership_required` for non-admin callers viewing resources they do not own. Error messages include owner/requester addresses for LLM-friendly debugging.
+- Internal errors now expose the actual error message for LLM-friendly diagnostics.
 
 ---
 

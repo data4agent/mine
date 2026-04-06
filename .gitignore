@@ -38,3 +38,6 @@ local_tasks/
 # ── Docs not needed in production ──
 docs/TEST_REPORT_*.md
 docs/superpowers/
+
+mine-workspace/
+example-worker.py
