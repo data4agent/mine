@@ -282,7 +282,7 @@ class DatasetDiscoverySource:
         prioritized = self._prioritize_datasets(datasets, min_interval_seconds=min_interval_seconds)
 
         for dataset in prioritized:
-            dataset_id = optional_string(dataset.get("id"))
+            dataset_id = optional_string(dataset.get("dataset_id")) or optional_string(dataset.get("id"))
             if not dataset_id:
                 continue
             for domain in _dataset_domains(dataset):
@@ -328,7 +328,7 @@ class DatasetDiscoverySource:
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for dataset in datasets:
-            dataset_id = optional_string(dataset.get("id"))
+            dataset_id = optional_string(dataset.get("dataset_id")) or optional_string(dataset.get("id"))
             if not dataset_id:
                 continue
 
