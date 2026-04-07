@@ -34,10 +34,17 @@ crawler/tests/
 test_data/
 test_output/
 local_tasks/
+evals/
+mine-workspace/
+example-worker.py
+pyproject.toml
+requirements-dev.txt
 
 # ── Docs not needed in production ──
 docs/TEST_REPORT_*.md
 docs/superpowers/
-
-mine-workspace/
-example-worker.py
+docs/frontend-skill-development-guide-en.md
+docs/SCHEMA_LAYERING_4PLATFORMS.md
+docs/Subnet_protocol_v2.0.md
+docs/FIELD_ALIGNMENT_GUIDE.md
+docs/OPENCLAW_HOST_INTEGRATION.md
