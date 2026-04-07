@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -761,7 +762,7 @@ def _try_auto_renew_session(wallet_bin: str) -> str:
     try:
         token = _ensure_wallet_session(wallet_bin, duration_seconds=WALLET_SESSION_DURATION_SECONDS)
         if token:
-            logger.info("Auto-renewed expired wallet session on startup")
+            logging.getLogger("common").info("Auto-renewed expired wallet session on startup")
         return token
     except Exception:
         return ""

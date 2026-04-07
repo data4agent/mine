@@ -377,7 +377,7 @@ class PlatformClient:
                             renewed_session = True
                             continue
                 # Retryable server error or explicitly marked as retryable
-                if (status_code >= 500 or error_retryable) and attempt < max_attempts:
+                if (status_code >= 500 or status_code == 429 or error_retryable) and attempt < max_attempts:
                     time.sleep(0.5 * attempt)
                     continue
                 raise
