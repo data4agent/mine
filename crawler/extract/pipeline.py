@@ -19,6 +19,7 @@ from markdownify import markdownify as to_markdown
 
 from .chunking.hybrid_chunker import HybridChunker, _estimate_tokens
 from .crawl4ai_extract import extract_html_with_crawl4ai
+from .trafilatura_extract import extract_with_trafilatura
 from .html_parse import parse_html
 from .fit_content import FitContentReducer
 from .main_content import _extract_sections
@@ -171,6 +172,29 @@ def _generate_doc_id(url: str, platform: str) -> str:
     """Generate a deterministic doc_id from URL and platform."""
     hash_input = f"{platform}:{url}".encode("utf-8")
     return hashlib.sha256(hash_input).hexdigest()[:16]
+
+
+def _extract_sections_from_main_content(text: str) -> list[ContentSection]:
+    """Build sections from plain text extracted by Trafilatura."""
+    sections: list[ContentSection] = []
+    if not text.strip():
+        return sections
+    # Split on double newlines as paragraph boundaries
+    paragraphs = [p.strip() for p in re.split(r"\n{2,}", text) if p.strip()]
+    if not paragraphs:
+        return sections
+    # Single section for the whole content
+    sections.append(ContentSection(
+        heading_text="Main",
+        heading_level=1,
+        section_path=["Main"],
+        html="",
+        text=text,
+        markdown="",
+        char_offset_start=0,
+        char_offset_end=len(text),
+    ))
+    return sections
 
 
 def _build_main_content_from_html(html: str, selector_used: str) -> MainContent:
@@ -580,7 +604,11 @@ class ExtractPipeline:
         url: str,
         doc_id: str,
     ) -> ExtractedDocument:
-        """Branch 2: HTML -> crawl4ai extract -> compact -> chunk -> structured."""
+        """Branch 2: HTML content extraction.
+
+        Strategy: Trafilatura (SOTA) first for article/wiki/blog content,
+        then crawl4ai fallback for structured sites or when Trafilatura yields nothing.
+        """
         html = (
             fetch_result.get("text")
             or fetch_result.get("html")
@@ -588,28 +616,37 @@ class ExtractPipeline:
         )
         original_size = len(html)
 
-        # Step 1: Use crawl4ai as the primary HTML extraction layer.
-        extracted_html = extract_html_with_crawl4ai(
-            html,
-            url,
-            platform=platform,
-            resource_type=resource_type,
-        )
+        # Step 1a: Try Trafilatura for high-quality content extraction.
+        # Best for articles, wiki pages, blogs, news — extracts only the main body.
+        traf_result = extract_with_trafilatura(html, url)
 
-        # Step 2: Build a chunkable main-content view from crawl4ai-selected HTML.
-        main_content = _build_main_content_from_html(
-            extracted_html.html or extracted_html.cleaned_html,
-            extracted_html.selector_used,
-        )
-        reduced_content = self.reducer.reduce(main_content)
-        if not reduced_content.text and (extracted_html.text or extracted_html.markdown):
-            reduced_content = MainContent(
-                html=extracted_html.html,
-                text=extracted_html.text,
-                markdown=extracted_html.markdown,
-                sections=main_content.sections,
-                selector_used=extracted_html.selector_used,
+        if traf_result and traf_result.text and len(traf_result.text) > 100:
+            main_content = MainContent(
+                html=traf_result.html or "",
+                text=traf_result.text,
+                markdown=traf_result.markdown,
+                sections=_extract_sections_from_main_content(traf_result.text),
+                selector_used="trafilatura",
             )
+            reduced_content = self.reducer.reduce(main_content)
+        else:
+            # Step 1b: Fallback to crawl4ai for structured sites (Amazon, LinkedIn, etc.)
+            extracted_html = extract_html_with_crawl4ai(
+                html, url, platform=platform, resource_type=resource_type,
+            )
+            main_content = _build_main_content_from_html(
+                extracted_html.html or extracted_html.cleaned_html,
+                extracted_html.selector_used,
+            )
+            reduced_content = self.reducer.reduce(main_content)
+            if not reduced_content.text and (extracted_html.text or extracted_html.markdown):
+                reduced_content = MainContent(
+                    html=extracted_html.html,
+                    text=extracted_html.text,
+                    markdown=extracted_html.markdown,
+                    sections=main_content.sections,
+                    selector_used=extracted_html.selector_used,
+                )
 
         # Step 3: Chunk content
         chunks = self.chunker.chunk(reduced_content, doc_id=doc_id)
