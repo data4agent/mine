@@ -5,21 +5,6 @@ from typing import Any
 from crawler.discovery.contracts import CrawlOptions, DiscoveryCandidate
 
 
-def normalize_fetched_payload(fetched: Any) -> dict[str, Any]:
-    if isinstance(fetched, dict):
-        return fetched
-
-    to_legacy_dict = getattr(fetched, "to_legacy_dict", None)
-    if callable(to_legacy_dict):
-        payload = to_legacy_dict()
-        if isinstance(payload, dict):
-            return payload
-
-    raise TypeError(
-        "expected fetch payload to be a dict or an object with to_legacy_dict()"
-    )
-
-
 async def crawl_generic(
     *,
     seeds: list[DiscoveryCandidate],

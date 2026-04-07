@@ -18,13 +18,15 @@ def fetch_with_camoufox(url: str, storage_state_path: str | None = None) -> dict
         storage_state = resolve_storage_state_path(storage_state_path)
         with Camoufox(headless=True) as browser:
             context = browser.new_context(storage_state=storage_state)
-            page = context.new_page()
-            page.goto(url, wait_until="domcontentloaded")
-            html = page.content()
-            screenshot = page.screenshot(type="png")
-            if storage_state_path is not None:
-                persist_storage_state(storage_state_path, context.storage_state())
-            context.close()
+            try:
+                page = context.new_page()
+                page.goto(url, wait_until="domcontentloaded")
+                html = page.content()
+                screenshot = page.screenshot(type="png")
+                if storage_state_path is not None:
+                    persist_storage_state(storage_state_path, context.storage_state())
+            finally:
+                context.close()
         return {
             "url": url,
             "html": html,

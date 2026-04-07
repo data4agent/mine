@@ -596,7 +596,7 @@ def _extract_wikipedia(record: dict, fetched: dict) -> dict:
             "title": title,
             "content_type": fetched.get("content_type"),
             "source_url": fullurl,
-            "page_id": "" if page_id in (None, "") else str(page_id),
+            "page_id": None if page_id in (None, "") else str(page_id),
             "pageprops": pageprops,
         },
         "plain_text": plain_text,
@@ -604,7 +604,7 @@ def _extract_wikipedia(record: dict, fetched: dict) -> dict:
         "document_blocks": [],
         "structured": {
             "categories": categories,
-            "page_id": "" if page_id in (None, "") else str(page_id),
+            "page_id": None if page_id in (None, "") else str(page_id),
             "article_creation_date": article_creation_date,
             "protection_level": protection_level,
             "references": extlinks,

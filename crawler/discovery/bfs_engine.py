@@ -181,7 +181,7 @@ async def run_bfs_expand(
 
                 if not visited.get(child_url_key):
                     scheduler.enqueue(FrontierEntry(
-                        frontier_id=f"expand-{expansions_run}-{len(discovered_by_type)}",
+                        frontier_id=f"expand-{expansions_run}-{child_url_key}",
                         job_id="bfs-expand",
                         url_key=child_url_key,
                         canonical_url=normalized.canonical_url,

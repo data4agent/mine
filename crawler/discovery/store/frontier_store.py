@@ -70,6 +70,23 @@ class InMemoryFrontierStore:
         self._save()
         return retry
 
+    def prune_terminal(self, keep: int = 500) -> int:
+        """Remove oldest DONE/DEAD entries when they exceed *keep* count."""
+        terminal = [
+            e for e in self.entries.values()
+            if e.status in (FrontierStatus.DONE, FrontierStatus.DEAD)
+        ]
+        if len(terminal) <= keep:
+            return 0
+        # Sort by frontier_id (creation order) and remove oldest excess
+        terminal.sort(key=lambda e: e.frontier_id)
+        to_remove = terminal[: len(terminal) - keep]
+        for entry in to_remove:
+            del self.entries[entry.frontier_id]
+        if to_remove:
+            self._save()
+        return len(to_remove)
+
     def promote_retryable(self, now_iso: str) -> int:
         """Move retryable entries back to QUEUED.  Return count promoted."""
         retryable = [

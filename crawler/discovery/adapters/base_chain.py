@@ -64,7 +64,7 @@ class BaseChainDiscoveryAdapter(BaseDiscoveryAdapter):
         if not callable(fetch_fn) or not candidate.canonical_url:
             return {"candidate": candidate, "fetched": {}, "spawned_candidates": []}
 
-        fetched = fetch_fn(candidate)
+        fetched = fetch_fn(candidate.canonical_url)
         if hasattr(fetched, "__await__"):
             fetched = await fetched
         if not isinstance(fetched, dict):

@@ -245,7 +245,7 @@ def _fill_enrichment(records_path: Path, responses_path: Path) -> int:
                         record["enrichment"]["enrichment_results"][field_group] = filled.to_dict()
                         # Also update enriched_fields
                         for field in filled.fields:
-                            record["enrichment"]["enriched_fields"][field.field_name] = field.value
+                            record["enrichment"].setdefault("enriched_fields", {})[field.field_name] = field.value
                         filled_count += 1
 
         updated_records.append(record)

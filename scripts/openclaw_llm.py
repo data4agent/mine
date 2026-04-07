@@ -193,11 +193,15 @@ def call_openclaw(
             remaining = int(_rate_limit_until - time.monotonic())
             raise RuntimeError(f"rate limit backoff, {remaining}s remaining")
 
+        # Snapshot module-level state under the lock to avoid TOCTOU
+        agent_id = _agent_id
+        bin_path = _openclaw_bin
+
     _purge_agent_sessions()
 
     try:
         proc = subprocess.Popen(
-            [_openclaw_bin, "agent", "--agent", _agent_id, "--message", prompt],
+            [bin_path, "agent", "--agent", agent_id, "--message", prompt],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

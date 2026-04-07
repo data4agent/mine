@@ -19,7 +19,6 @@ from common import (
 )
 
 from eip712_primitives import (
-    EMPTY_HASH,
     DEFAULT_SIGNED_HEADERS,
     keccak_hex as _keccak_hex,
     hash_query as _hash_query,

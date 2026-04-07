@@ -161,7 +161,7 @@ class ValidatorWSClient:
             return
 
         self._reconnect_attempt += 1
-        delay = min(2 ** self._reconnect_attempt, self._max_backoff)
+        delay = min(2 ** max(self._reconnect_attempt - 1, 0), self._max_backoff)
         log.info(
             "Reconnecting in %ds (attempt %d)...",
             delay,

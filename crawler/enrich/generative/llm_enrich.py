@@ -134,7 +134,7 @@ async def _enrich_via_benchmark_skill(
 
     import asyncio
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     response: EnrichResponse = await loop.run_in_executor(None, lambda: call_agent(full_prompt, timeout=timeout))
     return EnrichResult(
         content=response.content,

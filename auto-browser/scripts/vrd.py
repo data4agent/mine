@@ -637,11 +637,17 @@ def take_screenshot(label: str = "") -> dict:
     ts   = int(time.time())
     safe = re.sub(r"[^a-zA-Z0-9_-]", "_", label or "shot")
     path = str(SSHOT_DIR / f"{ts}_{safe}.png")
-    for cmd in [
-        f"scrot -D :{dn} {path}",
-        f"DISPLAY=:{dn} import -window root {path}",
-    ]:
-        if _sh(cmd).returncode == 0 and os.path.isfile(path):
+    attempts = [
+        (["scrot", "-D", f":{dn}", path], None),
+        (["import", "-window", "root", path], {"DISPLAY": f":{dn}"}),
+    ]
+    for cmd_args, extra_env in attempts:
+        run_env = dict(os.environ, **(extra_env or {}))
+        try:
+            r = subprocess.run(cmd_args, capture_output=True, text=True, timeout=10, env=run_env)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+        if r.returncode == 0 and os.path.isfile(path):
             return {"ok": True, "path": path, "filename": os.path.basename(path), "ts": ts, "label": label}
     return {"ok": False, "error": "Need scrot or ImageMagick", "ts": ts}
 
@@ -775,7 +781,8 @@ def check_health() -> dict:
 def _symlink_to_path(cmd_name: str) -> bool:
     """Symlink commands visible only in login shells into /usr/local/bin to fix PATH."""
     if _cmd_ok(cmd_name): return True
-    r = _sh(f"bash -lc 'which {cmd_name} 2>/dev/null'")
+    if not re.match(r"^[a-zA-Z0-9_-]+$", cmd_name): return False
+    r = subprocess.run(["bash", "-lc", f"which {cmd_name} 2>/dev/null"], capture_output=True, text=True, timeout=10)
     real = r.stdout.strip()
     if not real or not os.path.isfile(real): return False
     target = f"/usr/local/bin/{cmd_name}"
@@ -1264,11 +1271,10 @@ class _Handler(BaseHTTPRequestHandler):
         env, ok = _auth(qs)
         body    = self._body() if method in ("POST", "DELETE") else {}
 
-        # Public endpoints (gate only — guide and continue require auth)
-        if path == "/gate" and method == "GET" and not ok:
-            with _lock: return self._ok(dict(_gate))
         if not ok:
             return self._err(403, "forbidden")
+        if path == "/gate" and method == "GET":
+            with _lock: return self._ok(dict(_gate))
         if path == "/guide" and method == "GET":
             with _lock: return self._ok(dict(_guide))
 

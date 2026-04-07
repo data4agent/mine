@@ -240,7 +240,7 @@ def normalize_fulfillment(
     if (
         "ships from amazon" in combined
         or "sold by amazon" in combined
-        or "delivery" in combined and "by amazon" in combined
+        or ("delivery" in combined and "by amazon" in combined)
     ):
         result["fulfillment_type"] = "AMZ"
         result["prime_eligible"] = True

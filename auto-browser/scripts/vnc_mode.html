@@ -531,15 +531,21 @@ iframe { width:100%; height:100%; border:0; display:block; background:#000; }
   function loadPresets() {
     if (!apiBase || !token) return;
     apiFetch('/presets').then(function (d) {
-      var html = Object.keys(d).map(function (k) {
-        return '<button class="preset-btn" data-mode="' + k + '">'
-          + '<span>' + (d[k].label || k) + '</span>'
-          + '<span class="preset-vp">' + d[k].viewport + '</span>'
-          + '</button>';
-      }).join('');
-      document.getElementById('presetList').innerHTML = html;
-      document.querySelectorAll('.preset-btn').forEach(function (btn) {
-        btn.onclick = function (e) { e.stopPropagation(); doSwitch(this.dataset.mode); };
+      var container = document.getElementById('presetList');
+      container.textContent = '';
+      Object.keys(d).forEach(function (k) {
+        var btn = document.createElement('button');
+        btn.className = 'preset-btn';
+        btn.dataset.mode = k;
+        var labelSpan = document.createElement('span');
+        labelSpan.textContent = d[k].label || k;
+        var vpSpan = document.createElement('span');
+        vpSpan.className = 'preset-vp';
+        vpSpan.textContent = d[k].viewport || '';
+        btn.appendChild(labelSpan);
+        btn.appendChild(vpSpan);
+        btn.onclick = function (e) { e.stopPropagation(); doSwitch(k); };
+        container.appendChild(btn);
       });
       updateActivePreset(_curMode);
     }).catch(function () {});

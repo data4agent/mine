@@ -71,22 +71,24 @@ class WorkerStateStore:
         remaining: list[dict[str, Any]] = []
         for entry in payload:
             available_at = int(entry.get("available_at") or 0)
-            if available_at <= current and len(due) < limit:
+            if available_at <= current and not entry.get("in_flight") and len(due) < limit:
+                # Mark as in-flight rather than removing — cleared by caller via clear_auth_pending
+                entry["in_flight"] = True
                 due.append(entry)
-            else:
-                remaining.append(entry)
+            remaining.append(entry)
         self._write_json(self._auth_pending_path, remaining)
         return [WorkItem.from_dict(dict(entry.get("item") or {})) for entry in due]
 
     def enqueue_submit_pending(self, item: WorkItem, payload: dict[str, Any]) -> None:
         entries = self._read_list(self._submit_pending_path)
-        entries.append({
+        merged = {str(e.get("item_id") or ""): e for e in entries if e.get("item_id")}
+        merged[item.item_id] = {
             "item_id": item.item_id,
             "item": item.to_dict(),
             "payload": payload,
             "updated_at": int(time.time()),
-        })
-        self._write_json(self._submit_pending_path, entries)
+        }
+        self._write_json(self._submit_pending_path, list(merged.values()))
 
     def load_submit_pending(self) -> list[dict[str, Any]]:
         return self._read_list(self._submit_pending_path)
@@ -256,7 +258,7 @@ class WorkerStateStore:
         if isinstance(stop_conditions, list):
             merged["stop_conditions"] = list(stop_conditions)
         elif isinstance(stop_conditions, dict):
-            merged["stop_conditions"] = dict(stop_conditions)
+            merged["stop_conditions"] = []
         else:
             merged["stop_conditions"] = []
         for key in ("last_summary", "settlement", "reward_summary"):
@@ -390,7 +392,7 @@ class ValidatorStateStore:
             path.unlink()
 
     def _write_json(self, path: Path, data: dict[str, Any]) -> None:
-        temp_path = path.with_suffix(".tmp")
+        temp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}-{time.time_ns()}")
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         temp_path.replace(path)

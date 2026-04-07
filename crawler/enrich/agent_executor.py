@@ -80,7 +80,7 @@ class AgentEnrichmentExecutor:
             responses = await self._execute_serial(pending_groups)
 
         for group, response in zip(pending_groups, responses):
-            filled = self._pipeline.fill_pending_agent_result(group.field_group, response)
+            filled = self._pipeline.fill_pending_agent_result(group.field_group, response, document=document)
             self._update_field_group_result(result, group.field_group, filled)
 
         return result

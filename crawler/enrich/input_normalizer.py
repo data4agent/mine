@@ -135,7 +135,7 @@ def _apply_platform_aliases(document: dict[str, Any]) -> None:
     if platform == "linkedin" and resource_type == "job":
         _setdefault_from_candidates(document, "job_title", "title", "headline")
         _setdefault_from_candidates(document, "job_description", "description", "plain_text")
-        _setdefault_from_candidates(document, "location", "job_location", "location")
+        _setdefault_from_candidates(document, "location", "job_location", "city")
         _setdefault_from_candidates(document, "posted_date", "date_posted", "published_at", "listed_at")
         _setdefault_from_candidates(document, "job_summary", "summary")
         _setdefault_from_candidates(document, "required_skills_seed", "skills", "required_skills")

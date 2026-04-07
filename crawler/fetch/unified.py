@@ -20,25 +20,30 @@ from .engine import FetchEngine
 # Global engine instance for sync interface
 _engine: FetchEngine | None = None
 _engine_session_root: Path | None = None
+import threading as _threading
+_engine_thread_lock = _threading.Lock()
 
 
-def _get_or_create_engine(session_root: Path) -> FetchEngine:
+async def _get_or_create_engine(session_root: Path) -> FetchEngine:
     """Get or create a FetchEngine instance for the given session root."""
     global _engine, _engine_session_root
 
-    if _engine is not None and _engine_session_root == session_root:
-        return _engine
+    # Use threading lock since asyncio.run() creates new loops per call
+    with _engine_thread_lock:
+        if _engine is not None and _engine_session_root == session_root:
+            return _engine
 
-    # Close old engine if session root changed
-    if _engine is not None:
+        old_engine = _engine
+        _engine = FetchEngine(session_root)
+        _engine_session_root = session_root
+
+    # Close old engine outside the lock to avoid blocking
+    if old_engine is not None:
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_engine.close())
-        except RuntimeError:
-            asyncio.run(_engine.close())
+            await old_engine.close()
+        except Exception:
+            pass
 
-    _engine = FetchEngine(session_root)
-    _engine_session_root = session_root
     return _engine
 
 
@@ -55,7 +60,7 @@ async def _unified_fetch_async(
     session_root = Path(storage_state_path).parent if storage_state_path else Path.cwd() / ".sessions"
     session_root.mkdir(parents=True, exist_ok=True)
 
-    engine = _get_or_create_engine(session_root)
+    engine = await _get_or_create_engine(session_root)
 
     result = await engine.fetch(
         url=url,

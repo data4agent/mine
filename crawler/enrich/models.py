@@ -122,7 +122,8 @@ class EnrichedRecord:
         """Merge a FieldGroupResult into this record."""
         self.enrichment_results[result.field_group] = result
         for enriched_field in result.fields:
-            self.enriched_fields[enriched_field.field_name] = enriched_field.value
+            if enriched_field.value is not None:
+                self.enriched_fields[enriched_field.field_name] = enriched_field.value
 
 
 @dataclass(frozen=True, slots=True)

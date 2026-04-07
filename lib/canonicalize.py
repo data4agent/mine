@@ -27,16 +27,16 @@ def canonicalize_url(url: str) -> str:
         if not key.lower().startswith("utm_") and key.lower() not in TRACKING_QUERY_KEYS
     ]
 
-    if host.endswith("en.wikipedia.org") and path.startswith("/wiki/"):
+    if host == "en.wikipedia.org" and path.startswith("/wiki/"):
         return urlunsplit(("https", host, path, "", ""))
-    if host.endswith("arxiv.org") and path.startswith("/abs/"):
+    if (host == "arxiv.org" or host.endswith(".arxiv.org")) and path.startswith("/abs/"):
         return urlunsplit(("https", "arxiv.org", "/" + path.strip("/"), "", ""))
-    if host.endswith("www.linkedin.com"):
+    if host == "www.linkedin.com":
         normalized = "/" + path.strip("/")
         if normalized.startswith(("/in/", "/company/")) and not normalized.endswith("/"):
             normalized += "/"
         return urlunsplit(("https", "www.linkedin.com", normalized or "/", "", ""))
-    if host.endswith("www.amazon.com"):
+    if host == "www.amazon.com":
         segments = [segment for segment in path.split("/") if segment]
         if "dp" in segments:
             dp_index = segments.index("dp")

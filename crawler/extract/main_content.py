@@ -108,6 +108,7 @@ def _extract_sections(container: Tag) -> list[ContentSection]:
             )
         )
 
+    last_search_offset = 0
     for heading in headings:
         level = int(heading.name[1])
         heading_text = heading.get_text(strip=True)
@@ -142,11 +143,12 @@ def _extract_sections(container: Tag) -> list[ContentSection]:
             heading_style="ATX", bullets="-",
         )
 
-        # Compute char offsets in full_text
-        offset_start = full_text.find(heading_text)
+        # Compute char offsets in full_text (search from last known position to handle duplicates)
+        offset_start = full_text.find(heading_text, last_search_offset)
         if offset_start < 0:
-            offset_start = 0
+            offset_start = last_search_offset
         offset_end = offset_start + len(heading_text) + len(section_text)
+        last_search_offset = offset_end
 
         sections.append(
             ContentSection(

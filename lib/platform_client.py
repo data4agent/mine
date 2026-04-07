@@ -165,11 +165,11 @@ class PlatformClient:
         try:
             resp = self._request("POST", "/api/core/v1/dedup-occupancies/check", dedup_payload)
         except PlatformApiError as api_err:
-            if api_err.status_code in (400, 404, 422):
+            if api_err.status_code in (404, 422):
                 return {}
             raise
         except httpx.HTTPStatusError as error:
-            if error.response.status_code in (400, 404, 422):
+            if error.response.status_code in (404, 422):
                 return {}
             raise
         else:
@@ -256,8 +256,14 @@ class PlatformClient:
             return
         try:
             dataset = self.fetch_dataset(dataset_id)
-        except Exception:
-            return
+        except PlatformApiError as api_err:
+            if api_err.status_code == 404:
+                return  # dataset gone, let server handle it
+            raise
+        except httpx.HTTPStatusError as http_err:
+            if http_err.response.status_code == 404:
+                return
+            raise
         patterns = self._coerce_url_patterns(dataset)
         for entry in entries:
             if not isinstance(entry, dict):
@@ -280,7 +286,7 @@ class PlatformClient:
     @staticmethod
     def _regex_matches(pattern: str, value: str) -> bool:
         try:
-            return re.match(pattern, value) is not None
+            return re.fullmatch(pattern, value) is not None
         except re.error:
             return False
 
@@ -323,13 +329,14 @@ class PlatformClient:
                     msg = error_obj.get("message", "") if isinstance(error_obj, dict) else str(error_obj)
                     category = error_obj.get("category", "") if isinstance(error_obj, dict) else ""
                     status_map = {"not_found": 404, "authentication": 401, "permission": 403, "validation": 422, "state_conflict": 409, "precondition": 428, "rate_limit": 429, "internal": 500, "dependency": 503}
-                    raise PlatformApiError(code, msg, category, status_map.get(category, 400), response)
+                    raise PlatformApiError(code, msg, category, status_map.get(category, 500), response)
                 return body
             except PlatformApiError as api_err:
                 last_error = api_err
                 status_code = api_err.status_code
-                if status_code >= 500 and attempt < max_attempts:
-                    time.sleep(0.5 * attempt)
+                if (status_code >= 500 or status_code == 429) and attempt < max_attempts:
+                    backoff = 0.5 * attempt if status_code != 429 else max(2.0, 1.0 * attempt)
+                    time.sleep(backoff)
                     continue
                 raise
             except httpx.HTTPStatusError as error:
@@ -378,11 +385,20 @@ class PlatformClient:
                             continue
                 # Retryable server error or explicitly marked as retryable
                 if (status_code >= 500 or status_code == 429 or error_retryable) and attempt < max_attempts:
-                    time.sleep(0.5 * attempt)
+                    if status_code == 429:
+                        # Respect Retry-After header or use longer backoff for rate limits
+                        retry_after = error.response.headers.get("Retry-After")
+                        if retry_after and retry_after.isdigit():
+                            backoff = min(float(retry_after), 60.0)
+                        else:
+                            backoff = max(2.0, 1.0 * attempt)
+                    else:
+                        backoff = 0.5 * attempt
+                    time.sleep(backoff)
                     continue
                 raise
         if last_error is not None:
-            raise last_error
+            raise last_error from last_error.__cause__
         raise RuntimeError(f"request failed for {method} {path}")
 
     # === Validator Methods ===
@@ -419,11 +435,10 @@ class PlatformClient:
         data = resp.get("data")
         return data if isinstance(data, dict) else {}
 
-    def report_evaluation(self, task_id: str, score: int, *, assignment_id: str, result: str = "match") -> dict[str, Any]:
+    def report_evaluation(self, task_id: str, score: int, *, assignment_id: str) -> dict[str, Any]:
         """POST /api/mining/v1/evaluation-tasks/{id}/report"""
         return self._request("POST", f"/api/mining/v1/evaluation-tasks/{task_id}/report", {
             "assignment_id": assignment_id,
-            "result": result,
             "score": score,
         })
 

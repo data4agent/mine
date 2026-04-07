@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 from urllib.parse import urlencode
 
 from crawler.fetch.api_backend import fetch_api_get, fetch_api_post

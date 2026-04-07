@@ -64,6 +64,7 @@ def _write_checkpoint(
     frontier_store: InMemoryFrontierStore,
     visited_store: InMemoryVisitedStore,
 ) -> None:
+    frontier_store.prune_terminal()
     checkpoint_store.put(
         "discover-crawl",
         Checkpoint(
@@ -188,15 +189,29 @@ async def _run_discover_crawl_graph(
         async with page_lock:
             claimed_pages -= 1
 
+    empty_streak_limit = 3
+
     async def _worker(worker_index: int) -> None:
+        empty_streak = 0
         while await _claim_page_slot():
             leased = await scheduler.lease_next(f"worker-{worker_index}")
             if leased is None:
                 await _release_page_slot()
-                break
+                empty_streak += 1
+                if empty_streak >= empty_streak_limit:
+                    break
+                # Other workers may spawn new entries; wait briefly and retry
+                await asyncio.sleep(0.2)
+                continue
+            empty_streak = 0
 
             candidate = candidates_by_frontier_id.get(leased.frontier_id)
-            if candidate is None or not candidate.canonical_url or candidate.hop_depth > options.max_depth:
+            if candidate is None or not candidate.canonical_url:
+                scheduler.complete(leased.frontier_id)
+                await _release_page_slot()
+                continue
+            if candidate.hop_depth > options.max_depth:
+                _put_visit_record(visited_store, candidate, crawl_state="depth_exceeded")
                 scheduler.complete(leased.frontier_id)
                 await _release_page_slot()
                 continue
@@ -248,7 +263,13 @@ async def _run_discover_crawl_graph(
                 _write_checkpoint(checkpoint_store, frontier_store, visited_store)
                 await _release_page_slot()
                 continue
-            fetched = _normalize_fetched_payload(crawl_result.get("fetched", {}))
+            try:
+                fetched = _normalize_fetched_payload(crawl_result.get("fetched", {}))
+            except TypeError:
+                scheduler.report_failure(leased.frontier_id, TypeError("invalid fetched payload"))
+                _put_visit_record(visited_store, candidate, crawl_state="failed")
+                await _release_page_slot()
+                continue
             async with page_lock:
                 records.append(_build_record(candidate, fetched))
             _put_visit_record(visited_store, candidate, crawl_state="done", fetched=fetched)
@@ -262,7 +283,7 @@ async def _run_discover_crawl_graph(
                     continue
                 if _candidate_exists(candidates_by_frontier_id, spawned):
                     continue
-                frontier_id = f"{leased.frontier_id}:{len(candidates_by_frontier_id)}"
+                frontier_id = f"{leased.frontier_id}:{_url_key(spawned)}"
                 candidates_by_frontier_id[frontier_id] = spawned
                 scheduler.enqueue(
                     FrontierEntry(
@@ -294,10 +315,6 @@ async def _call_fetch(fetch_fn: Any, candidate: DiscoveryCandidate) -> dict[str,
         fetched = fetch_fn(candidate.canonical_url)
     if inspect.isawaitable(fetched):
         fetched = await fetched
-    if not isinstance(fetched, dict):
-        fetched = fetch_fn(candidate.canonical_url)
-        if inspect.isawaitable(fetched):
-            fetched = await fetched
     return _normalize_fetched_payload(fetched)
 
 

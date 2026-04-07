@@ -437,7 +437,7 @@ class ExtractPipeline:
                 tmp_path = Path(tmp.name)
             try:
                 pdf_result = extract_pdf_with_pymupdf4llm(str(tmp_path), title=title)
-            except RuntimeError as exc:
+            except Exception as exc:
                 pdf_result = {}
                 parser_metadata = {"pdf_extraction_error": str(exc)}
             finally:
@@ -598,7 +598,7 @@ class ExtractPipeline:
             quality=quality,
             cleaned_html="",
             parser_metadata=parser_metadata,
-            binary_artifacts={"raw_pdf": pdf_bytes} if pdf_url and 'pdf_bytes' in locals() else {},
+            binary_artifacts={"raw_pdf": pdf_bytes} if pdf_bytes else {},
         )
 
     def _extract_from_html(
@@ -660,8 +660,8 @@ class ExtractPipeline:
         optimized_text, pre_extracted = optimize_for_llm(
             reduced_content.text, pre_extracted=pre_extracted,
         )
-        optimized_markdown, _ = optimize_for_llm(
-            reduced_content.markdown,
+        optimized_markdown, pre_extracted = optimize_for_llm(
+            reduced_content.markdown, pre_extracted=pre_extracted,
         )
         reduced_content = MainContent(
             html=reduced_content.html,

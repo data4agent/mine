@@ -517,7 +517,7 @@ class EnrichPipeline:
 
         result = FieldGroupResult(
             field_group=field_group,
-            status="success" if any(f.value is not None for f in fields) else "failed",
+            status="success" if any(f.value is not None for f in fields) else "empty",
             fields=fields,
         )
         if document is not None:
@@ -548,9 +548,11 @@ class EnrichPipeline:
             return
         if result.status in {"failed", "skipped", "pending_agent"}:
             return
-        # Don't cache partial results — any None field value blocks re-extraction
-        if any(f.value is None for f in result.fields):
-            return
+        # Cache "empty" results (LLM legitimately found no data) to avoid re-enrichment
+        if result.status == "empty":
+            pass  # allow caching
+        elif any(f.value is None for f in result.fields):
+            return  # partial results — don't cache to allow re-extraction
         try:
             self._cache_path(document, result.field_group).write_text(
                 json.dumps(result.to_dict(), ensure_ascii=False, indent=2),

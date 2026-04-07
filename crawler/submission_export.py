@@ -19,11 +19,11 @@ def build_submission_request(
     for record in records:
         url = str(record.get("canonical_url") or record.get("url") or "").strip()
         if not url:
-            raise ValueError("record is missing canonical_url")
+            continue  # skip records with no URL
 
         crawl_timestamp = str(record.get("crawl_timestamp") or generated_at or "").strip()
         if not crawl_timestamp:
-            raise ValueError(f"record {url} is missing crawl_timestamp and no generated_at fallback was provided")
+            continue  # skip records with no timestamp
 
         structured_data = _build_structured_data(record)
 
@@ -82,6 +82,6 @@ def _load_generated_at_fallback(input_path: Path) -> str | None:
 def _build_structured_data(record: dict[str, Any]) -> dict[str, Any]:
     try:
         return flatten_record_for_schema(record)
-    except ValueError:
+    except (ValueError, OSError):
         structured_data = record.get("structured")
         return structured_data if isinstance(structured_data, dict) else {}

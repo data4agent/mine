@@ -81,12 +81,16 @@ class CrawlerRunner:
             argv.extend(["--max-depth", str(self.config.discovery_max_depth), "--max-pages", str(self.config.discovery_max_pages)])
         elif self.default_backend:
             argv.extend(["--backend", self.default_backend])
-        completed = subprocess.run(
-            argv,
-            cwd=self.config.crawler_root,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=self.config.crawler_root,
+                capture_output=True,
+                text=True,
+                timeout=getattr(self.config, "crawl_timeout_seconds", 300),
+            )
+        except subprocess.TimeoutExpired:
+            raise SkipItemError(f"crawler subprocess timed out for {item.url}")
         records_path = output_dir / "records.jsonl"
         errors_path = output_dir / "errors.jsonl"
         records = read_jsonl_file(records_path) if records_path.exists() else []
@@ -493,8 +497,9 @@ class AgentWorker:
                 return f"stopped after {iteration} iterations"
             except Exception as e:
                 print(f"[worker] iteration {iteration} error: {e}")
-                consecutive_empty = 0
-                wait = min(interval * 2, 120)
+                # Don't reset consecutive_empty — let back-off accumulate on errors
+                consecutive_empty += 1
+                wait = min(interval * (2 ** min(consecutive_empty, 4)), 300)
                 self.state_store.save_session({"last_wait_seconds": wait})
 
             if max_iterations != 0 and iteration >= max_iterations:
@@ -651,7 +656,11 @@ class AgentWorker:
                     retryable_item = _clone_item(item, resume=True)
                     self.state_store.enqueue_backlog([retryable_item])
                     continue
-                self._handle_result(item, result, summary)
+                try:
+                    self._handle_result(item, result, summary)
+                except Exception as handle_exc:
+                    summary.errors.append(f"handle_result failed for {item.item_id}: {handle_exc}")
+                    self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=result.output_dir)])
 
     def _process_items_per_dataset(self, items: list[WorkItem], summary: WorkerIterationSummary) -> None:
         """Process items grouped by dataset_id, each group with independent concurrency."""
@@ -664,7 +673,7 @@ class AgentWorker:
         # Process all dataset groups in parallel, each with its own executor
         def process_group(group_items: list[WorkItem]) -> list[tuple[WorkItem, CrawlerRunResult | Exception]]:
             results: list[tuple[WorkItem, CrawlerRunResult | Exception]] = []
-            with ThreadPoolExecutor(max_workers=max(1, self.config.max_parallel)) as executor:
+            with ThreadPoolExecutor(max_workers=max(1, min(len(group_items), self.config.max_parallel))) as executor:
                 futures = {executor.submit(self._run_item, item): item for item in group_items}
                 for future in as_completed(futures):
                     item = futures[future]
@@ -697,7 +706,11 @@ class AgentWorker:
                         retryable_item = _clone_item(item, resume=True)
                         self.state_store.enqueue_backlog([retryable_item])
                     else:
-                        self._handle_result(item, result, summary)
+                        try:
+                            self._handle_result(item, result, summary)
+                        except Exception as handle_exc:
+                            summary.errors.append(f"handle_result failed for {item.item_id}: {handle_exc}")
+                            self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=getattr(result, 'output_dir', None))])
 
     def _run_item(self, item: WorkItem) -> CrawlerRunResult:
         command = self.crawl_mode_planner.choose_command(item)
@@ -774,7 +787,8 @@ class AgentWorker:
             except httpx.HTTPStatusError as exc:
                 if self._maybe_handle_rate_limit(item, exc, summary, output_dir=result.output_dir):
                     return
-                raise
+                summary.errors.append(f"HTTP error for {item.item_id}: {exc.response.status_code}")
+                self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=result.output_dir)])
 
         if item.dataset_id:
             try:

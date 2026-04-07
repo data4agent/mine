@@ -11,6 +11,10 @@ STATE="$HOME/.openclaw/vrd-data/state.json"
 
 MODE="${1:-timeout}"
 TIMEOUT="${2:-300}"
+if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then
+  echo "[ERROR] TIMEOUT must be a number" >&2
+  exit 1
+fi
 
 TOKEN=$(python3 -c "import sys,json; print(json.load(open(sys.argv[1])).get('SWITCH_TOKEN',''))" "$STATE" 2>/dev/null || echo "")
 

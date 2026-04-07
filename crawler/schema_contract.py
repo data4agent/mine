@@ -19,7 +19,7 @@ from crawler.normalize.amazon_normalizers import (
 Record = dict[str, Any]
 Resolver = Callable[[Record], Any]
 
-SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schema(1)"
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "schema"
 
 SCHEMA_NAME_BY_PLATFORM_RESOURCE: dict[tuple[str, str], str] = {
     ("amazon", "product"): "amazon_products",
@@ -417,14 +417,12 @@ def _extract_company_from_headline(headline: str | None) -> str | None:
                     company = company.split(sep)[0].strip()
             if company:
                 return company
-    # Pattern: "Title, Company" (but skip if it looks like location)
+    # Pattern: "Title, Company"
     if ", " in text:
         parts = text.split(", ")
         if len(parts) >= 2:
             candidate = parts[1].strip()
-            # Skip if it looks like a location or another title
-            location_words = {"inc", "llc", "ltd", "corp", "company", "co", "foundation", "university", "institute"}
-            if any(w in candidate.lower() for w in location_words):
+            if candidate:
                 return candidate.split(" and ")[0].strip()
     return None
 
@@ -547,39 +545,6 @@ def _get_voyager_profile(record: Record) -> dict[str, Any]:
     elements = data.get("identityDashProfilesByMemberIdentity", {}).get("elements", [])
     return elements[0] if elements else {}
 
-
-def _linkedin_is_influencer(record: Record) -> bool | None:
-    """Check if the profile is a LinkedIn influencer."""
-    profile = _get_voyager_profile(record)
-    value = profile.get("influencer")
-    if isinstance(value, bool):
-        return value
-    # Also check for top voice badge
-    top_voice = profile.get("topVoiceBadge")
-    if top_voice:
-        return True
-    return None
-
-
-def _linkedin_is_premium(record: Record) -> bool | None:
-    """Check if the profile has LinkedIn Premium."""
-    profile = _get_voyager_profile(record)
-    value = profile.get("premium")
-    if isinstance(value, bool):
-        return value
-    badge = profile.get("showPremiumSubscriberBadge")
-    if isinstance(badge, bool):
-        return badge
-    return None
-
-
-def _linkedin_is_creator(record: Record) -> bool | None:
-    """Check if the profile is a content creator."""
-    profile = _get_voyager_profile(record)
-    value = profile.get("creator")
-    if isinstance(value, bool):
-        return value
-    return None
 
 
 def _linkedin_profile_language(record: Record) -> str | None:
@@ -1284,11 +1249,7 @@ FIELD_RESOLVERS: dict[str, Resolver] = {
         record.get("posts_count"),
         _structured(record).get("posts_count"),
     )),
-    # Additional Wikipedia fields
-    "categories": lambda record: _first(
-        record.get("categories"),
-        _structured(record).get("categories"),
-    ),
+    # Additional Wikipedia fields (categories already defined above via _amazon_categories)
     "links_count": lambda record: _to_int(_first(
         record.get("links_count"),
         _structured(record).get("links_count"),
@@ -1333,12 +1294,7 @@ FIELD_RESOLVERS: dict[str, Resolver] = {
         record.get("protection_level"),
         _structured(record).get("protection_level"),
     ),
-    "images": lambda record: _first(
-        record.get("images"),
-        _structured(record).get("images"),
-        record.get("image_urls"),
-        _structured(record).get("image_urls"),
-    ),
+    # images already defined above — removed duplicate
     "infobox_raw": lambda record: _first(
         record.get("infobox_raw"),
         _structured(record).get("infobox_raw"),

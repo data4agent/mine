@@ -52,14 +52,11 @@ def _normalize_storage_state(platform: str, payload: Any) -> dict[str, Any]:
         cookie_header = payload.get("cookie_header") or payload.get("Cookie") or payload.get("cookie")
         if isinstance(cookie_header, str):
             return _cookie_header_to_storage_state(platform, cookie_header)
-
-    if isinstance(payload, dict) and "cookies" in payload:
-        return {
-            "cookies": list(payload.get("cookies", [])),
-            "origins": list(payload.get("origins", [])),
-        }
-
-    if isinstance(payload, dict):
+        if "cookies" in payload:
+            return {
+                "cookies": list(payload.get("cookies", [])),
+                "origins": list(payload.get("origins", [])),
+            }
         return _cookie_mapping_to_storage_state(platform, payload)
 
     raise ValueError("cookies file must contain a cookie list or Playwright storage state")

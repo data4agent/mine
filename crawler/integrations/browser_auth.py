@@ -432,6 +432,13 @@ class AutoBrowserAuthBridge:
                 return True
         except Exception:
             return False
+        finally:
+            # Clean up probe file if session was not successfully moved
+            if probe_path.exists():
+                try:
+                    probe_path.unlink()
+                except OSError:
+                    pass
         return False
 
     def _session_has_login_cookie_or_none(self, platform: str, session_path: Path) -> bool:

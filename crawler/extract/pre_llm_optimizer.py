@@ -174,8 +174,8 @@ def _smart_truncate(text: str, max_chars: int) -> str:
     result = []
     char_count = 0
 
-    for line in lines:
-        if char_count + len(line) + 1 > max_chars:
+    for i, line in enumerate(lines):
+        if char_count + len(line) + 1 > max_chars and i > 0:
             break
         result.append(line)
         char_count += len(line) + 1

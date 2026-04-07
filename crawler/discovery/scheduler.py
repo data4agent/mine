@@ -46,17 +46,20 @@ class DiscoveryScheduler:
         # Promote retryable entries first
         self.frontier_store.promote_retryable(_now_iso())
 
-        queued = self.frontier_store.list_queued()
-        if not queued:
-            return None
+        for _retry in range(3):
+            queued = self.frontier_store.list_queued()
+            if not queued:
+                return None
 
-        # Rate limit
-        if self._throttle is not None:
-            await self._throttle.acquire()
+            # Rate limit
+            if self._throttle is not None:
+                await self._throttle.acquire()
 
-        entry = max(queued, key=lambda item: item.priority)
-        leased = self.frontier_store.lease(entry.frontier_id)
-        if leased is None:
+            entry = max(queued, key=lambda item: item.priority)
+            leased = self.frontier_store.lease(entry.frontier_id)
+            if leased is not None:
+                break
+        else:
             return None
 
         lease = OccupancyLease(
@@ -70,12 +73,14 @@ class DiscoveryScheduler:
         return leased
 
     def complete(self, frontier_id: str) -> FrontierEntry | None:
+        self.occupancy_store.release_by_frontier_id(frontier_id)
         return self.frontier_store.mark_done(frontier_id)
 
     def report_failure(
         self, frontier_id: str, error: Exception | None = None,
     ) -> FrontierEntry | None:
         """Handle failure with exponential backoff or mark dead."""
+        self.occupancy_store.release_by_frontier_id(frontier_id)
         entry = self.frontier_store.get(frontier_id)
         if entry is None:
             return None

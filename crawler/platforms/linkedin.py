@@ -24,7 +24,6 @@ from .base import (
     PlatformFetchPlan,
     PlatformNormalizePlan,
     default_fetch_executor,
-    strategy_extractor,
 )
 
 FETCH_PLAN = PlatformFetchPlan(default_backend="api", fallback_backends=("playwright", "camoufox"), requires_auth=True)
@@ -995,42 +994,6 @@ def _extract_linkedin_company_from_html_dom(record: dict[str, Any], html_text: s
     }
 
 
-def _extract_linkedin_company_from_html_page(record: dict[str, Any], html_text: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html_text or "", "html.parser")
-    page_text = soup.get_text("\n", strip=True)
-    title_match = re.search(r"<title>([^<]+)</title>", html_text or "", re.IGNORECASE)
-    raw_title = unescape(title_match.group(1)).strip() if title_match else ""
-    title = raw_title.replace("| LinkedIn", "").strip() or str(record.get("company_slug") or "")
-    about = _extract_text_block(
-        page_text,
-        ("Overview", "概览"),
-        ("Featured", "精选", "Page Posts", "主页动态", "Jobs", "职位", "Life", "生活", "People", "会员"),
-    )
-    follower_count = _extract_count_from_text(page_text, "followers", "位关注者")
-    employees_count = _extract_count_from_text(page_text, "employees", "位员工")
-    logo_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*company-logo[^\s\"']+)", html_text)
-    website_url = _extract_external_company_url(soup)
-    return {
-        "title": title,
-        "plain_text": about or "",
-        "markdown": f"# {title}\n\n{about}".strip() if title or about else "",
-        "structured": {
-            "source_id": None,
-            "title": title,
-            "description": about,
-            "company_slug": record.get("company_slug"),
-            "company_url": f"https://www.linkedin.com/company/{record.get('company_slug')}/" if record.get("company_slug") else None,
-            "logo_url": logo_match.group(1) if logo_match else None,
-            "website_url": website_url,
-            "follower_count": follower_count,
-            "staff_count": employees_count,
-        },
-        "metadata_extra": {
-            "entity_type": "organization",
-            "source_id": None,
-        },
-    }
-
 
 def _extract_profile_headline_from_html(soup: BeautifulSoup, canonical_url: str, title: str | None) -> str | None:
     canonical_url = canonical_url.rstrip("/")
@@ -1320,94 +1283,6 @@ def _people_also_viewed_from_html(soup: BeautifulSoup, canonical_url: str) -> li
             break
     return items
 
-
-def _extract_linkedin_profile_from_html(record: dict[str, Any], html_text: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html_text or "", "html.parser")
-    canonical_url = str(record.get("canonical_url") or f"https://www.linkedin.com/in/{record.get('public_identifier', '')}/").strip()
-    title_match = re.search(r"<title>([^<]+)</title>", html_text or "", re.IGNORECASE)
-    raw_title = unescape(title_match.group(1)).strip() if title_match else ""
-    title = raw_title.replace("| LinkedIn", "").strip() or str(record.get("public_identifier") or "")
-    headline = _extract_profile_headline_from_html(soup, canonical_url, title)
-    about_match = re.search(r"(?:个人简介|About)\s*(.+?)(?:\s*(?:精选动态|精选|活动|经验|教育|技能|兴趣|推荐内容|Featured|Activity|Experience|Education|Skills)|\Z)", soup.get_text("\n", strip=True), re.DOTALL)
-    about = about_match.group(1).strip() if about_match else None
-    follower_match = re.search(r"([\d,]+)\s*(?:位关注者|followers?)", soup.get_text("\n", strip=True), re.IGNORECASE)
-    avatar_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displayphoto-[^\s\"']+)", html_text)
-    banner_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displaybackgroundimage-[^\s\"']+)", html_text)
-    structured = {
-        "source_id": str(record.get("public_identifier") or "").strip() or None,
-        "title": title,
-        "headline": headline,
-        "public_identifier": record.get("public_identifier"),
-        "about": about,
-        "city": _extract_profile_location_from_html(html_text),
-        "country_code": None,
-        "profile_url": canonical_url or None,
-        "avatar": avatar_match.group(1) if avatar_match else None,
-        "banner_image": banner_match.group(1) if banner_match else None,
-        "follower_count": int(follower_match.group(1).replace(",", "")) if follower_match else None,
-    }
-    plain_text = "\n\n".join(part for part in (headline, about) if part)
-    markdown = "\n\n".join(part for part in (f"# {title}" if title else "", headline, about) if part)
-    return {
-        "title": title,
-        "plain_text": plain_text,
-        "markdown": markdown,
-        "structured": {key: value for key, value in structured.items() if value not in (None, "", [], {})},
-        "metadata_extra": {
-            "entity_type": "person",
-            "source_id": structured.get("source_id"),
-        },
-    }
-
-
-def _extract_linkedin_profile_from_html_v2(record: dict[str, Any], html_text: str) -> dict[str, Any]:
-    soup = BeautifulSoup(html_text or "", "html.parser")
-    canonical_url = str(record.get("canonical_url") or f"https://www.linkedin.com/in/{record.get('public_identifier', '')}/").strip()
-    title_match = re.search(r"<title>([^<]+)</title>", html_text or "", re.IGNORECASE)
-    raw_title = unescape(title_match.group(1)).strip() if title_match else ""
-    title = raw_title.replace("| LinkedIn", "").strip() or str(record.get("public_identifier") or "")
-    headline = _extract_profile_headline_from_html(soup, canonical_url, title)
-    page_text = soup.get_text("\n", strip=True)
-    about_section = _find_profile_section(soup, ("个人简介", "About"))
-    featured_section = _find_profile_section(soup, ("精选", "Featured"))
-    about_match = re.search(
-        r"(?:个人简介|About)\s*(.+?)(?:\s*(?:精选动态|精选|活动|经验|教育|技能|兴趣|推荐内容|Featured|Activity|Experience|Education|Skills)|\Z)",
-        page_text,
-        re.DOTALL,
-    )
-    about = about_match.group(1).strip() if about_match else None
-    follower_match = re.search(r"([\d,]+)\s*(?:位关注者|followers)", page_text, re.IGNORECASE)
-    about = _extract_section_body_text(about_section, ("个人简介", "About")) or about
-    follower_match = re.search(r"([\d,]+)\s*(?:位关注者|followers?)", page_text, re.IGNORECASE) or follower_match
-    avatar_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displayphoto-[^\s\"']+)", html_text)
-    banner_match = re.search(r"(https://media\.licdn\.com/[^\s\"']*profile-displaybackgroundimage-[^\s\"']+)", html_text)
-    structured = {
-        "source_id": str(record.get("public_identifier") or "").strip() or None,
-        "title": title,
-        "headline": headline,
-        "public_identifier": record.get("public_identifier"),
-        "about": about,
-        "city": _extract_profile_location_from_html(html_text),
-        "country_code": None,
-        "profile_url": canonical_url or None,
-        "profile_url_custom": canonical_url or None,
-        "avatar": avatar_match.group(1) if avatar_match else None,
-        "banner_image": banner_match.group(1) if banner_match else None,
-        "follower_count": int(follower_match.group(1).replace(",", "")) if follower_match else None,
-        "featured_content": _extract_featured_content_from_section(featured_section),
-    }
-    plain_text = "\n\n".join(part for part in (headline, about) if part)
-    markdown = "\n\n".join(part for part in (f"# {title}" if title else "", headline, about) if part)
-    return {
-        "title": title,
-        "plain_text": plain_text,
-        "markdown": markdown,
-        "structured": {key: value for key, value in structured.items() if value not in (None, "", [], {})},
-        "metadata_extra": {
-            "entity_type": "person",
-            "source_id": structured.get("source_id"),
-        },
-    }
 
 
 def _extract_linkedin_profile_from_html_dom(record: dict[str, Any], html_text: str) -> dict[str, Any]:

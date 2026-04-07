@@ -61,6 +61,7 @@ class ValidatorRuntime:
         self._main_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
+        self._stats_lock = threading.Lock()
         self._stats: dict[str, int] = {
             "tasks_received": 0,
             "tasks_evaluated": 0,
@@ -92,6 +93,26 @@ class ValidatorRuntime:
     # Persistence (#4, #5, #9)
     # ------------------------------------------------------------------
 
+    def _snapshot_stats(self) -> dict[str, int]:
+        """Return a thread-safe snapshot of the stats dict."""
+        with self._stats_lock:
+            return dict(self._stats)
+
+    def _inc_stat(self, key: str, delta: int = 1) -> None:
+        """Thread-safe stat increment."""
+        with self._stats_lock:
+            self._stats[key] = self._stats.get(key, 0) + delta
+
+    def _set_stat(self, key: str, value: int) -> None:
+        """Thread-safe stat set."""
+        with self._stats_lock:
+            self._stats[key] = value
+
+    def _get_stat(self, key: str) -> int:
+        """Thread-safe stat read."""
+        with self._stats_lock:
+            return self._stats.get(key, 0)
+
     def _write_status(self) -> None:
         """Write current status to JSON file for external monitoring."""
         status = {
@@ -101,7 +122,7 @@ class ValidatorRuntime:
             "validator_id": self._validator_id,
             "eligible": self._eligible,
             "ws_connected": self._ws.connected,
-            "stats": dict(self._stats),
+            "stats": self._snapshot_stats(),
             "last_action": self._last_action,
             "last_action_at": self._last_action_at,
             "recent_actions": self._recent_actions[-30:],
@@ -348,7 +369,7 @@ class ValidatorRuntime:
             "ws_connected": self._ws.connected,
             "eligible": self._eligible,
             "uptime_seconds": int(time.monotonic() - self._start_time),
-            "stats": dict(self._stats),
+            "stats": self._snapshot_stats(),
             "last_action": self._last_action,
             "last_action_at": self._last_action_at,
             "status_file": str(self._status_file),
@@ -377,6 +398,7 @@ class ValidatorRuntime:
                     # Fall back to HTTP polling after consecutive WS failures
                     if consecutive_ws_failures >= 3:
                         self._poll_evaluation_task_http()
+                        consecutive_ws_failures = 3  # cap to prevent overflow, keep polling
                     if self._stop_event.wait(timeout=5):
                         break
                     continue
@@ -395,8 +417,10 @@ class ValidatorRuntime:
             consecutive_ws_failures = 0
 
             if msg.type == "evaluation_task":
-                self._stats["tasks_received"] += 1
-                if not self._eligible:
+                self._inc_stat("tasks_received")
+                with self._lock:
+                    eligible = self._eligible
+                if not eligible:
                     log.info("Not eligible — ignoring evaluation_task %s", msg.assignment_id)
                     continue
                 if self._paused:
@@ -405,14 +429,15 @@ class ValidatorRuntime:
                 try:
                     self._handle_evaluation_task(msg)
                 except Exception as exc:
-                    self._stats["errors"] += 1
-                    self._stats["consecutive_failures"] += 1
+                    self._inc_stat("errors")
+                    self._inc_stat("consecutive_failures")
                     log.error("Error handling evaluation task %s: %s", msg.assignment_id, exc)
                     self._record_action(f"error: {exc}", {"task_id": msg.task_id})
                     # Alert on consecutive failures (#1)
-                    if self._stats["consecutive_failures"] >= FALLBACK_ALERT_THRESHOLD:
-                        if self._stats["consecutive_failures"] % FALLBACK_ALERT_THRESHOLD == 0:
-                            alert = f"WARNING: {self._stats['consecutive_failures']} consecutive evaluation failures!"
+                    consec = self._get_stat("consecutive_failures")
+                    if consec >= FALLBACK_ALERT_THRESHOLD:
+                        if consec % FALLBACK_ALERT_THRESHOLD == 0:
+                            alert = f"WARNING: {consec} consecutive evaluation failures!"
                             log.warning(alert)
                             self._send_notification(alert)
                     self._write_status()
@@ -426,7 +451,9 @@ class ValidatorRuntime:
 
     def _poll_evaluation_task_http(self) -> None:
         """HTTP polling fallback when WS is unavailable."""
-        if not self._eligible or self._paused:
+        with self._lock:
+            eligible = self._eligible
+        if not eligible or self._paused:
             return
         try:
             with self._platform_lock:
@@ -434,12 +461,12 @@ class ValidatorRuntime:
             if not claim_data:
                 return
             msg = WSMessage({"type": "evaluation_task", "data": claim_data})
-            self._stats["tasks_received"] += 1
+            self._inc_stat("tasks_received")
             try:
                 self._handle_evaluation_task(msg, via_http=True)
             except Exception as eval_exc:
-                self._stats["errors"] += 1
-                self._stats["consecutive_failures"] += 1
+                self._inc_stat("errors")
+                self._inc_stat("consecutive_failures")
                 log.error("HTTP fallback eval failed: %s", eval_exc)
                 self._write_status()
         except Exception as exc:
@@ -495,25 +522,24 @@ class ValidatorRuntime:
             repeat_cleaned_data=repeat_cleaned_data,
             dataset_schema=dataset_schema,
         )
-        self._stats["tasks_evaluated"] += 1
+        self._inc_stat("tasks_evaluated")
 
         # Step 4: Report with result (match/mismatch) and score
         with self._platform_lock:
             self._platform.report_evaluation(
                 task_id, eval_result.score,
                 assignment_id=assignment_id,
-                result=eval_result.result,
             )
 
         # Reset consecutive failures on success (#1)
-        self._stats["consecutive_failures"] = 0
+        self._set_stat("consecutive_failures", 0)
 
         if eval_result.result == "match":
-            self._stats["tasks_accepted"] += 1
+            self._inc_stat("tasks_accepted")
             action = f"match score={eval_result.score} task={task_id}"
             log.info("Evaluation reported: %s", action)
         else:
-            self._stats["tasks_rejected"] += 1
+            self._inc_stat("tasks_rejected")
             action = f"mismatch task={task_id}"
             log.info("Evaluation reported: %s", action)
 
@@ -534,8 +560,9 @@ class ValidatorRuntime:
         })
         self._write_status()
 
-        # Step 6: Wait min_task_interval, then rejoin ready pool
-        wait_seconds = self._min_task_interval
+        # Step 5: Wait min_task_interval, then rejoin ready pool
+        with self._lock:
+            wait_seconds = self._min_task_interval
         log.info("Waiting %ds (min_task_interval) before rejoining ready pool", wait_seconds)
         if self._stop_event.wait(timeout=wait_seconds):
             return

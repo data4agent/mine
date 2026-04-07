@@ -223,6 +223,10 @@ def _spawn_browser_session_waiter(platform: str) -> int:
     log_path = _browser_auth_log_path(platform)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as handle:
+        # Filter env to exclude secrets from the waiter subprocess
+        safe_env = {k: v for k, v in os.environ.items()
+                    if k not in {"AWP_WALLET_TOKEN", "VALIDATOR_PRIVATE_KEY", "AWP_WALLET_TOKEN_SECRET_REF"}}
+        safe_env["MINE_SKIP_VENV_REEXEC"] = "1"
         process = subprocess.Popen(
             [sys.executable, __file__, "browser-session-wait", platform],
             cwd=SKILL_ROOT,
@@ -231,6 +235,7 @@ def _spawn_browser_session_waiter(platform: str) -> int:
             stdin=subprocess.DEVNULL,
             start_new_session=True,
             creationflags=_creationflags(),
+            env=safe_env,
         )
     return process.pid
 
@@ -1354,8 +1359,8 @@ def render_validator_status() -> str:
             "_internal": {
                 "next_command": "python scripts/run_tool.py validator-control status",
                 "action_map": {
-                    "Check status": "python scripts/run_tool.py validator-control status",
-                    "Stop": "python scripts/run_tool.py validator-control stop",
+                    "Check validator status": "python scripts/run_tool.py validator-control status",
+                    "Stop validator": "python scripts/run_tool.py validator-control stop",
                 },
                 "session": snapshot,
             },
@@ -1412,8 +1417,8 @@ def run_validator_start() -> str:
             "_internal": {
                 "next_command": "python scripts/run_tool.py validator-control status",
                 "action_map": {
-                    "Check status": "python scripts/run_tool.py validator-control status",
-                    "Stop": "python scripts/run_tool.py validator-control stop",
+                    "Check validator status": "python scripts/run_tool.py validator-control status",
+                    "Stop validator": "python scripts/run_tool.py validator-control stop",
                 },
                 "session": snapshot,
             },
@@ -1729,7 +1734,10 @@ def main() -> int:
         return 0
 
     if namespace.command == "agent-run":
-        max_iter = int(namespace.args[0]) if namespace.args else 1
+        try:
+            max_iter = int(namespace.args[0]) if namespace.args else 1
+        except ValueError:
+            raise SystemExit(f"agent-run: expected integer argument, got {namespace.args[0]!r}")
         print(run_agent_loop(max_iterations=max_iter))
         return 0
 
@@ -1899,6 +1907,7 @@ def main() -> int:
                         auth_headers=_refresh_ws_auth(),
                         on_auth_refresh=_refresh_ws_auth,
                     )
+                    engine = EvaluationEngine(timeout=resolve_eval_timeout())
                     runtime = ValidatorRuntime(
                         platform_client=platform,
                         ws_client=ws,
@@ -2028,14 +2037,20 @@ def main() -> int:
         return 0
 
     if namespace.command == "run-loop":
-        interval = int(namespace.args[0]) if namespace.args else 60
-        max_iter = int(namespace.args[1]) if len(namespace.args) > 1 else 0
+        try:
+            interval = int(namespace.args[0]) if namespace.args else 60
+            max_iter = int(namespace.args[1]) if len(namespace.args) > 1 else 0
+        except ValueError:
+            raise SystemExit("run-loop: expected integer arguments for interval and max_iterations")
         print(worker.run_loop(interval=interval, max_iterations=max_iter))
         return 0
 
     if namespace.command == "run-worker":
-        interval = int(namespace.args[0]) if namespace.args else 60
-        max_iter = int(namespace.args[1]) if len(namespace.args) > 1 else 1
+        try:
+            interval = int(namespace.args[0]) if namespace.args else 60
+            max_iter = int(namespace.args[1]) if len(namespace.args) > 1 else 1
+        except ValueError:
+            raise SystemExit("run-worker: expected integer arguments for interval and max_iterations")
         print(json.dumps(worker.run_worker(interval=interval, max_iterations=max_iter), ensure_ascii=False, indent=2))
         return 0
 
@@ -2049,16 +2064,19 @@ def main() -> int:
         print(worker.process_task_payload(task_type, payload))
         return 0
 
-    if len(namespace.args) != 3:
-        raise SystemExit("export-core-submissions requires: <inputPath> <outputPath> <datasetId>")
-    output = export_core_submissions(
-        namespace.args[0],
-        namespace.args[1],
-        namespace.args[2],
-        client=worker.client,
-    )
-    print(f"exported core submissions to {output}")
-    return 0
+    if namespace.command == "export-core-submissions":
+        if len(namespace.args) != 3:
+            raise SystemExit("export-core-submissions requires: <inputPath> <outputPath> <datasetId>")
+        output = export_core_submissions(
+            namespace.args[0],
+            namespace.args[1],
+            namespace.args[2],
+            client=worker.client,
+        )
+        print(f"exported core submissions to {output}")
+        return 0
+
+    raise SystemExit(f"unknown command: {namespace.command!r}")
 
 
 if __name__ == "__main__":

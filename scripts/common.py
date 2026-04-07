@@ -775,7 +775,10 @@ def _ensure_wallet_session(wallet_bin: str, *, duration_seconds: int = WALLET_SE
         message = str(exc).lower()
         if "no wallet found" not in message and "init first" not in message:
             return ""
-        _run_wallet_json(wallet_bin, "init")
+        try:
+            _run_wallet_json(wallet_bin, "init")
+        except RuntimeError:
+            return ""
 
     issued_at = int(time.time())
     try:

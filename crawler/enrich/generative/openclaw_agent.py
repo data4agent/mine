@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,7 @@ _RATE_LIMIT_HINTS = ("429", "rate limit", "extra usage", "too many requests")
 _openclaw_bin: str = ""
 _agent_id: str = ""
 _rate_limit_until: float = 0.0
+_agent_lock = threading.Lock()
 
 
 @dataclass(slots=True)
@@ -205,18 +207,19 @@ def ensure_agent() -> str:
     """Ensure the dedicated enrich agent exists."""
     global _agent_id
 
-    if _agent_id:
-        return _agent_id
+    with _agent_lock:
+        if _agent_id:
+            return _agent_id
 
-    agent_id = _configured_agent_id()
-    _resolve_openclaw_path()
-    if _agent_exists(agent_id):
-        log.info("[AGENT] found existing agent: %s", agent_id)
-    else:
-        log.info("[AGENT] agent '%s' not found, creating...", agent_id)
-        _create_agent(agent_id)
-    _agent_id = agent_id
-    return _agent_id
+        agent_id = _configured_agent_id()
+        _resolve_openclaw_path()
+        if _agent_exists(agent_id):
+            log.info("[AGENT] found existing agent: %s", agent_id)
+        else:
+            log.info("[AGENT] agent '%s' not found, creating...", agent_id)
+            _create_agent(agent_id)
+        _agent_id = agent_id
+        return _agent_id
 
 
 def _mark_rate_limited(stderr: str) -> None:
@@ -224,7 +227,8 @@ def _mark_rate_limited(stderr: str) -> None:
 
     message = stderr.lower()
     if any(hint in message for hint in _RATE_LIMIT_HINTS):
-        _rate_limit_until = time.monotonic() + DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
+        with _agent_lock:
+            _rate_limit_until = time.monotonic() + DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
         log.warning("[AGENT] rate limit detected, backing off %ss", DEFAULT_RATE_LIMIT_BACKOFF_SECONDS)
 
 
@@ -382,36 +386,10 @@ def call_agent(
 
 
 def parse_json_response(content: str) -> dict[str, Any] | list[Any]:
-    """Parse JSON from an agent response, including fenced or embedded JSON."""
-    text = content.strip()
-
-    if text.startswith("```"):
-        lines = text.splitlines()
-        lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    object_match = re.search(r"\{.*\}", text, re.DOTALL)
-    if object_match:
-        try:
-            return json.loads(object_match.group(0))
-        except json.JSONDecodeError:
-            pass
-
-    array_match = re.search(r"\[.*\]", text, re.DOTALL)
-    if array_match:
-        try:
-            return json.loads(array_match.group(0))
-        except json.JSONDecodeError:
-            pass
-
-    return {"raw": content}
+    """Parse JSON from an agent response. Delegates to the robust llm_client parser."""
+    from crawler.enrich.generative.llm_client import parse_json_response as _parse
+    result = _parse(content)
+    return result if result is not None else {"raw": content}
 
 
 async def enrich_with_llm(
@@ -420,5 +398,5 @@ async def enrich_with_llm(
     timeout: float = DEFAULT_CLI_TIMEOUT,
 ) -> EnrichResponse:
     """Async wrapper around the benchmark-skill style OpenClaw agent call."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, lambda: call_agent(prompt, timeout=timeout))
