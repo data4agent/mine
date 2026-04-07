@@ -538,6 +538,7 @@ def _restart_chrome(env: dict, cfg: dict) -> None:
         chrome, "--disable-dev-shm-usage", "--disable-gpu", "--new-window",
         "--window-position=0,0", f"--window-size={w},{h}",
         "--force-device-scale-factor=1", "--hide-crash-restore-bubble", "--no-first-run",
+        "--disable-extensions",
         f"--remote-debugging-port={cdp}", "--remote-debugging-address=0.0.0.0",
         "--remote-allow-origins=*", f"--user-data-dir={profile}", "--profile-directory=Default",
     ]
