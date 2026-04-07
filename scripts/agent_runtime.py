@@ -1118,7 +1118,11 @@ class AgentWorker:
         records_emitted = result.summary.get("records_emitted")
         if isinstance(records_emitted, int):
             details.append(f"records {records_emitted}")
-        stderr_lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+        stderr_lines = [
+            line.strip()
+            for line in result.stderr.splitlines()
+            if line.strip() and "I/O operation on closed pipe" not in line
+        ]
         if stderr_lines:
             details.append(stderr_lines[-1])
         if not details:

@@ -276,25 +276,25 @@ class DatasetDiscoverySource:
                         self.state_store.mark_dataset_scheduled(dataset_id)
                     continue
 
-                seed_url = _discovery_seed_url(domain)
-                platform, resource_type, _ = infer_platform_task(seed_url)
-                items.append(
-                    WorkItem(
-                        item_id=f"discovery:{dataset_id}:{seed_url}",
-                        source="dataset_discovery",
-                        url=seed_url,
-                        dataset_id=dataset_id,
-                        platform=platform,
-                        resource_type=resource_type,
-                        record={
-                            "url": seed_url,
-                            "platform": platform,
-                            "resource_type": resource_type,
-                        },
-                        crawler_command="discover-crawl",
-                        metadata={"dataset": dataset, "source_domain": domain},
+                for seed_url in _discovery_seed_urls(domain):
+                    platform, resource_type, _ = infer_platform_task(seed_url)
+                    items.append(
+                        WorkItem(
+                            item_id=f"discovery:{dataset_id}:{seed_url}",
+                            source="dataset_discovery",
+                            url=seed_url,
+                            dataset_id=dataset_id,
+                            platform=platform,
+                            resource_type=resource_type,
+                            record={
+                                "url": seed_url,
+                                "platform": platform,
+                                "resource_type": resource_type,
+                            },
+                            crawler_command="discover-crawl",
+                            metadata={"dataset": dataset, "source_domain": domain},
+                        )
                     )
-                )
             self.state_store.mark_dataset_scheduled(dataset_id)
         return items
 
@@ -364,7 +364,6 @@ def _is_content_url(url: str) -> bool:
 
     # Amazon: only product pages (/dp/ASIN or /gp/product/ASIN) are valid content
     if host.endswith(".amazon.com") or host == "amazon.com" or host.endswith(".amazon.co.uk") or host == "amazon.co.uk" or host.endswith(".amazon.de") or host == "amazon.de":
-        import re
         if re.search(r"/(?:dp|gp/product)/[A-Z0-9]{10}", parsed.path, re.IGNORECASE):
             return True
         return False
@@ -372,6 +371,14 @@ def _is_content_url(url: str) -> bool:
     # Wikipedia: only article pages (/wiki/ArticleName), not special pages
     if host == "wikipedia.org" or host.endswith(".wikipedia.org"):
         if path.startswith("/wiki/") and ":" not in path.split("/wiki/", 1)[-1]:
+            return True
+        return False
+
+    # arXiv: keep paper URLs and recent/new listing pages, drop auth/search/archive noise
+    if host == "arxiv.org" or host.endswith(".arxiv.org"):
+        if path.startswith("/abs/") or path.startswith("/pdf/"):
+            return True
+        if re.match(r"^/list/[^/]+/(recent|new)$", path):
             return True
         return False
 
@@ -445,7 +452,7 @@ def _wikipedia_random_articles(wiki_host: str, count: int = 10) -> list[str]:
         return []
 
 
-def _discovery_seed_url(domain: str) -> str:
+def _discovery_seed_urls(domain: str) -> list[str]:
     raw = domain.strip()
     seed_url = raw if "://" in raw else f"https://{raw.strip('/')}/"
     parsed = urlparse(seed_url)
@@ -454,8 +461,21 @@ def _discovery_seed_url(domain: str) -> str:
     if (host == "wikipedia.org" or host.endswith(".wikipedia.org")) and normalized_path in {"", "/"}:
         if host == "wikipedia.org":
             host = "en.wikipedia.org"
-        return canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page")
+        return [canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page")]
     # Amazon: redirect homepage to bestsellers page which links to actual products
     if (host.endswith(".amazon.com") or host == "amazon.com" or host.endswith(".amazon.co.uk") or host == "amazon.co.uk" or host.endswith(".amazon.de") or host == "amazon.de") and normalized_path in {"", "/"}:
-        return canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/bestsellers/")
-    return canonicalize_url(seed_url)
+        return [canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/bestsellers/")]
+    # arXiv: seed from recent archive listings so one-hop discovery reaches /abs/<id> pages
+    if (host == "arxiv.org" or host.endswith(".arxiv.org")) and normalized_path in {"", "/"}:
+        scheme = parsed.scheme or "https"
+        return [
+            canonicalize_url(f"{scheme}://{host}/list/cs/recent"),
+            canonicalize_url(f"{scheme}://{host}/list/math/recent"),
+            canonicalize_url(f"{scheme}://{host}/list/physics/recent"),
+            canonicalize_url(f"{scheme}://{host}/list/q-bio/recent"),
+            canonicalize_url(f"{scheme}://{host}/list/q-fin/recent"),
+            canonicalize_url(f"{scheme}://{host}/list/stat/recent"),
+            canonicalize_url(f"{scheme}://{host}/list/eess/recent"),
+            canonicalize_url(f"{scheme}://{host}/list/econ/recent"),
+        ]
+    return [canonicalize_url(seed_url)]

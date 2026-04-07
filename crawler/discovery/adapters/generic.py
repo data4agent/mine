@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import re
+from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
@@ -71,6 +73,9 @@ class GenericDiscoveryAdapter(BaseDiscoveryAdapter):
                 and candidate_host.endswith(f".{seed_host}")
             )
             if not options.allow_external_links and not (is_same_host or is_allowed_subdomain):
+                continue
+
+            if not _is_allowed_generic_candidate(parsed):
                 continue
 
             normalized_url = candidate_url
@@ -148,3 +153,15 @@ class GenericDiscoveryAdapter(BaseDiscoveryAdapter):
             "fetched": fetched,
             "spawned_candidates": spawned_candidates,
         }
+
+
+def _is_allowed_generic_candidate(parsed: Any) -> bool:
+    host = (parsed.hostname or "").lower()
+    path = (parsed.path or "").lower().rstrip("/")
+    if host == "arxiv.org" or host.endswith(".arxiv.org"):
+        if path.startswith("/abs/") or path.startswith("/pdf/"):
+            return True
+        if re.match(r"^/list/[^/]+/(recent|new)$", path):
+            return True
+        return False
+    return True

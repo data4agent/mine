@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +53,8 @@ class BrowserPool:
                 return self._browsers[backend_type]
             if backend_type == "camoufox":
                 try:
+                    if os.name == "nt":
+                        raise RuntimeError("camoufox async backend is unstable on Windows")
                     from camoufox.async_api import AsyncCamoufox
                     browser = await AsyncCamoufox(headless=True).__aenter__()
                 except Exception:
