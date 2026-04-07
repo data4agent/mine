@@ -368,8 +368,7 @@ class DatasetDiscoverySource:
                             )
                         )
                     if paper_urls:
-                        self.state_store.mark_dataset_scheduled(dataset_id)
-                    continue
+                        continue
 
                 # Wikipedia: use MediaWiki Random API for direct article URLs
                 if host == "wikipedia.org" or host.endswith(".wikipedia.org"):
