@@ -328,7 +328,12 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                 )
 
             # For API backends, we need the adapter's API fetcher.
-            initial_backend = adapter.resolve_backend(record, config.backend, retry_count=0)
+            # --backend forces a single backend (no fallback); --preferred-backend
+            # sets the initial backend while keeping the adapter fallback chain.
+            effective_override = config.backend
+            effective_preferred = config.preferred_backend if config.backend is None else None
+            initial_backend = adapter.resolve_backend(record, config.backend or config.preferred_backend, retry_count=0)
+            adapter_fallback = list(getattr(adapter, "fallback_backends", ()))
             last_fetch_exc: Exception | None = None
             for fetch_attempt in range(2):
                 try:
@@ -338,9 +343,9 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                             platform=platform,
                             resource_type=resource_type,
                             requires_auth=requires_auth,
-                            override_backend=config.backend,
-                            preferred_backend=initial_backend if config.backend is None else None,
-                            fallback_chain=list(getattr(adapter, "fallback_backends", ())),
+                            override_backend=effective_override,
+                            preferred_backend=effective_preferred or (initial_backend if effective_override is None else None),
+                            fallback_chain=adapter_fallback,
                             api_fetcher=lambda _url, **_kwargs: adapter.fetch_record(
                                 record,
                                 discovered,
@@ -354,7 +359,9 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                             platform=platform,
                             resource_type=resource_type,
                             requires_auth=requires_auth,
-                            override_backend=config.backend,
+                            override_backend=effective_override,
+                            preferred_backend=effective_preferred,
+                            fallback_chain=adapter_fallback if effective_preferred else None,
                         )
                     fetch_result = raw_result.to_legacy_dict()
                     break

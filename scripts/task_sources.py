@@ -251,6 +251,30 @@ class DatasetDiscoverySource:
                 continue
             for domain in _dataset_domains(dataset):
                 host = domain.strip().lower()
+                # arXiv: 用 API 直接获取最新论文 URL，跳过 HTML discovery
+                if host == "arxiv.org" or host.endswith(".arxiv.org"):
+                    paper_urls = _arxiv_recent_papers(count=10)
+                    for url in paper_urls:
+                        platform, resource_type, inferred_fields = infer_platform_task(url)
+                        record = {"url": url, "platform": platform, "resource_type": resource_type}
+                        record.update(inferred_fields)
+                        items.append(
+                            WorkItem(
+                                item_id=f"discovery:{dataset_id}:{url}",
+                                source="dataset_discovery",
+                                url=url,
+                                dataset_id=dataset_id,
+                                platform=platform,
+                                resource_type=resource_type,
+                                record=record,
+                                crawler_command="run",
+                                metadata={"dataset": dataset, "source_domain": domain},
+                            )
+                        )
+                    if paper_urls:
+                        self.state_store.mark_dataset_scheduled(dataset_id)
+                    continue
+
                 # Wikipedia: use MediaWiki Random API for direct article URLs
                 if host == "wikipedia.org" or host.endswith(".wikipedia.org"):
                     wiki_host = "en.wikipedia.org" if host == "wikipedia.org" else host
@@ -373,13 +397,9 @@ def _is_content_url(url: str) -> bool:
             return True
         return False
 
-    # arXiv: keep paper URLs and recent/new listing pages, drop auth/search/archive noise
+    # arXiv: 只保留论文详情页，列表页仅在 discovery 阶段作为种子
     if host == "arxiv.org" or host.endswith(".arxiv.org"):
-        if path.startswith("/abs/") or path.startswith("/pdf/"):
-            return True
-        if re.match(r"^/list/[^/]+/(recent|new)$", path):
-            return True
-        return False
+        return path.startswith("/abs/") or path.startswith("/pdf/")
 
     # Default: allow
     return True
@@ -419,6 +439,35 @@ def _dataset_domains(dataset: dict[str, Any]) -> list[str]:
     if isinstance(domains, str):
         return [chunk.strip() for chunk in domains.split(",") if chunk.strip()]
     return []
+
+
+def _arxiv_recent_papers(count: int = 10) -> list[str]:
+    """通过 arXiv API 获取最新论文的 /abs/ URL。"""
+    import urllib.request
+    import re as _re
+
+    categories = ["cs", "math", "physics", "q-fin", "stat", "econ"]
+    query = "+OR+".join(f"cat:{cat}.*" for cat in categories)
+    api_url = (
+        f"http://export.arxiv.org/api/query"
+        f"?search_query={query}&sortBy=submittedDate&sortOrder=descending"
+        f"&start=0&max_results={count}"
+    )
+    try:
+        req = urllib.request.Request(api_url, headers={"User-Agent": "mine-agent/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read().decode()
+        urls: list[str] = []
+        seen: set[str] = set()
+        for match in _re.finditer(r"<id>\s*https?://arxiv\.org/abs/([^<\s]+)\s*</id>", text):
+            arxiv_id = _re.sub(r"v\d+$", "", match.group(1).strip())
+            url = f"https://arxiv.org/abs/{arxiv_id}"
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+        return urls[:count]
+    except Exception:
+        return []
 
 
 def _wikipedia_random_articles(wiki_host: str, count: int = 10) -> list[str]:

@@ -105,9 +105,10 @@ class FetchEngine:
         backends_to_try = [initial_backend] + fallback_chain
         last_error: Exception | None = None
         last_fetch_error: FetchError | None = None
+        consecutive_failures = 0
 
         for attempt, backend in enumerate(backends_to_try):
-            if attempt > self._max_retries:
+            if consecutive_failures > self._max_retries:
                 break
             try:
                 # Enforce per-platform rate limit before each request
@@ -129,19 +130,21 @@ class FetchEngine:
                     err = RuntimeError(content_error.message)
                     err.fetch_error = content_error  # type: ignore[attr-defined]
                     raise err
+                consecutive_failures = 0
                 self._circuit_breaker.record_success(platform)
                 return result
             except Exception as exc:
                 last_error = exc
+                consecutive_failures += 1
                 last_fetch_error = getattr(exc, "fetch_error", None) or classify(exc)
                 logger.warning(
-                    "Fetch failed with backend=%s for %s (attempt %d): [%s] %s",
-                    backend, url, attempt + 1,
+                    "Fetch failed with backend=%s for %s (attempt %d/%d): [%s] %s",
+                    backend, url, attempt + 1, len(backends_to_try),
                     last_fetch_error.error_code if last_fetch_error else "UNKNOWN",
                     exc,
                 )
                 if last_fetch_error and not last_fetch_error.retryable:
-                    break  # non-retryable error — stop trying other backends
+                    break
                 if last_fetch_error and last_fetch_error.retryable:
                     backoff_seconds = self._rate_limiter.get_backoff_seconds(platform, attempt)
                     await self._circuit_breaker.record_failure_safe(platform, last_fetch_error, backoff_seconds)
@@ -158,7 +161,7 @@ class FetchEngine:
                 continue
 
         err = RuntimeError(
-            f"All backends exhausted for {url} (tried {backends_to_try[:self._max_retries + 1]})"
+            f"All backends exhausted for {url} (tried {backends_to_try})"
         )
         err.fetch_error = last_fetch_error  # type: ignore[attr-defined]
         raise err from last_error

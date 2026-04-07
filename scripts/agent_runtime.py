@@ -79,8 +79,8 @@ class CrawlerRunner:
             argv.append("--resume")
         if command == "discover-crawl":
             argv.extend(["--max-depth", str(self.config.discovery_max_depth), "--max-pages", str(self.config.discovery_max_pages)])
-        elif self.default_backend:
-            argv.extend(["--backend", self.default_backend])
+        if self.default_backend:
+            argv.extend(["--preferred-backend", self.default_backend])
         try:
             completed = subprocess.run(
                 argv,

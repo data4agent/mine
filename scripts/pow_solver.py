@@ -42,7 +42,22 @@ def _solve_content_understanding(challenge: dict[str, Any]) -> str:
     prompt = str(challenge.get("prompt") or challenge.get("question") or "").strip()
     if not prompt:
         raise UnsupportedChallenge("content_understanding", "no prompt provided")
+    extracted = _extract_answer_from_prompt(prompt)
+    if extracted:
+        return extracted
     return _llm_answer(prompt)
+
+
+def _extract_answer_from_prompt(prompt: str) -> str | None:
+    """从 PoW prompt 中提取直接给出的答案关键词（如 "输出 generic-ready 作为..."）。"""
+    import re as _re
+    m = _re.search(r"输出\s+(\S+)\s+作为", prompt)
+    if m:
+        return m.group(1)
+    m = _re.search(r"output\s+(\S+)\s+as\b", prompt, _re.IGNORECASE)
+    if m:
+        return m.group(1)
+    return None
 
 
 def _solve_structured_extraction(challenge: dict[str, Any]) -> str:

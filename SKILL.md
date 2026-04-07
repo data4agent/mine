@@ -83,6 +83,71 @@ which role? (1 or 2)
 - "validate", "validator", "start validating", "2" -> **Start Validator**
 - If unclear, ask again
 
+## Mining Architecture
+
+### Task Sources
+
+Each worker iteration (`run_iteration`) collects tasks from three independent sources:
+
+| Source | Class | Where tasks come from | Filtered by `selected_dataset_ids` |
+|--------|-------|----------------------|-----------------------------------|
+| **Backend Claim** | `BackendClaimSource` | Platform claim API (repeat-crawl / refresh) | No |
+| **Dataset Discovery** | `DatasetDiscoverySource` | Locally generated seed URLs from dataset `source_domains` | Yes |
+| **Resume** | `ResumeQueueSource` | Backlog / auth_pending from previously failed or paused tasks | No |
+
+All three sources are **collected in parallel, merged, and deduplicated**. Up to `max_parallel` items enter the current iteration.
+
+> **"no task available" means none of the three sources produced an executable task** — most
+> commonly because Backend Claim returned nothing and Discovery is in cooldown. This does
+> **not** mean your miner is banned.
+
+### Two-Phase Discovery Crawl
+
+Dataset Discovery operates in **two phases**:
+
+1. **discover-crawl** (discovery phase): crawl seed pages (e.g. arXiv listing pages, Amazon
+   bestseller pages), extract links, and enqueue `discovery_followup` tasks into the backlog.
+2. **run** (fetch phase): followup tasks are executed in subsequent iterations with the `run`
+   command, fetching structured data and submitting to the platform.
+
+Wikipedia is special: it calls the MediaWiki Random API for random article URLs directly,
+skipping the discover-crawl phase entirely.
+
+### API Call Chain
+
+```text
+Discovery path:
+  GET  /api/core/v1/datasets            <- fetch dataset list and source_domains
+  GET  /api/core/v1/url/check           <- pre-flight dedup check
+  (local crawler fetches target site)
+  POST /api/core/v1/submissions         <- submit structured data
+  POST /api/mining/v1/pow-challenges/…  <- answer PoW challenge (probabilistic)
+
+Backend Claim path:
+  POST /api/mining/v1/repeat-crawl-tasks/claim  <- claim task from platform
+  (local crawler fetches target site)
+  POST /api/mining/v1/repeat-crawl-tasks/{id}/report  <- report result
+  POST /api/core/v1/submissions                       <- submit structured data
+```
+
+Both paths ultimately submit via **`POST /api/core/v1/submissions`**.
+
+### Dataset Selection
+
+- Platform returns only 1 dataset — auto-selected.
+- Platform returns multiple datasets with none selected — enters `selection_required`; user must choose before starting.
+- `selected_dataset_ids` only filters **Discovery / followup** source tasks; Backend Claim tasks are not affected.
+
+### Credit Tier & Limits
+
+| Tier | `credit_score` | Backend Claim | Discovery Submissions |
+|------|---------------|---------------|----------------------|
+| novice | 0 | Platform may not assign tasks | Normal submission, but epoch settlement gate applies |
+| higher | > 0 | Normal assignment | Normal |
+
+Epoch settlement gate: `task_count >= 80` and `avg_score >= 60` (see protocol v2.0).
+A novice miner's primary path is through **Discovery self-crawling** to accumulate submissions and scores.
+
 ## Miner Workflow
 
 ### Start Mining

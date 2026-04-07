@@ -75,6 +75,7 @@ class CrawlerConfig:
     auto_login: bool = False
     platform: str | None = None
     backend: str | None = None
+    preferred_backend: str | None = None
     resume: bool = False
     artifacts_dir: Path | None = None
     strict: bool = False
@@ -122,6 +123,7 @@ class CrawlerConfig:
             auto_login=bool(values.get("auto_login", False)),
             platform=values.get("platform"),
             backend=str(values["backend"]) if values.get("backend") is not None else None,
+            preferred_backend=str(values["preferred_backend"]) if values.get("preferred_backend") is not None else None,
             resume=bool(values.get("resume", False)),
             artifacts_dir=(
                 _coerce_path(values["artifacts_dir"], "artifacts_dir")

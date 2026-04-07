@@ -67,7 +67,7 @@ def classify_http_error(exc: Exception) -> FetchError:
         return FetchError("NETWORK_ERROR", "retry",
                           "Connection failed", True)
 
-    return FetchError("UNKNOWN_ERROR", "inspect", str(exc), False)
+    return FetchError("UNKNOWN_ERROR", "inspect", str(exc), True)
 
 
 def classify_content(html: str | None, final_url: str) -> FetchError | None:
@@ -95,8 +95,8 @@ def classify_content(html: str | None, final_url: str) -> FetchError | None:
                           "Hit auth wall or login redirect", True)
 
     if re.search(r"captcha|robot check", lower):
-        return FetchError("CAPTCHA", "complete_auto_login",
-                          "Captcha or robot check detected", False)
+        return FetchError("CAPTCHA", "escalate_backend",
+                          "Captcha or robot check detected — will try next backend", True)
 
     if _looks_like_amazon_real_product_page(lower, final_url):
         return None

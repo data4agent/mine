@@ -55,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
         subparser.add_argument("--platform")
         subparser.add_argument("--backend")
+        subparser.add_argument("--preferred-backend", dest="preferred_backend")
         subparser.add_argument("--resume", action="store_true")
         subparser.add_argument("--artifacts-dir", dest="artifacts_dir", type=Path)
         subparser.add_argument("--strict", action="store_true")
