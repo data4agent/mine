@@ -548,6 +548,9 @@ class EnrichPipeline:
             return
         if result.status in {"failed", "skipped", "pending_agent"}:
             return
+        # Don't cache partial results — any None field value blocks re-extraction
+        if any(f.value is None for f in result.fields):
+            return
         try:
             self._cache_path(document, result.field_group).write_text(
                 json.dumps(result.to_dict(), ensure_ascii=False, indent=2),

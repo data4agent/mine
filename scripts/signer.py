@@ -8,9 +8,8 @@ import secrets
 import subprocess
 import time
 from typing import Any
-from urllib.parse import parse_qsl, quote_plus, urlsplit
+from urllib.parse import urlsplit
 
-from Crypto.Hash import keccak
 from common import (
     DEFAULT_EIP712_CHAIN_ID,
     DEFAULT_EIP712_DOMAIN_NAME,
@@ -19,74 +18,14 @@ from common import (
     persist_wallet_session,
 )
 
-EMPTY_HASH = f"0x{'0' * 64}"
-DEFAULT_SIGNED_HEADERS = ("content-type",)
-
-
-def _normalize_header_value(value: Any) -> str:
-    return " ".join(str(value or "").strip().split())
-
-
-def _keccak_hex(data: str | bytes) -> str:
-    """keccak256 hash of non-empty data."""
-    raw = data.encode("utf-8") if isinstance(data, str) else data
-    digest = keccak.new(digest_bits=256)
-    digest.update(raw)
-    return "0x" + digest.hexdigest()
-
-
-def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _hash_query(url: str) -> str:
-    split = urlsplit(url)
-    pairs = []
-    for key, value in parse_qsl(split.query, keep_blank_values=True):
-        pairs.append((quote_plus(key), quote_plus(value)))
-    if not pairs:
-        return EMPTY_HASH
-    pairs.sort()
-    return _keccak_hex("&".join(f"{key}={value}" for key, value in pairs))
-
-
-def _hash_headers(headers: dict[str, str], signed_headers: tuple[str, ...]) -> str:
-    lines = []
-    for header_name in sorted(signed_headers):
-        value = headers.get(header_name)
-        if value is None:
-            continue
-        lines.append(f"{header_name}:{_normalize_header_value(value)}")
-    if not lines:
-        return EMPTY_HASH
-    return _keccak_hex("\n".join(lines))
-
-
-def _canonical_body(body: Any, content_type: str) -> str | bytes | None:
-    if body is None:
-        return None
-    normalized_type = str(content_type or "").lower()
-    if "application/json" in normalized_type:
-        try:
-            return _canonical_json(body)
-        except (TypeError, ValueError):
-            # Canonicalization failed — fall back to raw bytes per spec
-            pass
-    if isinstance(body, str):
-        return body
-    if isinstance(body, bytes):
-        return body  # _keccak_hex handles bytes directly
-    try:
-        return json.dumps(body, ensure_ascii=False)
-    except (TypeError, ValueError):
-        return str(body)
-
-
-def _hash_body(body: Any, content_type: str) -> str:
-    canonical_body = _canonical_body(body, content_type)
-    if canonical_body is None:
-        return EMPTY_HASH
-    return _keccak_hex(canonical_body)
+from eip712_primitives import (
+    EMPTY_HASH,
+    DEFAULT_SIGNED_HEADERS,
+    keccak_hex as _keccak_hex,
+    hash_query as _hash_query,
+    hash_headers as _hash_headers,
+    hash_body as _hash_body,
+)
 
 
 class WalletSigner:

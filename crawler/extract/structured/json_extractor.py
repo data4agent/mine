@@ -1231,12 +1231,23 @@ class JsonExtractor:
             script_text = script.string or script.get_text()
             if not script_text:
                 continue
-            for match in re.finditer(r"""parseJSON\('(?P<json>\{.*?\})'\)""", script_text, flags=re.DOTALL):
+            # Match parseJSON('...') — use greedy match to handle apostrophes in JSON values
+            for match in re.finditer(r"""parseJSON\('(?P<json>\{.*?)\'\)""", script_text, flags=re.DOTALL):
                 raw_json = match.group("json")
+                # Unescape JS single-quote escaping
+                raw_json = raw_json.replace("\\'", "'")
                 try:
                     parsed = json.loads(raw_json)
                 except json.JSONDecodeError:
-                    continue
+                    # Try finding the last valid JSON closing brace
+                    last_brace = raw_json.rfind("}")
+                    if last_brace > 0:
+                        try:
+                            parsed = json.loads(raw_json[:last_brace + 1])
+                        except json.JSONDecodeError:
+                            continue
+                    else:
+                        continue
                 if isinstance(parsed, dict):
                     objects.append(parsed)
         return objects

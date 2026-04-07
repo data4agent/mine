@@ -1,15 +1,13 @@
 """Direct private key signer for EIP-712 signatures (no awp-wallet dependency)."""
 from __future__ import annotations
 
-import json
 import secrets
 import time
 from typing import Any
-from urllib.parse import parse_qsl, quote_plus, urlsplit
+from urllib.parse import urlsplit
 
 from eth_account import Account
 from eth_account.messages import encode_typed_data
-from Crypto.Hash import keccak
 
 try:
     from common import (
@@ -22,67 +20,47 @@ except ImportError:
     DEFAULT_EIP712_DOMAIN_NAME = "aDATA"
     DEFAULT_EIP712_VERIFYING_CONTRACT = "0x0000000000000000000000000000000000000000"
 
+try:
+    from eip712_primitives import (
+        EMPTY_HASH,
+        DEFAULT_SIGNED_HEADERS,
+        keccak_hex as _keccak_hex,
+        hash_query as _hash_query,
+        hash_headers as _hash_headers,
+        hash_body as _hash_body,
+    )
+except ImportError:
+    # Standalone fallback when eip712_primitives is not available
+    import json
+    from Crypto.Hash import keccak
+    from urllib.parse import parse_qsl, quote_plus
 
-EMPTY_HASH = f"0x{'0' * 64}"
-DEFAULT_SIGNED_HEADERS = ("content-type",)
+    EMPTY_HASH = f"0x{'0' * 64}"
+    DEFAULT_SIGNED_HEADERS = ("content-type",)
 
+    def _keccak_hex(data):
+        raw = data.encode("utf-8") if isinstance(data, str) else data
+        d = keccak.new(digest_bits=256); d.update(raw)
+        return "0x" + d.hexdigest()
 
-def _normalize_header_value(value: Any) -> str:
-    return " ".join(str(value or "").strip().split())
+    def _hash_query(url):
+        split = urlsplit(url)
+        pairs = sorted((quote_plus(k), quote_plus(v)) for k, v in parse_qsl(split.query, keep_blank_values=True))
+        return EMPTY_HASH if not pairs else _keccak_hex("&".join(f"{k}={v}" for k, v in pairs))
 
+    def _hash_headers(headers, signed_headers):
+        lines = [f"{h}:{' '.join(str(headers.get(h) or '').strip().split())}" for h in sorted(signed_headers) if headers.get(h) is not None]
+        return EMPTY_HASH if not lines else _keccak_hex("\n".join(lines))
 
-def _keccak_hex(data: str | bytes) -> str:
-    """keccak256 hash of non-empty data."""
-    raw = data.encode("utf-8") if isinstance(data, str) else data
-    digest = keccak.new(digest_bits=256)
-    digest.update(raw)
-    return "0x" + digest.hexdigest()
-
-
-def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _hash_query(url: str) -> str:
-    split = urlsplit(url)
-    pairs = []
-    for key, value in parse_qsl(split.query, keep_blank_values=True):
-        pairs.append((quote_plus(key), quote_plus(value)))
-    if not pairs:
-        return EMPTY_HASH
-    pairs.sort()
-    return _keccak_hex("&".join(f"{key}={value}" for key, value in pairs))
-
-
-def _hash_headers(headers: dict[str, str], signed_headers: tuple[str, ...]) -> str:
-    lines = []
-    for header_name in sorted(signed_headers):
-        value = headers.get(header_name)
-        if value is None:
-            continue
-        lines.append(f"{header_name}:{_normalize_header_value(value)}")
-    if not lines:
-        return EMPTY_HASH
-    return _keccak_hex("\n".join(lines))
-
-
-def _hash_body(body: Any, content_type: str) -> str:
-    if body is None:
-        return EMPTY_HASH
-    normalized_type = str(content_type or "").lower()
-    if "application/json" in normalized_type:
-        try:
-            return _keccak_hex(_canonical_json(body))
-        except (TypeError, ValueError):
-            pass
-    if isinstance(body, str):
-        return _keccak_hex(body)
-    if isinstance(body, bytes):
-        return _keccak_hex(body)
-    try:
-        return _keccak_hex(json.dumps(body, ensure_ascii=False))
-    except (TypeError, ValueError):
-        return _keccak_hex(str(body))
+    def _hash_body(body, content_type):
+        if body is None: return EMPTY_HASH
+        ct = str(content_type or "").lower()
+        if "application/json" in ct:
+            try: return _keccak_hex(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+            except (TypeError, ValueError): pass
+        if isinstance(body, (str, bytes)): return _keccak_hex(body)
+        try: return _keccak_hex(json.dumps(body, ensure_ascii=False))
+        except (TypeError, ValueError): return _keccak_hex(str(body))
 
 
 class PrivateKeySigner:
