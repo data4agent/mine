@@ -23,11 +23,14 @@ log = logging.getLogger("validator.llm")
 
 DEFAULT_TIMEOUT = 120
 
-# Module-level state
+# Module-level state (guarded by _module_lock for thread safety)
 _agent_id: str = ""
 _openclaw_bin: str = "openclaw"
 _rate_limit_until: float = 0
 _initialized: bool = False
+
+import threading as _threading
+_module_lock = _threading.Lock()
 
 
 def _resolve_openclaw_path() -> str:
@@ -137,19 +140,20 @@ def init(instance_id: str = "") -> str:
     """
     global _agent_id, _initialized
 
-    _resolve_openclaw_path()
+    with _module_lock:
+        _resolve_openclaw_path()
 
-    suffix = f"-{instance_id}" if instance_id else ""
-    _agent_id = f"mine-validator{suffix}"
+        suffix = f"-{instance_id}" if instance_id else ""
+        _agent_id = f"mine-validator{suffix}"
 
-    _ensure_agent(_agent_id)
-    _purge_agent_sessions()
+        _ensure_agent(_agent_id)
+        _purge_agent_sessions()
 
-    # Verify agent was created successfully
-    if not _agent_exists(_agent_id):
-        log.warning("agent %s not available after creation attempt — CLI calls may fail", _agent_id)
+        # Verify agent was created successfully
+        if not _agent_exists(_agent_id):
+            log.warning("agent %s not available after creation attempt — CLI calls may fail", _agent_id)
 
-    _initialized = True
+        _initialized = True
     return _agent_id
 
 
@@ -180,13 +184,14 @@ def call_openclaw(
     """
     global _rate_limit_until
 
-    if not _initialized:
-        init()
+    with _module_lock:
+        if not _initialized:
+            init()
 
-    # Rate limit backoff
-    if time.monotonic() < _rate_limit_until:
-        remaining = int(_rate_limit_until - time.monotonic())
-        raise RuntimeError(f"rate limit backoff, {remaining}s remaining")
+        # Rate limit backoff
+        if time.monotonic() < _rate_limit_until:
+            remaining = int(_rate_limit_until - time.monotonic())
+            raise RuntimeError(f"rate limit backoff, {remaining}s remaining")
 
     _purge_agent_sessions()
 
@@ -235,7 +240,8 @@ def call_openclaw(
 
     # Detect rate limit
     if "429" in err or "rate" in err.lower() or "Extra usage" in err:
-        _rate_limit_until = time.monotonic() + 60
+        with _module_lock:
+            _rate_limit_until = time.monotonic() + 60
         log.warning("rate limit detected, backing off 60s")
 
     raise RuntimeError(f"OpenClaw CLI failed (exit {proc.returncode}): {err[:200]}")

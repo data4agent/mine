@@ -185,7 +185,13 @@ class EvaluationEngine:
             elif raw_result.lower() in ("mismatch", "false", "no", "fraud", "different", "fabricated"):
                 eval_result = "mismatch"
             elif not raw_result:
-                # No result key — fall through to text-based detection
+                # Result key empty — use parsed score if available, else text fallback
+                try:
+                    score = int(float(str(raw_score)))
+                    if score > 0:
+                        return "match", max(0, min(100, score))
+                except (TypeError, ValueError):
+                    pass
                 return EvaluationEngine._extract_result_and_score(None, raw_response, has_repeat)
             else:
                 eval_result = "match"

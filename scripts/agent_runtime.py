@@ -819,6 +819,11 @@ class AgentWorker:
                     item,
                     report_result=report_result if isinstance(report_result, dict) else None,
                 )
+            except PlatformApiError as api_exc:
+                if api_exc.code == "address_not_registered":
+                    summary.errors.append("address not registered; dropping submit-pending item")
+                    self.state_store.clear_submit_pending(item.item_id)
+                continue
             except Exception:
                 continue
             self.state_store.clear_submit_pending(item.item_id)

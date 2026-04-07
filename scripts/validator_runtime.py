@@ -429,7 +429,8 @@ class ValidatorRuntime:
         if not self._eligible or self._paused:
             return
         try:
-            claim_data = self._platform.claim_evaluation_task()
+            with self._platform_lock:
+                claim_data = self._platform.claim_evaluation_task()
             if not claim_data:
                 return
             msg = WSMessage({"type": "evaluation_task", "data": claim_data})
