@@ -19,6 +19,7 @@ from markdownify import markdownify as to_markdown
 
 from .chunking.hybrid_chunker import HybridChunker, _estimate_tokens
 from .crawl4ai_extract import extract_html_with_crawl4ai
+from .pre_llm_optimizer import optimize_for_llm
 from .trafilatura_extract import extract_with_trafilatura
 from .html_parse import parse_html
 from .fit_content import FitContentReducer
@@ -648,6 +649,22 @@ class ExtractPipeline:
                     selector_used=extracted_html.selector_used,
                 )
 
+        # Step 2.5: Pre-LLM optimization — reduce token cost
+        pre_extracted: dict[str, Any] = {}
+        optimized_text, pre_extracted = optimize_for_llm(
+            reduced_content.text, pre_extracted=pre_extracted,
+        )
+        optimized_markdown, _ = optimize_for_llm(
+            reduced_content.markdown,
+        )
+        reduced_content = MainContent(
+            html=reduced_content.html,
+            text=optimized_text,
+            markdown=optimized_markdown,
+            sections=reduced_content.sections,
+            selector_used=reduced_content.selector_used,
+        )
+
         # Step 3: Chunk content
         chunks = self.chunker.chunk(reduced_content, doc_id=doc_id)
 
@@ -658,6 +675,10 @@ class ExtractPipeline:
             resource_type=resource_type,
             url=url,
         )
+        # Merge pre-extracted fields (title, date, language) from regex
+        if pre_extracted.get("title") and not structured.title:
+            structured.title = pre_extracted["title"]
+
         if self.css_extractor is not None:
             css_structured = self.css_extractor.extract(
                 html=extracted_html.cleaned_html or reduced_content.html,
