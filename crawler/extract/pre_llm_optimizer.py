@@ -171,17 +171,12 @@ def _smart_truncate(text: str, max_chars: int) -> str:
     trim body paragraphs from the end until under limit.
     """
     lines = text.split("\n")
-    # Always keep everything up to 70% of the limit
-    keep_chars = int(max_chars * 0.7)
     result = []
     char_count = 0
 
     for line in lines:
         if char_count + len(line) + 1 > max_chars:
             break
-        # Always include headings even past the soft limit
-        if char_count > keep_chars and not line.startswith("#"):
-            continue
         result.append(line)
         char_count += len(line) + 1
 

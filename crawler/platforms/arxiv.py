@@ -119,8 +119,8 @@ def _extract_arxiv(record: dict, fetched: dict) -> dict:
         pdf_match = re.search(r'href="(https?://arxiv\.org/pdf/[^"]+)"', html_fallback, flags=re.I)
         if pdf_match:
             pdf_url = pdf_match.group(1).strip()
-    raw_title = title_matches[1] if len(title_matches) > 1 else (title_matches[0] if title_matches else record.get("arxiv_id"))
-    title = re.sub(r"\s+", " ", raw_title).strip()
+    raw_title = title_matches[1] if len(title_matches) > 1 else (title_matches[0] if title_matches else record.get("arxiv_id") or "")
+    title = re.sub(r"\s+", " ", str(raw_title)).strip()
     summary = re.sub(r"\s+", " ", summary_match.group(1)).strip() if summary_match else ""
     markdown = f"# {title}\n\n{summary}".strip()
     published = published_match.group(1).strip()[:10] if published_match else ""

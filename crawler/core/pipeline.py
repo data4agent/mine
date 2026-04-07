@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from typing import TYPE_CHECKING, Any
 
 from crawler.contracts import CrawlCommand, CrawlerConfig

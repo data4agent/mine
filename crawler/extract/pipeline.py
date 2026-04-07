@@ -423,8 +423,13 @@ class ExtractPipeline:
         parser_metadata: dict[str, Any] = {}
         page_count = None
         num_figures = None
+        pdf_bytes = None
         if pdf_url:
-            pdf_bytes = fetch_binary_content(pdf_url)
+            try:
+                pdf_bytes = fetch_binary_content(pdf_url)
+            except Exception as pdf_exc:
+                parser_metadata = {"pdf_fetch_error": str(pdf_exc)}
+        if pdf_bytes:
             import tempfile
 
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
@@ -620,6 +625,7 @@ class ExtractPipeline:
         # Step 1a: Try Trafilatura for high-quality content extraction.
         # Best for articles, wiki pages, blogs, news — extracts only the main body.
         traf_result = extract_with_trafilatura(html, url)
+        extracted_html = None  # set in crawl4ai fallback branch
 
         if traf_result and traf_result.text and len(traf_result.text) > 100:
             main_content = MainContent(
@@ -681,7 +687,7 @@ class ExtractPipeline:
 
         if self.css_extractor is not None:
             css_structured = self.css_extractor.extract(
-                html=extracted_html.cleaned_html or reduced_content.html,
+                html=(extracted_html.cleaned_html if extracted_html else "") or reduced_content.html,
                 canonical_url=url,
                 platform=platform,
                 resource_type=resource_type,
@@ -704,11 +710,11 @@ class ExtractPipeline:
 
         # Quality metrics
         content_size = len(reduced_content.text)
-        cleaned_size = len(extracted_html.cleaned_html or "")
+        cleaned_size = len((extracted_html.cleaned_html if extracted_html else "") or "")
         quality = ExtractionQuality(
             content_ratio=content_size / max(original_size, 1),
             noise_removed=max(original_size - cleaned_size, 0),
-            chunking_strategy=f"hybrid:{extracted_html.selector_used}",
+            chunking_strategy=f"hybrid:{extracted_html.selector_used if extracted_html else 'trafilatura'}",
         )
 
         return ExtractedDocument(
@@ -723,7 +729,7 @@ class ExtractPipeline:
             full_markdown=reduced_content.markdown,
             structured=structured,
             quality=quality,
-            cleaned_html=extracted_html.cleaned_html or reduced_content.html,
+            cleaned_html=(extracted_html.cleaned_html if extracted_html else "") or reduced_content.html,
         )
 
     def _merge_structured_fields(

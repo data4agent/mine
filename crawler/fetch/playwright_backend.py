@@ -18,15 +18,19 @@ def fetch_with_playwright(url: str, storage_state_path: str | None = None) -> di
         storage_state = resolve_storage_state_path(storage_state_path)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            context = browser.new_context(storage_state=storage_state)
-            page = context.new_page()
-            page.goto(url, wait_until="networkidle")
-            html = page.content()
-            screenshot = page.screenshot(type="png")
-            if storage_state_path is not None:
-                persist_storage_state(storage_state_path, context.storage_state())
-            context.close()
-            browser.close()
+            try:
+                context = browser.new_context(storage_state=storage_state)
+                try:
+                    page = context.new_page()
+                    page.goto(url, wait_until="networkidle")
+                    html = page.content()
+                    screenshot = page.screenshot(type="png")
+                    if storage_state_path is not None:
+                        persist_storage_state(storage_state_path, context.storage_state())
+                finally:
+                    context.close()
+            finally:
+                browser.close()
         return {
             "url": url,
             "html": html,

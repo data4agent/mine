@@ -264,7 +264,7 @@ class JsonExtractor:
         if asin:
             set_field("asin", asin, "amazon_url:asin")
             set_field("marketplace", marketplace, "amazon_url:marketplace")
-            set_field("dedup_key", f"{asin}_{marketplace}", "computed:asin+marketplace")
+            set_field("dedup_key", f"{asin}:{marketplace}", "computed:asin+marketplace")
             # Canonical URL: normalized format https://www.amazon.{marketplace}/dp/{asin}
             set_field("canonical_url", f"https://www.amazon.{marketplace}/dp/{asin}", "computed:canonical")
 
@@ -843,7 +843,7 @@ class JsonExtractor:
         if seller_id:
             set_field("seller_id", seller_id, "amazon_url:seller_id")
             set_field("marketplace", marketplace, "amazon_url:marketplace")
-            set_field("dedup_key", f"{seller_id}_{marketplace}", "computed:seller_id+marketplace")
+            set_field("dedup_key", f"{seller_id}:{marketplace}", "computed:seller_id+marketplace")
             set_field("canonical_url", f"https://www.amazon.{marketplace}/sp?seller={seller_id}", "computed:canonical")
         set_field("URL", canonical_url, "fetch:original_url")
 
@@ -948,7 +948,7 @@ class JsonExtractor:
         if review_id:
             set_field("review_id", review_id, "amazon_url:review_id")
             set_field("marketplace", marketplace, "amazon_url:marketplace")
-            set_field("dedup_key", f"{review_id}_{marketplace}", "computed:review_id+marketplace")
+            set_field("dedup_key", f"{review_id}:{marketplace}", "computed:review_id+marketplace")
             set_field("canonical_url", f"https://www.amazon.{marketplace}/gp/customer-reviews/{review_id}", "computed:canonical")
         set_field("URL", canonical_url, "fetch:original_url")
 

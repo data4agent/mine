@@ -117,7 +117,7 @@ class EnrichPipeline:
             source_url=document.get("canonical_url", ""),
             platform=document.get("platform", "unknown"),
             resource_type=document.get("resource_type", document.get("entity_type", "unknown")),
-            structured=StructuredFields(fields=document.get("structured", {})),
+            structured=StructuredFields(fields=document.get("structured", {}) if isinstance(document.get("structured"), dict) else (document.get("structured").platform_fields if hasattr(document.get("structured"), "platform_fields") else {})),
         )
 
         for group_name in field_groups:
