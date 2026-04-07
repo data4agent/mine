@@ -256,7 +256,9 @@ class DatasetDiscoverySource:
                     wiki_host = "en.wikipedia.org" if host == "wikipedia.org" else host
                     random_urls = _wikipedia_random_articles(wiki_host, count=10)
                     for url in random_urls:
-                        platform, resource_type, _ = infer_platform_task(url)
+                        platform, resource_type, inferred_fields = infer_platform_task(url)
+                        record = {"url": url, "platform": platform, "resource_type": resource_type}
+                        record.update(inferred_fields)
                         items.append(
                             WorkItem(
                                 item_id=f"discovery:{dataset_id}:{url}",
@@ -265,7 +267,7 @@ class DatasetDiscoverySource:
                                 dataset_id=dataset_id,
                                 platform=platform,
                                 resource_type=resource_type,
-                                record={"url": url, "platform": platform, "resource_type": resource_type},
+                                record=record,
                                 crawler_command="run",
                                 metadata={"dataset": dataset, "source_domain": domain},
                             )
