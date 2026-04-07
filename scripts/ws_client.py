@@ -1,4 +1,8 @@
-"""WebSocket client for receiving evaluation task assignments from the platform."""
+"""WebSocket client for receiving task assignments from the platform.
+
+Used by both miner (repeat_crawl_task) and validator (evaluation_task).
+Both share the same WS endpoint: /api/mining/v1/ws
+"""
 
 from __future__ import annotations
 
@@ -101,6 +105,11 @@ class ValidatorWSClient:
             self._connected = False
             log.error("WebSocket connect failed: %s", exc)
             raise WSDisconnected(f"connect failed: {exc}") from exc
+
+    def reopen(self) -> None:
+        """Allow reconnections after close() — used when restarting the receive loop."""
+        self._closed = False
+        self._connected = False
 
     def close(self) -> None:
         """Close the WebSocket connection."""

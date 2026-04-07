@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import re
+import threading
 from typing import Any
 from urllib.parse import unquote, urlparse
 
 from lib.canonicalize import canonicalize_url
 from run_models import TaskEnvelope, WorkItem
 from worker_state import WorkerStateStore
+from ws_client import WSDisconnected
 
 
 class SkipClaimedTask(Exception):
@@ -163,6 +165,10 @@ def task_to_work_item(task: TaskEnvelope) -> WorkItem:
 
 
 def build_report_payload(item: WorkItem, record: dict[str, Any]) -> dict[str, Any]:
+    """Build report payload for repeat-crawl and refresh tasks.
+
+    Per API spec, the report body contains only `cleaned_data`.
+    """
     cleaned_data = record.get("plain_text")
     if cleaned_data in (None, ""):
         cleaned_data = record.get("cleaned_data")
@@ -170,9 +176,6 @@ def build_report_payload(item: WorkItem, record: dict[str, Any]) -> dict[str, An
         cleaned_data = record.get("markdown")
     return {
         "cleaned_data": "" if cleaned_data is None else str(cleaned_data),
-        "canonical_url": record.get("canonical_url") or record.get("url") or item.url,
-        "structured_data": record.get("structured") if isinstance(record.get("structured"), dict) else {},
-        "crawl_timestamp": optional_string(record.get("crawl_timestamp")),
     }
 
 
@@ -231,6 +234,99 @@ class BackendClaimSource:
             task_id = optional_string(payload.get("id")) or "unknown"
             self.last_errors.append(f"claim source failed: {task_type} task {task_id} skipped: {exc}")
             return None
+
+
+class WebSocketClaimSource:
+    """Receives repeat_crawl_task messages via WebSocket push.
+
+    The WS connection runs in a background thread, receiving tasks into
+    an internal queue. `collect()` drains the queue non-blockingly.
+    """
+
+    def __init__(self, ws_client: Any) -> None:
+        self.ws_client = ws_client
+        self._queue: list[dict[str, Any]] = []
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self.last_errors: list[str] = []
+        self.last_skips: list[str] = []
+
+    def start(self) -> None:
+        """Start the background WS receive thread."""
+        if self._running:
+            return
+        self._running = True
+        # Reset closed flag so reconnect_with_backoff works after a previous stop()
+        self.ws_client.reopen()
+        self._thread = threading.Thread(target=self._receive_loop, name="miner-ws", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._running = False
+        try:
+            self.ws_client.close()
+        except Exception:
+            pass
+
+    def _receive_loop(self) -> None:
+        import logging
+        log = logging.getLogger("miner.ws")
+        first_connect = True
+        while self._running:
+            if not self.ws_client.connected:
+                try:
+                    if first_connect:
+                        # First connection — connect immediately, no backoff
+                        self.ws_client.connect()
+                        first_connect = False
+                    else:
+                        self.ws_client.reconnect_with_backoff()
+                except Exception as exc:
+                    first_connect = False
+                    log.warning("WS connect failed: %s", exc)
+                    continue
+                if not self.ws_client.connected:
+                    continue
+            try:
+                msg = self.ws_client.receive(timeout=30.0)
+            except WSDisconnected:
+                continue
+            if msg is None:
+                continue
+            if msg.type == "repeat_crawl_task":
+                task_id = msg.repeat_crawl_task_id
+                if task_id:
+                    # ACK within 30s deadline
+                    try:
+                        self.ws_client.send_ack_repeat_crawl(task_id)
+                    except WSDisconnected as exc:
+                        # Connection lost — try best-effort reject, then let task expire on server
+                        log.warning("ACK failed for %s (connection lost): %s — task will return to pool after 30s", task_id, exc)
+                        continue
+                    with self._lock:
+                        self._queue.append(msg.data)
+                    log.info("Received repeat_crawl_task via WS: %s", task_id)
+
+    def collect(self) -> list[WorkItem]:
+        """Drain the internal queue and convert to WorkItems."""
+        self.last_errors.clear()
+        self.last_skips.clear()
+        with self._lock:
+            payloads = list(self._queue)
+            self._queue.clear()
+        items: list[WorkItem] = []
+        for payload in payloads:
+            try:
+                task = claimed_task_from_payload("repeat_crawl", payload)
+                items.append(task_to_work_item(task))
+            except SkipClaimedTask as exc:
+                task_id = optional_string(payload.get("id")) or "unknown"
+                self.last_skips.append(f"ws claim skipped repeat_crawl task {task_id}: {exc}")
+            except Exception as exc:
+                task_id = optional_string(payload.get("id")) or "unknown"
+                self.last_errors.append(f"ws claim failed: repeat_crawl task {task_id}: {exc}")
+        return items
 
 
 class DatasetDiscoverySource:

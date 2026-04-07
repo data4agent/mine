@@ -529,6 +529,7 @@ class ValidatorRuntime:
             self._platform.report_evaluation(
                 task_id, eval_result.score,
                 assignment_id=assignment_id,
+                result=eval_result.result,
             )
 
         # Reset consecutive failures on success (#1)

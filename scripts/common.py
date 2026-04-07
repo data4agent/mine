@@ -872,7 +872,9 @@ def resolve_credit_interval(credit_tier: str) -> int:
 
 def resolve_ws_url() -> str:
     base = resolve_platform_base_url()
-    if base.startswith("https://"):
+    if base.startswith("wss://") or base.startswith("ws://"):
+        ws_base = base
+    elif base.startswith("https://"):
         ws_base = "wss://" + base[8:]
     elif base.startswith("http://"):
         ws_base = "ws://" + base[7:]

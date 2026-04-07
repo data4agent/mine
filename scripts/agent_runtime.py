@@ -28,6 +28,7 @@ from common import (
     resolve_platform_base_url,
     resolve_signature_config,
     resolve_wallet_config,
+    resolve_ws_url,
 )
 from crawl_mode_planner import CrawlModePlanner
 from lib.platform_client import PlatformApiError, PlatformClient
@@ -51,10 +52,7 @@ from worker_state import WorkerStateStore
 
 CRAWLER_ROOT = inject_crawler_root()
 
-try:
-    from crawler.io import read_json_file, read_jsonl_file  # type: ignore[import-not-found]  # noqa: E402
-except ModuleNotFoundError:
-    from crawler.output import read_json_file, read_jsonl_file  # noqa: E402
+from crawler.output import read_json_file, read_jsonl_file  # noqa: E402
 from crawler.submission_export import build_submission_request  # noqa: E402
 
 
@@ -144,13 +142,24 @@ def resolve_item_output_dir(item: WorkItem, *, output_root: Path) -> Path:
 
 
 class AgentWorker:
-    def __init__(self, *, client: PlatformClient, runner: CrawlerRunner, config: WorkerConfig) -> None:
+    def __init__(
+        self,
+        *,
+        client: PlatformClient,
+        runner: CrawlerRunner,
+        config: WorkerConfig,
+        ws_client: Any | None = None,
+    ) -> None:
         self.client = client
         self.runner = runner
         self.config = config
         self.state_store = WorkerStateStore(config.state_root)
         self.resume_source = ResumeQueueSource(self.state_store)
         self.backend_source = BackendClaimSource(self.client)
+        self.ws_source: Any | None = None
+        if ws_client is not None:
+            from task_sources import WebSocketClaimSource
+            self.ws_source = WebSocketClaimSource(ws_client)
         self.dataset_source = DatasetDiscoverySource(self.client, self.state_store)
         self.crawl_mode_planner = CrawlModePlanner()
         self.auth_orchestrator = AuthOrchestrator(
@@ -213,6 +222,13 @@ class AgentWorker:
                 "message": "dataset selection required",
             }
 
+        # Start WebSocket receive thread for push-based task claiming
+        if self.ws_source is not None:
+            try:
+                self.ws_source.start()
+            except Exception as exc:
+                heartbeat_errors.append(f"ws start failed (falling back to HTTP polling): {exc}")
+
         session_update: dict[str, Any] = {
             "mining_state": "running",
             "selected_dataset_ids": requested_selected,
@@ -270,6 +286,8 @@ class AgentWorker:
         return self.check_status() | {"message": "Mining resumed.", "mining_state": session["mining_state"]}
 
     def stop(self) -> dict[str, Any]:
+        if self.ws_source is not None:
+            self.ws_source.stop()
         session = self.state_store.save_session({
             "mining_state": "stopped",
             "last_control_action": "stop",
@@ -594,15 +612,31 @@ class AgentWorker:
         resumed = self.resume_source.collect(limit=self.config.max_parallel)
         summary.resumed_items = len(resumed)
         items.extend(resumed)
-        try:
-            claimed = self.backend_source.collect()
-        except Exception as exc:
-            claimed = []
-            summary.errors.append(f"claim source failed: {exc}")
-        summary.errors.extend(getattr(self.backend_source, "last_errors", []))
-        summary.messages.extend(getattr(self.backend_source, "last_skips", []))
-        summary.claimed_items = len(claimed)
-        items.extend(claimed)
+        # WebSocket push (preferred) — drain any tasks received via WS
+        ws_claimed: list[WorkItem] = []
+        if self.ws_source is not None:
+            try:
+                ws_claimed = self.ws_source.collect()
+            except Exception as exc:
+                ws_claimed = []
+                summary.errors.append(f"ws claim source failed: {exc}")
+            summary.errors.extend(getattr(self.ws_source, "last_errors", []))
+            summary.messages.extend(getattr(self.ws_source, "last_skips", []))
+            items.extend(ws_claimed)
+
+        # HTTP polling fallback — only poll if WS is absent or returned nothing
+        ws_delivered = bool(self.ws_source is not None and ws_claimed)
+        if not ws_delivered:
+            try:
+                claimed = self.backend_source.collect()
+            except Exception as exc:
+                claimed = []
+                summary.errors.append(f"claim source failed: {exc}")
+            summary.errors.extend(getattr(self.backend_source, "last_errors", []))
+            summary.messages.extend(getattr(self.backend_source, "last_skips", []))
+            items.extend(claimed)
+
+        summary.claimed_items = len([item for item in items if item.source == "backend_claim"])
         try:
             discoveries = self.dataset_source.collect(min_interval_seconds=self.config.dataset_refresh_seconds)
         except Exception as exc:
@@ -1259,7 +1293,30 @@ def build_worker_from_env(*, auto_register_awp: bool = False) -> AgentWorker:
         eip712_verifying_contract=config.eip712_verifying_contract,
     )
     runner = CrawlerRunner(config)
-    return AgentWorker(client=client, runner=runner, config=config)
+
+    # Create WebSocket client for push-based task receiving (optional)
+    ws_client = None
+    if signer is not None and os.environ.get("MINER_DISABLE_WS", "").lower() not in ("1", "true"):
+        try:
+            from ws_client import ValidatorWSClient
+            ws_url = resolve_ws_url()
+            auth_headers = signer.build_auth_headers("GET", ws_url, None)
+
+            def _refresh_miner_ws_auth() -> dict[str, str]:
+                return signer.build_auth_headers("GET", ws_url, None)
+
+            ws_client = ValidatorWSClient(
+                ws_url=ws_url,
+                auth_headers=auth_headers,
+                on_auth_refresh=_refresh_miner_ws_auth,
+            )
+            # Don't connect here — the receive loop will connect on start()
+        except Exception as exc:
+            import logging
+            logging.getLogger("miner.ws").warning("WS setup failed, using HTTP polling: %s", exc)
+            ws_client = None
+
+    return AgentWorker(client=client, runner=runner, config=config, ws_client=ws_client)
 
 
 def run_single_item_for_test(*, item: WorkItem, client: Any, runner: Any, root: Path) -> dict[str, Any]:

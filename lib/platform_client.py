@@ -335,7 +335,16 @@ class PlatformClient:
                 last_error = api_err
                 status_code = api_err.status_code
                 if (status_code >= 500 or status_code == 429) and attempt < max_attempts:
-                    backoff = 0.5 * attempt if status_code != 429 else max(2.0, 1.0 * attempt)
+                    if status_code == 429 and api_err.response is not None:
+                        retry_after = getattr(api_err.response, "headers", {}).get("Retry-After")
+                        if retry_after and str(retry_after).isdigit():
+                            backoff = min(float(retry_after), 60.0)
+                        else:
+                            backoff = max(2.0, 1.0 * attempt)
+                    elif status_code == 429:
+                        backoff = max(2.0, 1.0 * attempt)
+                    else:
+                        backoff = 0.5 * attempt
                     time.sleep(backoff)
                     continue
                 raise
@@ -435,10 +444,11 @@ class PlatformClient:
         data = resp.get("data")
         return data if isinstance(data, dict) else {}
 
-    def report_evaluation(self, task_id: str, score: int, *, assignment_id: str) -> dict[str, Any]:
+    def report_evaluation(self, task_id: str, score: int, *, assignment_id: str, result: str = "match") -> dict[str, Any]:
         """POST /api/mining/v1/evaluation-tasks/{id}/report"""
         return self._request("POST", f"/api/mining/v1/evaluation-tasks/{task_id}/report", {
             "assignment_id": assignment_id,
+            "result": result,
             "score": score,
         })
 
