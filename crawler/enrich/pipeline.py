@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from dataclasses import asdict
 import logging
@@ -120,6 +121,10 @@ class EnrichPipeline:
             structured=StructuredFields(fields=document.get("structured", {}) if isinstance(document.get("structured"), dict) else (document.get("structured").platform_fields if hasattr(document.get("structured"), "platform_fields") else {})),
         )
 
+        # 第一遍：同步处理缓存命中、未知 group、llm_schema、提取型 field_group。
+        # 需要 LLM 的 generative field_group 收集起来，之后并行执行。
+        deferred_specs: list[FieldGroupSpec] = []
+
         for group_name in field_groups:
             cached = self._read_cached_result(document, group_name)
             if cached is not None:
@@ -141,9 +146,32 @@ class EnrichPipeline:
                 record.merge_field_group_result(result)
                 continue
 
-            result = await self._run_field_group(spec, document, model_capabilities)
-            self._write_cached_result(document, result)
-            record.merge_field_group_result(result)
+            if spec.strategy in ("generative_only", "extractive_then_generative"):
+                deferred_specs.append(spec)
+            else:
+                result = await self._run_field_group(spec, document, model_capabilities)
+                self._write_cached_result(document, result)
+                record.merge_field_group_result(result)
+
+        # 第二遍：并行执行所有 generative field_group
+        if deferred_specs:
+            async def _run_and_cache(s: FieldGroupSpec) -> FieldGroupResult:
+                r = await self._run_field_group(s, document, model_capabilities)
+                self._write_cached_result(document, r)
+                return r
+
+            results = await asyncio.gather(
+                *[_run_and_cache(s) for s in deferred_specs],
+                return_exceptions=True,
+            )
+            for spec, result in zip(deferred_specs, results):
+                if isinstance(result, BaseException):
+                    result = FieldGroupResult(
+                        field_group=spec.name,
+                        status="failed",
+                        error=str(result),
+                    )
+                record.merge_field_group_result(result)
 
         return record
 
