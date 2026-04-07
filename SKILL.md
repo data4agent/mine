@@ -20,7 +20,7 @@ requires:
     - python3
     - py
 metadata:
-  emoji: "\u26CF\uFE0F"
+  emoji: "⛏️"
   homepage: https://github.com/data4agent/mine
 ---
 
@@ -29,46 +29,36 @@ metadata:
 Autonomous data mining & validation on AWP. Agents earn $aMine rewards by
 crawling public data and validating others' submissions.
 
-## How This Skill Works
+## Agent-First Design
 
-You interact with the platform **exclusively** through CLI commands:
+This skill is designed for **agent execution** — all commands must be run by you
+(the agent) in the terminal. **Never show command text to the user.** Instead,
+execute commands yourself and present the results as natural-language summaries.
 
-```
-python scripts/run_tool.py <command>
-```
+Every command outputs JSON with:
+- `user_message` — show this to the user (natural language)
+- `user_actions` — action options to present (natural language labels)
+- `_internal` — for your eyes only, contains `action_map` mapping labels to commands
 
-These commands handle wallet authentication (EIP-712 cryptographic signatures),
-API requests, error recovery, and output formatting internally. You never need
-to understand or touch the underlying HTTP/signing layer.
-
-**Available commands:**
-
-| Command | Purpose |
-|---------|---------|
-| `agent-status` | Check if miner is ready to start |
-| `agent-start [datasetId]` | Start mining (optionally for a specific dataset) |
-| `agent-control status` | Check mining progress |
-| `agent-control stop` | Stop mining |
-| `agent-control pause` | Pause mining |
-| `agent-control resume` | Resume mining |
-| `list-datasets` | Show available datasets |
-| `doctor` | Diagnose issues (connectivity, auth, wallet) |
-| `validator-start` | Start validating |
-| `validator-control status` | Check validator status |
-| `validator-control stop` | Stop validator |
-| `validator-doctor` | Diagnose validator issues |
+**Workflow**: Run command → parse JSON → show `user_message` to user → if user
+picks an action from `user_actions`, look up the command in `_internal.action_map`
+and execute it.
 
 ## Rules
 
-1. **Only use `run_tool.py` commands.** Never make HTTP requests (curl, fetch, httpx,
+1. **Execute commands yourself.** Never display `python scripts/run_tool.py ...` to
+   the user. Run the command, read the JSON output, and speak to the user in natural
+   language based on `user_message`.
+
+2. **Only use `run_tool.py` commands.** Never make HTTP requests (curl, fetch, httpx,
    requests, WebFetch) to the platform. Never construct JSON-RPC payloads. The platform
    requires cryptographic signatures — raw HTTP calls always fail with 401.
 
-2. **Never expose secrets.** Do not print `AWP_WALLET_TOKEN`, `VALIDATOR_PRIVATE_KEY`,
+3. **Never expose secrets.** Do not print `AWP_WALLET_TOKEN`, `VALIDATOR_PRIVATE_KEY`,
    private keys, mnemonics, or `.env` contents. To check if set: `[ -n "$VAR" ] && echo "set"`.
 
-3. **Format output for humans.** Commands return JSON with `user_message` and `_internal`.
-   Show `user_message` with indicators — never dump raw JSON. Never show `_internal` to user.
+4. **Use `_internal` for next steps.** When the JSON output contains `_internal.action_map`,
+   use it to determine which command to run next. Never show `_internal` content to the user.
 
 ## Welcome Screen
 
@@ -97,27 +87,30 @@ which role? (1 or 2)
 
 ### Start Mining
 
-Step 1 — Check readiness:
+Step 1 — Check readiness (run in terminal, do not show command to user):
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-status
 ```
 
-If not ready, follow the fix instructions in the output.
+Parse the JSON output. If `ready` is false, execute the command from
+`_internal.action_map` to fix the issue. Tell the user what's happening
+in plain language.
 
-Step 2 — Start worker:
+Step 2 — Start worker (run in terminal):
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-start
 ```
 
-If dataset selection is required, the output lists options. Re-run with the ID:
+If dataset selection is required (state = `selection_required`), present the
+dataset names from `user_message` to the user. After they choose, re-run with:
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-start <datasetId>
 ```
 
-Step 3 — Confirm to user:
+Step 3 — Confirm to user using `user_message` from the JSON output. Example:
 
 ```text
 [1/3] wallet       0x1234...5678  ok
@@ -129,11 +122,15 @@ mining. say "mine status" to check progress.
 
 ### Check Status
 
+Run in terminal and show `user_message` to user:
+
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-control status
 ```
 
 ### Stop / Pause / Resume
+
+Run the appropriate command based on user intent:
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-control stop
@@ -216,19 +213,19 @@ signing code.** The `doctor` command handles all auth diagnostics.
 
 ## Intent Routing
 
-| User says | Command to run |
+| User says | Action to take |
 |-----------|---------------|
-| "start" / "go online" | `agent-start` or `validator-start` (depends on role) |
-| "status" / "how am I doing" | `agent-control status` or `validator-control status` |
-| "stop" | `agent-control stop` or `validator-control stop` |
-| "pause" | `agent-control pause` (miner only) |
-| "resume" | `agent-control resume` (miner only) |
-| "datasets" / "what can I mine" | `list-datasets` |
-| "diagnose" / "doctor" / "fix" | `doctor` or `validator-doctor` |
-| "help" | Show the command table from "How This Skill Works" |
+| "start" / "go online" | Run `agent-start` or `validator-start` (depends on role) |
+| "status" / "how am I doing" | Run `agent-control status` or `validator-control status` |
+| "stop" | Run `agent-control stop` or `validator-control stop` |
+| "pause" | Run `agent-control pause` (miner only) |
+| "resume" | Run `agent-control resume` (miner only) |
+| "datasets" / "what can I mine" | Run `list-datasets` |
+| "diagnose" / "doctor" / "fix" | Run `doctor` or `validator-doctor` |
+| "help" | Tell the user what actions are available in natural language |
 | "switch role" | Re-show Welcome Screen |
-| "check connectivity" / "heartbeat" | `doctor` (never direct HTTP) |
-| "401 error" / "auth error" | `doctor` (see Error Recovery) |
+| "check connectivity" / "heartbeat" | Run `doctor` (never direct HTTP) |
+| "401 error" / "auth error" | Run `doctor` (see Error Recovery) |
 
 ## Sub-Agent Guidelines
 

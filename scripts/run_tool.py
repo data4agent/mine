@@ -716,8 +716,10 @@ def run_doctor() -> str:
         },
         "warnings": readiness.get("warnings", []),
         "checks": [],
-        "fix_commands": [],
-        "next_command": None,
+        "_internal": {
+            "fix_commands": [],
+            "next_command": None,
+        },
     }
 
     # Check 1: Python version
@@ -731,7 +733,7 @@ def run_doctor() -> str:
     })
     if not py_ok:
         result["status"] = "error"
-        result["fix_commands"].append("# Install Python 3.11+ from https://python.org")
+        result["_internal"]["fix_commands"].append("# Install Python 3.11+ from https://python.org")
 
     # Check 2: Node.js
     node_bin = shutil.which("node")
@@ -753,7 +755,7 @@ def run_doctor() -> str:
     })
     if not node_ok:
         result["status"] = "error"
-        result["fix_commands"].append("# Install Node.js 20+ from https://nodejs.org")
+        result["_internal"]["fix_commands"].append("# Install Node.js 20+ from https://nodejs.org")
 
     # Check 3: awp-wallet (from unified readiness)
     result["checks"].append({
@@ -763,7 +765,7 @@ def run_doctor() -> str:
     })
     if not readiness["wallet_found"]:
         result["status"] = "error"
-        result["fix_commands"].extend(awp_wallet_install_steps())
+        result["_internal"]["fix_commands"].extend(awp_wallet_install_steps())
 
     # Check 4: Runtime defaults (from unified readiness)
     signature_config = readiness.get("signature_config", {})
@@ -791,8 +793,8 @@ def run_doctor() -> str:
             "ok": False,
             "message": "Wallet session unavailable or expired",
         })
-        result["fix_commands"].append(_bootstrap_command())
-        result["fix_commands"].append("awp-wallet unlock --duration 3600")
+        result["_internal"]["fix_commands"].append(_bootstrap_command())
+        result["_internal"]["fix_commands"].append("awp-wallet unlock --duration 3600")
 
     # Add session expiry warning if present
     expiry_seconds = readiness.get("session_expiry_seconds")
@@ -802,15 +804,15 @@ def run_doctor() -> str:
             "ok": False,
             "message": f"Wallet session expires in {expiry_seconds}s",
         })
-        if "awp-wallet unlock --duration 3600" not in result["fix_commands"]:
-            result["fix_commands"].append("awp-wallet unlock --duration 3600")
+        if "awp-wallet unlock --duration 3600" not in result["_internal"]["fix_commands"]:
+            result["_internal"]["fix_commands"].append("awp-wallet unlock --duration 3600")
 
     # Determine next command based on unified readiness
     if readiness["can_start"]:
         result["status"] = "ok"
-        result["next_command"] = "python scripts/run_tool.py agent-start"
-    elif result["fix_commands"]:
-        result["next_command"] = result["fix_commands"][0]
+        result["_internal"]["next_command"] = "python scripts/run_tool.py agent-start"
+    elif result["_internal"]["fix_commands"]:
+        result["_internal"]["next_command"] = result["_internal"]["fix_commands"][0]
 
     return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -1644,9 +1646,11 @@ def run_validator_doctor() -> str:
         "status": "ok" if all_ok else "error",
         "can_start": readiness.get("can_start", False),
         "checks": checks,
-        "fix_commands": fix_commands,
         "warnings": readiness.get("warnings", []),
-        "next_command": next_command,
+        "_internal": {
+            "fix_commands": fix_commands,
+            "next_command": next_command,
+        },
     }, ensure_ascii=False, indent=2)
 
 
@@ -1987,8 +1991,7 @@ def main() -> int:
             print("")
             if "401" in error_msg or "Unauthorized" in error_msg:
                 print("This appears to be an authentication issue.")
-                print("The agent will attempt to auto-recover.")
-                print("Try: python scripts/run_tool.py diagnose")
+                print("Running diagnostics to identify the cause.")
             else:
                 print("Check your network connection and platform URL.")
             return 1
@@ -2016,8 +2019,7 @@ def main() -> int:
             print("")
             if "401" in error_msg or "Unauthorized" in error_msg:
                 print("This appears to be an authentication issue.")
-                print("The agent will attempt to auto-recover.")
-                print("Run: python scripts/run_tool.py diagnose")
+                print("Running diagnostics to identify the cause.")
             return 1
         return 0
 

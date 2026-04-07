@@ -187,11 +187,6 @@ def render_first_load_experience() -> str:
             f'  "mine status"    {SYM_ARROW} your stats',
             f'  "mine help"      {SYM_ARROW} all commands',
             SYM_DIVIDER,
-            "",
-            "Available actions:",
-            "  python scripts/run_tool.py agent-start",
-            "  python scripts/run_tool.py agent-control status",
-            "  python scripts/run_tool.py agent-control stop",
         ])
         return "\n".join(lines)
 
@@ -218,11 +213,7 @@ def render_first_load_experience() -> str:
 
     lines.extend([
         "",
-        "Then run:",
-        "  python scripts/run_tool.py agent-status",
-        "",
-        "For deeper diagnostics:",
-        "  python scripts/run_tool.py doctor",
+        "After fixing, say 'check again' to verify, or 'diagnose' for deeper analysis.",
     ])
     return "\n".join(lines)
 
@@ -275,22 +266,17 @@ def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str
         if "401" in error_msg or "Unauthorized" in error_msg:
             lines.extend([
                 "",
-                "This looks like an authentication issue. Try the guided health checks first.",
-                "  1. python scripts/run_tool.py doctor",
-                "  2. python scripts/run_tool.py agent-start",
+                "This looks like an authentication issue. Running diagnostics to find the cause.",
             ])
         elif "wallet" in error_msg.lower() or "token" in error_msg.lower():
             lines.extend([
                 "",
-                "This looks like a wallet session issue.",
-                f"  {SYM_BULLET} Run: .\\scripts\\bootstrap.cmd" if os.name == "nt" else f"  {SYM_BULLET} Run: ./scripts/bootstrap.sh",
-                f"  {SYM_BULLET} If that does not recover the session, run: awp-wallet unlock --duration 3600",
-                f"  {SYM_BULLET} Retry: python scripts/run_tool.py agent-start",
+                "This looks like a wallet session issue. Re-initializing the environment.",
             ])
         else:
             lines.extend([
                 "",
-                f"  {SYM_BULLET} Run: python scripts/run_tool.py doctor",
+                "Running diagnostics to identify the issue.",
             ])
         return "\n".join(lines)
 
@@ -358,15 +344,10 @@ def render_start_working_response(worker: Any, *, selected_dataset_ids: list[str
             SYM_DIVIDER,
             "Starting autonomous mining...",
             "",
-            f"{SYM_CHECK} Use agent-start for real background execution in OpenClaw",
+            f"{SYM_CHECK} Mining is running in the background",
             f"{SYM_CHECK} Status and control stay available during mining",
             "",
-            "Controls:",
-            "  python scripts/run_tool.py agent-control pause",
-            "  python scripts/run_tool.py agent-control stop",
-            "  python scripts/run_tool.py agent-control status",
-            "",
-            "If OpenClaw provides slash aliases, it may map these to /mine-pause, /mine-stop, and /mine-status.",
+            'Say "status" to check progress, "pause" to pause, or "stop" to end.',
         ])
     else:
         lines.append("Mining session is ready.")
@@ -1214,13 +1195,13 @@ def _execute_intent(intent_id: str, command: str | None, worker: Any) -> str:
         return render_first_load_experience()
 
     if intent_id == "V_start":
-        return "Use: python scripts/run_tool.py validator-start"
+        return "Starting the validator now..."
 
     if intent_id == "V_status":
-        return "Use: python scripts/run_tool.py validator-control status"
+        return "Checking validator status..."
 
     if intent_id == "V_stop":
-        return "Use: python scripts/run_tool.py validator-control stop"
+        return "Stopping the validator..."
 
     return f"Unknown intent: {intent_id}"
 
