@@ -16,13 +16,13 @@ if str(ROOT) not in sys.path:
 from crawler.enrich.schemas.field_group_registry import FIELD_GROUP_REGISTRY
 
 FIELD_GROUP_DATASET_MAP: dict[tuple[str, str], str] = {
-    ("linkedin", "profiles"): "linkedin_profiles",
+    ("linkedin", "profile"): "linkedin_profiles",
     ("linkedin", "company"): "linkedin_company",
-    ("linkedin", "jobs"): "linkedin_jobs",
-    ("linkedin", "posts"): "linkedin_posts",
-    ("amazon", "products"): "amazon_products",
-    ("amazon", "reviews"): "amazon_reviews",
-    ("amazon", "sellers"): "amazon_sellers",
+    ("linkedin", "job"): "linkedin_jobs",
+    ("linkedin", "post"): "linkedin_posts",
+    ("amazon", "product"): "amazon_products",
+    ("amazon", "review"): "amazon_reviews",
+    ("amazon", "seller"): "amazon_sellers",
     ("arxiv", "paper"): "arxiv",
     ("wikipedia", "article"): "wikipedia",
 }

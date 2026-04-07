@@ -49,11 +49,16 @@ def _normalize_value(field: str, value: str) -> str:
 
 
 def build_url(record: dict) -> dict:
-    platform = record["platform"]
-    resource_type = record["resource_type"]
+    platform = record.get("platform", "")
+    resource_type = record.get("resource_type", "")
+    if not platform or not resource_type:
+        raise ValueError(f"record missing platform or resource_type: {list(record.keys())}")
     templates = _load_json(TEMPLATE_PATH)
     mappings = _load_json(FIELD_MAPPING_PATH)
-    template_config = templates[platform][resource_type]
+    platform_templates = templates.get(platform)
+    if not platform_templates or resource_type not in platform_templates:
+        raise ValueError(f"no URL template for {platform}/{resource_type}")
+    template_config = platform_templates[resource_type]
     alias_config = mappings.get(platform, {}).get(resource_type, {})
 
     fields: dict[str, str] = {}

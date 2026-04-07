@@ -69,11 +69,22 @@ ENRICH_PLAN = PlatformEnrichmentPlan(
 )
 
 
+def _extract_wiki_host(canonical_url: str) -> str:
+    """Extract the wiki host from a canonical URL (e.g. en.wikipedia.org from https://en.wikipedia.org/wiki/Cat)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(canonical_url)
+    host = parsed.netloc or "en.wikipedia.org"
+    return host if "wikipedia.org" in host else "en.wikipedia.org"
+
+
 def _fetch_wikipedia_api(record: dict, discovered: dict, storage_state_path: str | None) -> dict:
-    title = discovered["fields"]["title"]
-    canonical_url = discovered["canonical_url"]
+    title = discovered.get("fields", {}).get("title", "")
+    canonical_url = discovered.get("canonical_url", "")
+    if not title:
+        raise ValueError(f"Wikipedia record missing title field: {list(discovered.get('fields', {}).keys())}")
+    wiki_host = _extract_wiki_host(canonical_url)
     endpoint = (
-        "https://en.wikipedia.org/w/api.php"
+        f"https://{wiki_host}/w/api.php"
         f"?action=query&titles={quote(title)}"
         "&prop=extracts|categories|pageprops|info|images|extlinks|links|langlinks|revisions"
         "&explaintext=1"
@@ -91,7 +102,7 @@ def _fetch_wikipedia_api(record: dict, discovered: dict, storage_state_path: str
         parse_payload = fetch_api_get(
             canonical_url=canonical_url,
             api_endpoint=(
-                "https://en.wikipedia.org/w/api.php"
+                f"https://{wiki_host}/w/api.php"
                 f"?action=parse&page={quote(title)}&prop=text|wikitext&format=json&redirects=1"
             ),
             headers={"Accept": "application/json"},
@@ -526,11 +537,12 @@ def _extract_wikipedia(record: dict, fetched: dict) -> dict:
     plain_text = page.get("extract") or ""
     markdown = f"# {title}\n\n{plain_text}".strip()
     fullurl = page.get("fullurl") or fetched["url"]
+    wiki_host = _extract_wiki_host(fullurl)
     extlinks = [item.get("*", "").strip() for item in page.get("extlinks", []) if item.get("*", "").strip()]
     linked_titles = [item.get("title", "").strip() for item in page.get("links", []) if item.get("title", "").strip()]
     image_titles = [item.get("title", "").strip() for item in page.get("images", []) if item.get("title", "").strip()]
     image_urls = [
-        f"https://en.wikipedia.org/wiki/Special:FilePath/{quote(image.removeprefix('File:'), safe=':/()_-')}"
+        f"https://{wiki_host}/wiki/Special:FilePath/{quote(image.removeprefix('File:'), safe=':/()_-')}"
         for image in image_titles
     ]
     categories_cleaned = _clean_categories(categories)

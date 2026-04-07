@@ -293,7 +293,11 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
         try:
             # Step 1: URL Discovery
             adapter = get_platform_adapter(platform)
-            discovered = _discovered_from_seed(build_seed_records(record)[0])
+            seed_records = build_seed_records(record)
+            if not seed_records:
+                logger.warning("[%d] No seed records generated for %s", idx, record.get("url", "?"))
+                return None, None
+            discovered = _discovered_from_seed(seed_records[0])
             url = discovered["canonical_url"]
 
             # Skip if already completed (resume mode)
@@ -617,7 +621,8 @@ def _build_discovery_candidates(
 
     try:
         seed_records = adapter.build_seed_records(input_record)
-    except Exception:
+    except Exception as exc:
+        logger.warning("build_seed_records failed for %s: %s", input_record.get("url", "?"), exc)
         seed_records = []
     if seed_records:
         return [_candidate_from_discovery_record(seed) for seed in seed_records]
