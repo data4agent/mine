@@ -493,6 +493,7 @@ class AgentWorker:
                 return f"stopped after {iteration} iterations"
             except Exception as e:
                 print(f"[worker] iteration {iteration} error: {e}")
+                consecutive_empty = 0
                 wait = min(interval * 2, 120)
                 self.state_store.save_session({"last_wait_seconds": wait})
 
@@ -765,6 +766,11 @@ class AgentWorker:
                     report_result = self.client.report_refresh_task_result(item.claim_task_id, report_payload)
                 else:
                     summary.errors.append(f"unknown claim_task_type: {item.claim_task_type} for {item.claim_task_id}")
+            except PlatformApiError as api_exc:
+                if api_exc.code == "address_not_registered":
+                    summary.errors.append("address not registered on Base (chainId=8453); run AWP registration first")
+                    return
+                summary.errors.append(f"report failed for {item.item_id}: {api_exc}")
             except httpx.HTTPStatusError as exc:
                 if self._maybe_handle_rate_limit(item, exc, summary, output_dir=result.output_dir):
                     return
@@ -952,7 +958,11 @@ class AgentWorker:
             try:
                 payload = refresh_if_needed(threshold_seconds=WALLET_SESSION_RENEW_THRESHOLD_SECONDS)
             except TypeError:
-                payload = refresh_if_needed(WALLET_SESSION_RENEW_THRESHOLD_SECONDS)
+                try:
+                    payload = refresh_if_needed(WALLET_SESSION_RENEW_THRESHOLD_SECONDS)
+                except Exception as exc:
+                    summary.errors.append(f"wallet session refresh failed: {exc}")
+                    return
             except Exception as exc:
                 summary.errors.append(f"wallet session refresh failed: {exc}")
                 return

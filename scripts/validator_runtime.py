@@ -267,7 +267,8 @@ class ValidatorRuntime:
             log.warning("Initial WS connect failed; will retry in main loop")
 
         try:
-            self._platform.join_ready_pool()
+            with self._platform_lock:
+                self._platform.join_ready_pool()
             log.info("Joined validator ready pool")
         except Exception as exc:
             log.warning("join_ready_pool failed: %s", exc)
@@ -297,7 +298,8 @@ class ValidatorRuntime:
         log.info("ValidatorRuntime stopping")
 
         try:
-            self._platform.leave_ready_pool()
+            with self._platform_lock:
+                self._platform.leave_ready_pool()
         except Exception as exc:
             log.warning("leave_ready_pool failed: %s", exc)
 
@@ -416,6 +418,8 @@ class ValidatorRuntime:
                 log.debug("Ignoring message type=%s", msg.type)
 
         log.info("Main loop exited")
+        with self._lock:
+            self._running = False
         self._write_status()
 
     def _poll_evaluation_task_http(self) -> None:
@@ -557,10 +561,11 @@ class ValidatorRuntime:
             if isinstance(data, dict):
                 validator_info = data.get("validator")
                 if isinstance(validator_info, dict):
-                    self._eligible = validator_info.get("eligible", True)
-                    interval = validator_info.get("min_task_interval_seconds")
-                    if isinstance(interval, (int, float)) and interval > 0:
-                        self._min_task_interval = int(interval)
+                    with self._lock:
+                        self._eligible = validator_info.get("eligible", True)
+                        interval = validator_info.get("min_task_interval_seconds")
+                        if isinstance(interval, (int, float)) and interval > 0:
+                            self._min_task_interval = int(interval)
                     if not self._eligible:
                         log.warning("Validator not eligible (evicted or suspended)")
             log.debug("Heartbeat sent")

@@ -322,7 +322,7 @@ class PlatformClient:
                     code = error_obj.get("code", "unknown") if isinstance(error_obj, dict) else "unknown"
                     msg = error_obj.get("message", "") if isinstance(error_obj, dict) else str(error_obj)
                     category = error_obj.get("category", "") if isinstance(error_obj, dict) else ""
-                    status_map = {"not_found": 404, "authentication": 401, "permission": 403, "precondition": 428, "rate_limit": 429, "internal": 500, "dependency": 503}
+                    status_map = {"not_found": 404, "authentication": 401, "permission": 403, "validation": 422, "state_conflict": 409, "precondition": 428, "rate_limit": 429, "internal": 500, "dependency": 503}
                     raise PlatformApiError(code, msg, category, status_map.get(category, 400), response)
                 return body
             except PlatformApiError as api_err:
@@ -478,7 +478,7 @@ class PlatformClient:
                 return []
             raise
         except httpx.HTTPStatusError as error:
-            if error.response.status_code == 404:
+            if error.response.status_code in (404, 409):
                 return []
             raise
         data = payload.get("data")
