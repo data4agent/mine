@@ -42,19 +42,23 @@ jobs:
           echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "sha_full=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout target repo
+      - name: Checkout fork (data4agent/mine-skill)
         uses: actions/checkout@v4
         with:
-          repository: awp-worknet/mine-skill
-          token: ${{ secrets.RELEASE_REPO_TOKEN }}
-          path: target-repo
+          repository: data4agent/mine-skill
+          token: ${{ secrets.FORK_PAT }}
+          path: fork-repo
+          fetch-depth: 0
 
-      - name: Sync and push
+      - name: Sync files to fork branch
+        id: sync
         env:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
-          SOURCE_SHA_FULL: ${{ steps.source.outputs.sha_full }}
         run: |
-          cd target-repo
+          cd fork-repo
+
+          BRANCH="sync/${SOURCE_SHA}"
+          git checkout -b "$BRANCH"
 
           # Remove all tracked files except .git
           git ls-files -z | xargs -0 rm -f 2>/dev/null || true
@@ -64,13 +68,36 @@ jobs:
 
           # Check for changes
           if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "No changes to sync"
-            exit 0
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+            git status --short | head -30
           fi
+
+      - name: Push fork branch and create PR to upstream
+        if: steps.sync.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FORK_PAT }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_SHA_FULL: ${{ steps.source.outputs.sha_full }}
+          BRANCH: ${{ steps.sync.outputs.branch }}
+        run: |
+          cd fork-repo
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add -A
           git commit -m "sync: update from data4agent/mine@${SOURCE_SHA}"
-          git push origin main
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --repo awp-worknet/mine-skill \
+            --base main \
+            --head "data4agent:${BRANCH}" \
+            --title "sync: update @${SOURCE_SHA}" \
+            --body "Automated sync from [data4agent/mine@\`${SOURCE_SHA}\`](https://github.com/data4agent/mine/commit/${SOURCE_SHA_FULL}).
+
+          Excludes dev-only files: tests/, evals/, mine-workspace/, example-worker.py, pyproject.toml, dev docs."
