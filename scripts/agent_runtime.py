@@ -848,12 +848,11 @@ class AgentWorker:
         return "processed"
 
     def _handle_preflight_common(self, item: WorkItem, writer: RunArtifactWriter | None, *, command: str) -> str | None:
-        """Pre-submission check: occupancy only. PoW challenges are handled on submission response."""
+        """Pre-submission check: URL occupancy via public GET endpoint (no auth needed)."""
         if item.dataset_id and command != "discover-crawl":
-            occupancy = self.client.check_url_occupancy(
+            occupancy = self.client.check_url_occupancy_public(
                 item.dataset_id,
                 item.url,
-                structured_data=item.record,
             )
             if writer is not None:
                 writer.write_json("occupancy/response.json", occupancy if isinstance(occupancy, dict) else {})
