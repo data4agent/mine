@@ -12,7 +12,7 @@ STATE="$HOME/.openclaw/vrd-data/state.json"
 MODE="${1:-timeout}"
 TIMEOUT="${2:-300}"
 
-TOKEN=$(python3 -c "import json; print(json.load(open('$STATE')).get('SWITCH_TOKEN',''))" 2>/dev/null || echo "")
+TOKEN=$(python3 -c "import sys,json; print(json.load(open(sys.argv[1])).get('SWITCH_TOKEN',''))" "$STATE" 2>/dev/null || echo "")
 
 if [ "$MODE" = "--wait-user" ]; then
   # Caller invokes this after the user says "done"

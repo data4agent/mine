@@ -265,12 +265,14 @@ class AutoBrowserAuthBridge:
         self,
         *args: str,
         extra_env: dict[str, str] | None = None,
+        timeout: int = 60,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(self.script_path), *args],
             capture_output=True,
             text=True,
             env=self._base_env(extra_env),
+            timeout=timeout,
         )
 
     def _run_agent_browser(self, *args: str) -> subprocess.CompletedProcess[str]:
@@ -280,6 +282,7 @@ class AutoBrowserAuthBridge:
             capture_output=True,
             text=True,
             env=self._base_env(),
+            timeout=120,
         )
 
     def _ensure_vrd_running(self, login_url: str) -> bool:

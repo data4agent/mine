@@ -51,7 +51,7 @@ if ! python3 "$VRD" status >/dev/null 2>&1; then
 fi
 
 # Resolve PUBLIC_URL
-PUBLIC_URL=$(python3 -c "import json; print(json.load(open('$STATE')).get('PUBLIC_URL',''))" 2>/dev/null || echo "")
+PUBLIC_URL=$(python3 -c "import sys,json; print(json.load(open(sys.argv[1])).get('PUBLIC_URL',''))" "$STATE" 2>/dev/null || echo "")
 if [ -z "$PUBLIC_URL" ]; then
   echo "[ERROR] Could not get PUBLIC_URL; VNC may not have started correctly" >&2
   exit 1
@@ -63,7 +63,7 @@ echo "[AUTH] Opening login page: $LOGIN_URL" >&2
 agent-browser --cdp 9222 --session vrd open "$LOGIN_URL" >/dev/null 2>&1 || true
 
 # Set guide message
-TOKEN=$(python3 -c "import json; print(json.load(open('$STATE')).get('SWITCH_TOKEN',''))" 2>/dev/null || echo "")
+TOKEN=$(python3 -c "import sys,json; print(json.load(open(sys.argv[1])).get('SWITCH_TOKEN',''))" "$STATE" 2>/dev/null || echo "")
 if [ -n "$TOKEN" ]; then
   curl -s -X POST "http://127.0.0.1:6090/guide?token=$TOKEN" \
     -H "Content-Type: application/json" \

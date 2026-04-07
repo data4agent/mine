@@ -79,7 +79,13 @@ _rec_timer: threading.Timer | None = None
 #  Helpers
 # ════════════════════════════════════════════════════════════════════════
 def _wh(geom: str) -> tuple[int, int]:
-    w, h = str(geom).split("x", 1); return int(w), int(h)
+    parts = str(geom).split("x", 1)
+    if len(parts) != 2:
+        return 1280, 720  # safe default
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return 1280, 720
 
 def _scale(geom: str, f: int) -> str:
     w, h = _wh(geom); s = max(1, f); return f"{w*s}x{h*s}"
@@ -167,8 +173,10 @@ def _load() -> dict:
 
 def _save(data: dict) -> None:
     PIDFILE.parent.mkdir(parents=True, exist_ok=True)
-    PIDFILE.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", "utf-8")
-    PIDFILE.chmod(0o600)
+    tmp = PIDFILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", "utf-8")
+    tmp.chmod(0o600)
+    tmp.replace(PIDFILE)
 
 
 def export_session(platform: str, output_path: str) -> dict:
@@ -201,6 +209,7 @@ def export_session(platform: str, output_path: str) -> dict:
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    target.chmod(0o600)  # restrict access — file contains auth cookies
     return {"ok": True, "platform": platform, "path": str(target), "endpoint": endpoint}
 
 # ════════════════════════════════════════════════════════════════════════
@@ -388,7 +397,6 @@ def _focus_windows_window(pid: int) -> bool:
     except Exception:
         return False
     return False
-    pp.mkdir(parents=True, exist_ok=True)
 
 def _backup_profile(profile: str, workdir: str, max_keep: int = 3) -> None:
     pp = Path(profile) / "Default"
@@ -1236,15 +1244,13 @@ class _Handler(BaseHTTPRequestHandler):
         env, ok = _auth(qs)
         body    = self._body() if method in ("POST", "DELETE") else {}
 
-        # Public endpoints
-        if path == "/guide" and method == "GET":
-            with _lock: return self._ok(dict(_guide))
+        # Public endpoints (gate only — guide and continue require auth)
         if path == "/gate" and method == "GET" and not ok:
             with _lock: return self._ok(dict(_gate))
-        if path == "/continue" and method == "POST" and not ok:
-            pass  # VNC page may POST without token
-        elif not ok and path not in ("/continue",):
+        if not ok:
             return self._err(403, "forbidden")
+        if path == "/guide" and method == "GET":
+            with _lock: return self._ok(dict(_guide))
 
         # /status
         if path == "/status" and method == "GET":
