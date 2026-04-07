@@ -118,10 +118,11 @@ class BrowserPool:
         storage_state = self._load_storage_state(platform)
         ctx = await browser.new_context(storage_state=storage_state)
 
-        if key not in self._contexts:
-            self._contexts[key] = []
-            self._available[key] = asyncio.Queue()
-        self._contexts[key].append(ctx)
+        async with self._lock:
+            if key not in self._contexts:
+                self._contexts[key] = []
+                self._available[key] = asyncio.Queue()
+            self._contexts[key].append(ctx)
         logger.debug("Created new context for %s (total: %d)", key, len(self._contexts[key]))
         return ctx
 

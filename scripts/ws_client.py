@@ -177,6 +177,8 @@ class ValidatorWSClient:
             self._reconnect_attempt,
         )
         time.sleep(delay)
+        if self._closed:
+            return
 
         # Refresh auth headers if callback provided
         if self._on_auth_refresh is not None:

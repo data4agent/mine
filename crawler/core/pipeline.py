@@ -361,7 +361,7 @@ async def _run_new_pipeline_async(config: CrawlerConfig) -> tuple[list[dict], li
                             requires_auth=requires_auth,
                             override_backend=effective_override,
                             preferred_backend=effective_preferred,
-                            fallback_chain=adapter_fallback if effective_preferred else None,
+                            fallback_chain=adapter_fallback if (effective_preferred or effective_override is None) else None,
                         )
                     fetch_result = raw_result.to_legacy_dict()
                     break

@@ -108,7 +108,7 @@ class FetchEngine:
         consecutive_failures = 0
 
         for attempt, backend in enumerate(backends_to_try):
-            if consecutive_failures > self._max_retries:
+            if consecutive_failures >= self._max_retries:
                 break
             try:
                 # Enforce per-platform rate limit before each request
