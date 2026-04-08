@@ -64,7 +64,8 @@ Optional overrides via `.env` or shell:
 |----------|---------|-------------|
 | `PLATFORM_BASE_URL` | auto-detected | Platform API endpoint |
 | `MINER_ID` | `mine-agent` | Miner identifier |
-| `WORKER_MAX_PARALLEL` | `3` | Concurrent crawl workers |
+| `WORKER_MAX_PARALLEL` | `1` | Concurrent crawl workers |
+| `CRAWL_TIMEOUT_SECONDS` | `900` | Per-item crawler timeout |
 
 Wallet sessions, signature config, and AWP registration are all auto-managed.
 

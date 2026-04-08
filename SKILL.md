@@ -67,6 +67,96 @@ and execute it.
 4. **Use `_internal` for next steps.** When the JSON output contains `_internal.action_map`,
    use it to determine which command to run next. Never show `_internal` content to the user.
 
+## LLM Enrich With OpenClaw
+
+When the user asks you to run or debug **LLM enrich**, **OpenClaw enrich**, or
+why enrichment is not producing fields, you must execute the enrich flow
+yourself and verify the result from logs and cache artifacts instead of just
+describing the command.
+
+- Prefer the crawler path that already wires OpenClaw in:
+  `python3 -m crawler run ... --use-openclaw`
+- Treat OpenClaw as the first-choice enrich backend when available.
+- Confirm actual OpenClaw execution from logs, not assumptions. The important
+  markers are:
+  - `[enrich] openclaw start ...`
+  - `[enrich] openclaw end ...`
+  - `[AGENT] CLI start ...`
+  - `[AGENT] CLI end ...`
+- Successful generative groups write normal cache files under
+  `.cache/enrich/`.
+- Failed, skipped, partial, or pending groups write debug artifacts under
+  `.cache/enrich/_debug/`. Check this directory whenever the user says enrich
+  "didn't run", "only base fields appeared", or "no task available".
+- If you diagnose OpenClaw problems, report whether the failure is:
+  - task sourcing / no executable work
+  - field-group source data missing
+  - OpenClaw agent creation / routing
+  - model response / JSON parse failure
+
+## Fast Path
+
+When the user wants practical mining progress instead of code analysis, use
+this order:
+
+1. Check readiness with `agent-status`
+2. Check whether a worker is already active with `agent-control status`
+3. If idle, start mining
+4. Judge progress from real artifacts, not only from high-level status text
+5. If a task looks stalled, inspect the task output directory before changing code
+
+For arXiv, the most useful files are:
+
+- `artifacts/<paper_id>/fetch.json`
+- `artifacts/<paper_id>/structured.json`
+- `.cache/enrich/*.json`
+- `.cache/enrich/_debug/*.json`
+- `records.jsonl`
+- `summary.json`
+- `core-submissions.json`
+- `core-submissions-response.json`
+
+If `records.jsonl` and `summary.json` exist, the crawler run itself has already
+completed. If `core-submissions-response.json` also exists, submission export
+was reached.
+
+## Known Pitfalls
+
+- `no task available` does not mean a ban. It usually means backend claim,
+  dataset discovery, and resume queue all returned no executable work.
+- For arXiv, a task can look "stuck" even after fetch/extract succeeded. Check
+  the task directory first. If `artifacts/` and `.cache/enrich/` are present,
+  the run is usually waiting on late-stage LLM enrich rather than page fetch.
+- Do not assume OpenClaw is unused just because final fields are sparse.
+  Skipped/failed/pending groups are written to `.cache/enrich/_debug/`.
+- In this repo, heavy arXiv generative groups are the dominant runtime cost.
+  A single field group can take 15s to 25s.
+- The stable default is: crawl serial, LLM enrich conservative. Increasing task
+  concurrency before verifying OpenClaw behavior usually causes worker-level
+  timeouts.
+- A task may produce fetch artifacts and many enrich cache files but still fail
+  the outer worker if `crawler run` does not finish before the worker timeout.
+- arXiv uses API fetch, but the runtime may still start Playwright internals.
+  This is noisy and can mislead diagnosis; it is not always the root cause.
+- Old `crawler run` processes can linger after experiments and steal CPU or
+  OpenClaw capacity. Check and clean them before judging worker health.
+
+## Recommended Runtime
+
+For stable mining defaults:
+
+- `WORKER_MAX_PARALLEL=1`
+- `CRAWL_TIMEOUT_SECONDS=900`
+
+For "collection serial, enrich concurrent" experiments:
+
+- `WORKER_MAX_PARALLEL=1`
+- `MINE_ENRICH_CONCURRENCY=2`
+- `MINE_ENRICH_AGENT_POOL_SIZE=2`
+
+This keeps task collection serial while allowing a small fixed pool of
+concurrent OpenClaw enrich calls.
+
 ## Welcome Screen
 
 On first launch (no worker running), or whenever the user says `start` without
@@ -331,9 +421,22 @@ Runtime overrides (optional, via `.env` or shell):
 | --------------------- | -------------------------- | ------------------------ |
 | `PLATFORM_BASE_URL`   | `https://api.minework.net` | Platform API endpoint    |
 | `MINER_ID`            | `mine-agent`               | Miner identifier         |
-| `WORKER_MAX_PARALLEL` | `3`                        | Concurrent crawl workers |
+| `WORKER_MAX_PARALLEL` | `1`                        | Concurrent crawl workers |
+| `CRAWL_TIMEOUT_SECONDS` | `900`                    | Per-item crawler timeout |
+| `MINE_ENRICH_CONCURRENCY` | unset                  | LLM enrich field-group concurrency override |
+| `MINE_ENRICH_AGENT_POOL_SIZE` | unset              | Fixed OpenClaw agent pool size for concurrent LLM enrich |
 
 For validator settings, see `docs/ENVIRONMENT.md`.
+
+For stable mining, keep crawl collection serial. If you need faster LLM enrich,
+prefer enabling a small fixed agent pool instead of task-level crawl parallelism:
+
+- `WORKER_MAX_PARALLEL=1`
+- `MINE_ENRICH_CONCURRENCY=2`
+- `MINE_ENRICH_AGENT_POOL_SIZE=2`
+
+This keeps dataset collection serial while allowing at most two concurrent
+OpenClaw enrich calls through stable fixed agent IDs.
 
 ## Advanced
 

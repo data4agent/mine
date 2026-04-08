@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,8 @@ _openclaw_bin: str = ""
 _ready_agents: set[str] = set()
 _rate_limit_until: float = 0.0
 _agent_lock = threading.Lock()
+_agent_call_locks: dict[str, threading.Lock] = {}
+_agent_selection_counter: int = 0
 
 
 @dataclass(slots=True)
@@ -69,15 +72,44 @@ def _configured_agent_id() -> str:
     return f"{DEFAULT_AGENT_ID}-{suffix}" if suffix else DEFAULT_AGENT_ID
 
 
-def _runtime_agent_id() -> str:
-    """Use a dedicated OpenClaw agent per worker thread.
+def _configured_agent_pool_size() -> int:
+    raw = os.environ.get("MINE_ENRICH_AGENT_POOL_SIZE", "").strip()
+    if not raw:
+        return 1
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 1
 
-    The enrich pipeline dispatches generative field groups concurrently via the
-    thread pool. Reusing a single agent across threads causes session-state
-    contention and makes the apparent asyncio parallelism ineffective.
+
+def _pooled_agent_ids() -> list[str]:
+    base_agent_id = _configured_agent_id()
+    pool_size = _configured_agent_pool_size()
+    if pool_size <= 1:
+        return [base_agent_id]
+    return [base_agent_id, *[f"{base_agent_id}-{index}" for index in range(2, pool_size + 1)]]
+
+
+def _runtime_agent_id() -> str:
+    """Resolve the runtime OpenClaw agent id.
+
+    Default to a stable shared agent because recent OpenClaw gateway builds do
+    not reliably expose just-created per-thread agents immediately. Thread-
+    scoped agents remain available behind an explicit opt-in for environments
+    that have verified that behavior.
     """
     base_agent_id = _configured_agent_id()
-    return f"{base_agent_id}-p{os.getpid()}-t{threading.get_ident()}"
+    use_thread_agents = os.environ.get("MINE_ENRICH_THREAD_AGENTS", "").strip().lower()
+    if use_thread_agents in {"1", "true", "yes", "on"}:
+        return f"{base_agent_id}-p{os.getpid()}-t{threading.get_ident()}"
+    agent_ids = _pooled_agent_ids()
+    if len(agent_ids) == 1:
+        return agent_ids[0]
+    global _agent_selection_counter
+    with _agent_lock:
+        agent_id = agent_ids[_agent_selection_counter % len(agent_ids)]
+        _agent_selection_counter += 1
+    return agent_id
 
 
 def _runtime_session_id(agent_id: str) -> str:
@@ -223,15 +255,37 @@ def ensure_agent(agent_id: str | None = None) -> str:
     with _agent_lock:
         resolved_agent_id = agent_id or _runtime_agent_id()
         _resolve_openclaw_path()
-        if resolved_agent_id in _ready_agents:
+        if resolved_agent_id in _ready_agents and _agent_exists(resolved_agent_id):
             return resolved_agent_id
         if _agent_exists(resolved_agent_id):
             log.info("[AGENT] found existing agent: %s", resolved_agent_id)
         else:
             log.info("[AGENT] agent '%s' not found, creating...", resolved_agent_id)
-            _create_agent(resolved_agent_id)
+            created = _create_agent(resolved_agent_id)
+            if not created or not _agent_exists(resolved_agent_id):
+                fallback_agent_id = _configured_agent_id()
+                if resolved_agent_id != fallback_agent_id and _agent_exists(fallback_agent_id):
+                    log.warning(
+                        "[AGENT] falling back from unavailable runtime agent %s to configured agent %s",
+                        resolved_agent_id,
+                        fallback_agent_id,
+                    )
+                    _ready_agents.add(fallback_agent_id)
+                    return fallback_agent_id
+                raise OpenClawAgentError(f"agent {resolved_agent_id!r} not available after creation attempt")
         _ready_agents.add(resolved_agent_id)
         return resolved_agent_id
+
+
+@contextmanager
+def _serialized_agent_call(agent_id: str):
+    with _agent_lock:
+        lock = _agent_call_locks.setdefault(agent_id, threading.Lock())
+    lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def _mark_rate_limited(stderr: str) -> None:
@@ -302,6 +356,7 @@ def call_agent(
     purge_sessions: bool = True,
 ) -> EnrichResponse:
     """Call the dedicated OpenClaw agent with benchmark-skill session hygiene."""
+    started_at = time.monotonic()
     if time.monotonic() < _rate_limit_until:
         remaining = int(_rate_limit_until - time.monotonic())
         return EnrichResponse(
@@ -318,45 +373,61 @@ def call_agent(
     except OpenClawAgentError as exc:
         return EnrichResponse(content="", success=False, source="benchmark_skill", error=str(exc))
 
-    if purge_sessions:
-        _purge_agent_sessions(agent_id)
-
-    try:
-        proc = subprocess.Popen(
-            [
-                openclaw,
-                "agent",
-                "--agent",
-                agent_id,
-                "--session-id",
-                session_id,
-                "--message",
-                prompt,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+    with _serialized_agent_call(agent_id):
+        log.info(
+            "[AGENT] CLI start agent_id=%s session_id=%s prompt_chars=%d timeout=%.1fs purge_sessions=%s",
+            agent_id,
+            session_id,
+            len(prompt),
+            timeout,
+            purge_sessions,
         )
-    except (FileNotFoundError, OSError) as exc:
-        return EnrichResponse(content="", success=False, source="benchmark_skill", error=str(exc))
 
-    timed_out = False
-    deadline = time.monotonic() + timeout
-    try:
-        while proc.poll() is None:
-            if time.monotonic() > deadline:
-                timed_out = True
-                _terminate_process(proc)
-                break
-            time.sleep(0.25)
-
-        stdout = proc.stdout.read() if proc.stdout else ""
-        stderr = proc.stderr.read() if proc.stderr else ""
-    finally:
         if purge_sessions:
             _purge_agent_sessions(agent_id)
 
+        try:
+            proc = subprocess.Popen(
+                [
+                    openclaw,
+                    "agent",
+                    "--agent",
+                    agent_id,
+                    "--session-id",
+                    session_id,
+                    "--message",
+                    prompt,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            return EnrichResponse(content="", success=False, source="benchmark_skill", error=str(exc))
+
+        timed_out = False
+        deadline = time.monotonic() + timeout
+        try:
+            while proc.poll() is None:
+                if time.monotonic() > deadline:
+                    timed_out = True
+                    _terminate_process(proc)
+                    break
+                time.sleep(0.25)
+
+            stdout = proc.stdout.read() if proc.stdout else ""
+            stderr = proc.stderr.read() if proc.stderr else ""
+        finally:
+            if purge_sessions:
+                _purge_agent_sessions(agent_id)
+
     if timed_out:
+        log.warning(
+            "[AGENT] CLI end agent_id=%s session_id=%s status=timeout elapsed_ms=%d",
+            agent_id,
+            session_id,
+            int((time.monotonic() - started_at) * 1000),
+        )
         return EnrichResponse(
             content="",
             success=False,
@@ -367,7 +438,14 @@ def call_agent(
     if proc.returncode != 0:
         error_msg = stderr.strip() or f"exit code {proc.returncode}"
         _mark_rate_limited(error_msg)
-        log.warning("[AGENT] CLI failed: %s", error_msg[:200])
+        log.warning(
+            "[AGENT] CLI end agent_id=%s session_id=%s status=failed elapsed_ms=%d returncode=%s error=%s",
+            agent_id,
+            session_id,
+            int((time.monotonic() - started_at) * 1000),
+            proc.returncode,
+            error_msg[:200],
+        )
         return EnrichResponse(
             content="",
             success=False,
@@ -376,6 +454,12 @@ def call_agent(
         )
 
     if not stdout.strip():
+        log.warning(
+            "[AGENT] CLI end agent_id=%s session_id=%s status=failed elapsed_ms=%d error=empty response",
+            agent_id,
+            session_id,
+            int((time.monotonic() - started_at) * 1000),
+        )
         return EnrichResponse(
             content="",
             success=False,
@@ -385,6 +469,12 @@ def call_agent(
 
     content = _extract_content(stdout.strip())
     if not content:
+        log.warning(
+            "[AGENT] CLI end agent_id=%s session_id=%s status=failed elapsed_ms=%d error=unable to extract response content",
+            agent_id,
+            session_id,
+            int((time.monotonic() - started_at) * 1000),
+        )
         return EnrichResponse(
             content="",
             success=False,
@@ -392,6 +482,13 @@ def call_agent(
             error="unable to extract response content",
         )
 
+    log.info(
+        "[AGENT] CLI end agent_id=%s session_id=%s status=success elapsed_ms=%d response_chars=%d",
+        agent_id,
+        session_id,
+        int((time.monotonic() - started_at) * 1000),
+        len(content),
+    )
     return EnrichResponse(
         content=content,
         success=True,

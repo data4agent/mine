@@ -103,7 +103,8 @@ PLATFORM_BASE_URL=https://api.minework.net
 | `CRAWLER_OUTPUT_ROOT` | `output/agent-runs` | Run artifact root |
 | `WORKER_STATE_ROOT` | `<output>/_worker_state` | Persistent worker session state |
 | `PYTHON_BIN` | `python` | Python executable for spawned crawler work |
-| `WORKER_MAX_PARALLEL` | `3` | Parallel work limit |
+| `WORKER_MAX_PARALLEL` | `1` | Parallel work limit |
+| `CRAWL_TIMEOUT_SECONDS` | `900` | Per-item crawler timeout in seconds |
 | `WORKER_PER_DATASET_PARALLEL` | `1` | Per-dataset concurrency toggle |
 | `DATASET_REFRESH_SECONDS` | `900` | Dataset refresh interval |
 | `DISCOVERY_MAX_PAGES` | `25` | Discovery page cap |

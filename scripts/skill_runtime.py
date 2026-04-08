@@ -1200,7 +1200,8 @@ def _execute_intent(intent_id: str, command: str | None, worker: Any) -> str:
     if intent_id == "C1":
         return (
             "Mining preferences can be configured via environment variables:\n"
-            f"  {SYM_BULLET} WORKER_MAX_PARALLEL {SYM_DASH} concurrent crawl workers (default: 3)\n"
+            f"  {SYM_BULLET} WORKER_MAX_PARALLEL {SYM_DASH} concurrent crawl workers (default: 1)\n"
+            f"  {SYM_BULLET} CRAWL_TIMEOUT_SECONDS {SYM_DASH} per-item crawler timeout in seconds (default: 900)\n"
             f"  {SYM_BULLET} DATASET_REFRESH_SECONDS {SYM_DASH} dataset refresh interval (default: 900)\n"
             f"  {SYM_BULLET} DISCOVERY_MAX_PAGES {SYM_DASH} max pages per discovery (default: 25)\n"
             f"  {SYM_BULLET} AUTH_RETRY_INTERVAL_SECONDS {SYM_DASH} retry after auth errors (default: 300)\n"

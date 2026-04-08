@@ -85,7 +85,7 @@ class CrawlerRunner:
                 cwd=self.config.crawler_root,
                 capture_output=True,
                 text=True,
-                timeout=getattr(self.config, "crawl_timeout_seconds", 300),
+                timeout=getattr(self.config, "crawl_timeout_seconds", 900),
             )
         except subprocess.TimeoutExpired:
             raise SkipItemError(f"crawler subprocess timed out for {item.url}")
@@ -1452,8 +1452,9 @@ def build_worker_from_env(*, auto_register_awp: bool = False) -> AgentWorker:
         python_bin=python_bin,
         state_root=state_root,
         default_backend=(os.environ.get("DEFAULT_BACKEND") or None),
-        max_parallel=max(1, int(os.environ.get("WORKER_MAX_PARALLEL", "3"))),
+        max_parallel=max(1, int(os.environ.get("WORKER_MAX_PARALLEL", "1"))),
         per_dataset_parallel=os.environ.get("WORKER_PER_DATASET_PARALLEL", "1").lower() in ("1", "true", "yes"),
+        crawl_timeout_seconds=max(120, int(os.environ.get("CRAWL_TIMEOUT_SECONDS", "900"))),
         dataset_refresh_seconds=max(60, int(os.environ.get("DATASET_REFRESH_SECONDS", "120"))),
         discovery_max_pages=max(1, int(os.environ.get("DISCOVERY_MAX_PAGES", "25"))),
         discovery_max_depth=max(0, int(os.environ.get("DISCOVERY_MAX_DEPTH", "1"))),

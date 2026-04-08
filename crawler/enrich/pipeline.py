@@ -6,6 +6,7 @@ from dataclasses import asdict
 import logging
 import time
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -71,9 +72,12 @@ class EnrichPipeline:
         self._lookup_cache: dict[str, LookupEnricher] = {}
         self._regex_cache: dict[str, RegexEnricher] = {}
         self._cache_dir = cache_dir
+        self._debug_cache_dir = cache_dir / "_debug" if cache_dir is not None else None
         self._model_config = model_config or {}
         if self._cache_dir is not None:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
+        if self._debug_cache_dir is not None:
+            self._debug_cache_dir.mkdir(parents=True, exist_ok=True)
         self._llm_schema_executor = (
             LLMSchemaFieldGroupExecutor(enrich_llm_schema_path, self._model_config)
             if enrich_llm_schema_path is not None
@@ -155,8 +159,11 @@ class EnrichPipeline:
 
         # 第二遍：并行执行所有 generative field_group
         if deferred_specs:
+            semaphore = asyncio.Semaphore(self._generative_concurrency_limit())
+
             async def _run_and_cache(s: FieldGroupSpec) -> FieldGroupResult:
-                r = await self._run_field_group(s, document, model_capabilities)
+                async with semaphore:
+                    r = await self._run_field_group(s, document, model_capabilities)
                 self._write_cached_result(document, r)
                 return r
 
@@ -326,6 +333,14 @@ class EnrichPipeline:
         max_tokens = (spec.generative_config.max_tokens if spec.generative_config else 512) or 512
         base_timeout = float(self._model_config.get("timeout", 120.0) or 120.0)
         timeout = max(base_timeout, max_tokens * 0.05 + 30)
+        prompt_chars = len(prompt)
+        logger.info(
+            "[enrich] openclaw start field_group=%s prompt_chars=%d max_tokens=%d timeout=%.1fs",
+            spec.name,
+            prompt_chars,
+            max_tokens,
+            timeout,
+        )
         try:
             response = await enrich_with_llm(
                 prompt,
@@ -334,6 +349,12 @@ class EnrichPipeline:
                 timeout=timeout,
             )
         except Exception as exc:
+            logger.warning(
+                "[enrich] openclaw end field_group=%s status=failed elapsed_ms=%d error=%s",
+                spec.name,
+                int((time.monotonic() - start) * 1000),
+                exc,
+            )
             return FieldGroupResult(
                 field_group=spec.name,
                 status="failed",
@@ -342,6 +363,13 @@ class EnrichPipeline:
             )
 
         if not response.success:
+            logger.warning(
+                "[enrich] openclaw end field_group=%s status=failed elapsed_ms=%d method=%s error=%s",
+                spec.name,
+                int((time.monotonic() - start) * 1000),
+                response.method,
+                response.error or "llm enrich failed",
+            )
             return FieldGroupResult(
                 field_group=spec.name,
                 status="failed",
@@ -362,6 +390,15 @@ class EnrichPipeline:
             evidence=[f"llm_{response.method}"],
         )
         result.latency_ms = int((time.monotonic() - start) * 1000)
+        logger.info(
+            "[enrich] openclaw end field_group=%s status=%s elapsed_ms=%d method=%s model=%s tokens_used=%s",
+            spec.name,
+            result.status,
+            result.latency_ms,
+            response.method,
+            response.model or "",
+            response.tokens_used if response.tokens_used is not None else "",
+        )
         return result
 
     # Max chars for large text fields to avoid exceeding LLM context
@@ -574,6 +611,9 @@ class EnrichPipeline:
     def _write_cached_result(self, document: dict[str, Any], result: FieldGroupResult) -> None:
         if self._cache_dir is None:
             return
+        if result.status in {"failed", "skipped", "pending_agent", "partial"}:
+            self._write_debug_result(document, result)
+            return
         if result.status in {"failed", "skipped", "pending_agent"}:
             return
         # Cache "empty" results (LLM legitimately found no data) to avoid re-enrichment
@@ -588,6 +628,17 @@ class EnrichPipeline:
             )
         except OSError as exc:
             logger.warning("Failed to write enrichment cache for %s: %s", result.field_group, exc)
+
+    def _write_debug_result(self, document: dict[str, Any], result: FieldGroupResult) -> None:
+        if self._debug_cache_dir is None:
+            return
+        try:
+            self._debug_cache_path(document, result.field_group).write_text(
+                json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning("Failed to write enrichment debug cache for %s: %s", result.field_group, exc)
 
     def _cache_path(self, document: dict[str, Any], field_group: str) -> Path:
         payload = {
@@ -605,11 +656,55 @@ class EnrichPipeline:
         ).hexdigest()
         return self._cache_dir / f"{digest}.json"
 
+    def _debug_cache_path(self, document: dict[str, Any], field_group: str) -> Path:
+        payload = {
+            "field_group": field_group,
+            "canonical_url": document.get("canonical_url"),
+            "platform": document.get("platform"),
+            "resource_type": document.get("resource_type", document.get("entity_type")),
+            "status_bucket": "debug",
+            "config_identity": self._cache_config_identity(field_group),
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
+        ).hexdigest()
+        return self._debug_cache_dir / f"{digest}.json"
+
+    def _generative_concurrency_limit(self) -> int:
+        raw = self._model_config.get("generative_concurrency")
+        if raw in (None, ""):
+            raw = self._model_config.get("max_concurrent_generations")
+        if raw in (None, ""):
+            raw = os.environ.get("MINE_ENRICH_CONCURRENCY", "").strip()
+        if raw in (None, ""):
+            mode = (
+                os.environ.get("MINE_LLM_MODE", "").strip().lower()
+                or os.environ.get("MINE_ENRICH_MODE", "").strip().lower()
+                or "auto"
+            )
+            # OpenClaw CLI enrich is more stable when field groups are processed
+            # sequentially; explicit config still overrides this default.
+            raw = 1 if mode in {"auto", "cli", "benchmark_skill"} else 2
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            return 1
+
     def _cache_config_identity(self, field_group: str) -> dict[str, Any]:
         identity: dict[str, Any] = {
             "model_config": {
                 key: self._model_config.get(key)
-                for key in ("base_url", "provider", "model", "openclaw_model", "max_tokens", "temperature", "timeout")
+                for key in (
+                    "base_url",
+                    "provider",
+                    "model",
+                    "openclaw_model",
+                    "max_tokens",
+                    "temperature",
+                    "timeout",
+                    "generative_concurrency",
+                    "max_concurrent_generations",
+                )
                 if key in self._model_config
             }
         }

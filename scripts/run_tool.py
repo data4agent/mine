@@ -73,7 +73,8 @@ def render_env_check() -> str:
         ("AWP_WALLET_BIN", f"Resolved awp-wallet binary (current: {resolve_wallet_bin()})"),
         ("SOCIAL_CRAWLER_ROOT", "Mine runtime root (default: auto-detected)"),
         ("OPENCLAW_GATEWAY_BASE_URL", "LLM gateway for PoW challenges"),
-        ("WORKER_MAX_PARALLEL", "Concurrent crawl workers (default: 3)"),
+        ("WORKER_MAX_PARALLEL", "Concurrent crawl workers (default: 1)"),
+        ("CRAWL_TIMEOUT_SECONDS", "Per-item crawler timeout in seconds (default: 900)"),
         ("DATASET_REFRESH_SECONDS", "Dataset refresh interval (default: 900)"),
     ]
 
