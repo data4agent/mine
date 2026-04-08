@@ -137,6 +137,12 @@ def _background_session_snapshot() -> dict[str, object]:
     pid = int(payload.get("pid") or 0)
     payload["pid"] = pid
     payload["running"] = process_is_running(pid)
+    if not payload["running"]:
+        try:
+            store.clear_background_session()
+        except Exception:
+            pass
+        return {}
     return payload
 
 
@@ -1096,7 +1102,7 @@ def run_agent_start(dataset_arg: str = "") -> str:
 
 def run_agent_control(action: str = "status") -> str:
     from agent_runtime import build_worker_from_env
-    from background_worker import terminate_process
+    from background_worker import terminate_process_group
     from worker_state import WorkerStateStore
 
     normalized = (action or "status").strip().lower()
@@ -1208,8 +1214,8 @@ def run_agent_control(action: str = "status") -> str:
         payload = worker.stop()
         pid = int(background.get("pid") or 0)
         if pid > 0:
-            terminate_process(pid)
-            for _ in range(20):
+            terminate_process_group(pid)
+            for _ in range(50):
                 refreshed = _background_session_snapshot()
                 if not refreshed.get("running"):
                     break

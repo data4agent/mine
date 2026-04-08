@@ -63,6 +63,49 @@ def terminate_process(pid: int) -> bool:
         return False
 
 
+def terminate_process_group(pid: int, *, wait_seconds: float = 3.0) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        return terminate_process(pid)
+
+    try:
+        pgid = os.getpgid(pid)
+    except OSError:
+        # The session leader may have already exited; the original pid still
+        # matches the process-group id created by start_new_session=True.
+        pgid = pid
+
+    def group_is_running(group_id: int) -> bool:
+        try:
+            os.killpg(group_id, 0)
+        except OSError:
+            return False
+        return True
+
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except OSError:
+        return False
+
+    deadline = time.time() + max(0.0, wait_seconds)
+    while time.time() < deadline:
+        if not group_is_running(pgid):
+            return True
+        time.sleep(0.1)
+
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
+
+    for _ in range(20):
+        if not group_is_running(pgid):
+            return True
+        time.sleep(0.1)
+    return not group_is_running(pgid)
+
+
 def _terminate_process_windows(pid: int) -> bool:
     kernel32 = getattr(ctypes, "windll", None)
     if kernel32 is None:

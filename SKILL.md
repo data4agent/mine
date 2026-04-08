@@ -382,6 +382,37 @@ If you see `signer_mismatch`, it usually means EIP-712 signature parameters
 are wrong. The `doctor` command handles diagnostics. Never attempt to fix auth
 by making HTTP calls, adding headers, or reading signing code.
 
+If the error is browser/login related, including `AUTH_EXPIRED`,
+`AUTH_REQUIRED`, `AUTH_INTERACTIVE_TIMEOUT`, `AUTH_SESSION_EXPORT_FAILED`,
+`AUTH_AUTO_LOGIN_FAILED`, or `CAPTCHA`:
+
+1. Do **not** stop at "login required".
+2. Start browser automation first:
+
+```bash
+cd {baseDir} && python scripts/run_tool.py browser-session <platform>
+```
+
+3. If it returns `ready`, retry the original mining/crawl action immediately.
+4. If it returns `awaiting_user_action`, use the returned `public_url` as the
+   user handoff link. In practice this is the temporary Cloudflare/VNC browser
+   link exposed by autobrowser.
+5. Poll until it becomes `ready`:
+
+```bash
+cd {baseDir} && python scripts/run_tool.py browser-session-status <platform>
+```
+
+6. Only interrupt the user when autobrowser reaches a human-only step:
+   CAPTCHA, SMS/2FA, forced email or phone verification, account/password
+   entry, or a manual confirmation page.
+7. When user action is required, send the Cloudflare/VNC link and tell the user
+   exactly what to complete there. After that, continue polling
+   `browser-session-status` until it reports `ready`, then retry the task.
+
+The agent must prefer autobrowser/session export over asking the user to log in
+manually up front.
+
 ## Intent Routing
 
 | User says | Action |
@@ -406,6 +437,8 @@ by making HTTP calls, adding headers, or reading signing code.
 - Use `agent-control status` to poll progress.
 - Use `agent-control stop` to terminate.
 - All platform interaction goes through `run_tool.py` — sub-agents included.
+- If `agent-control stop` just returned, prefer checking `agent-control status`
+  once before starting a new session so stale background state is cleared.
 
 ## Configuration
 
@@ -447,3 +480,13 @@ Read these docs only when needed:
 - [Agent guide](./docs/AGENT_GUIDE.md)
 - [Environment](./docs/ENVIRONMENT.md)
 - [Validator Protocol](./references/protocol-validator.md)
+
+## Fast Pitfalls
+
+- LinkedIn discovery can legitimately claim `https://www.linkedin.com/feed` as a
+  seed task. This is not "no task available"; it usually means login state is
+  required before discovery can expand into profile URLs.
+- If a dataset appears to fail instantly with `AUTH_EXPIRED`, do not keep
+  retrying crawl commands. Run `browser-session <platform>` first.
+- If a worker was force-stopped during a crawl, confirm the session is really
+  gone with `agent-control status` before launching another `agent-start`.
