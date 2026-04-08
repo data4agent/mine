@@ -22,8 +22,8 @@
     },
     {
       "match": {"platform": "amazon"},
-      "initial_backend": "http",
-      "fallback_chain": ["playwright", "camoufox"]
+      "initial_backend": "playwright",
+      "fallback_chain": ["camoufox", "http"]
     },
     {
       "match": {"platform": "wikipedia"},

@@ -9,6 +9,14 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_STEALTH_CHROMIUM_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--disable-features=IsolateOrigins,site-per-process",
+    "--disable-infobars",
+    "--no-first-run",
+    "--no-default-browser-check",
+]
+
 try:
     from playwright.async_api import async_playwright, Browser, BrowserContext, Playwright
 except ModuleNotFoundError:
@@ -58,8 +66,11 @@ class BrowserPool:
                     from camoufox.async_api import AsyncCamoufox
                     browser = await AsyncCamoufox(headless=True).__aenter__()
                 except Exception:
-                    logger.warning("camoufox not available, falling back to chromium")
-                    browser = await self._pw.chromium.launch(headless=True)
+                    logger.warning("camoufox not available, falling back to stealth chromium")
+                    browser = await self._pw.chromium.launch(
+                        headless=True,
+                        args=_STEALTH_CHROMIUM_ARGS,
+                    )
             else:
                 browser = await self._pw.chromium.launch(headless=True)
             self._browsers[backend_type] = browser

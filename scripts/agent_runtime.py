@@ -203,8 +203,11 @@ class AgentWorker:
             requested_selected = [dataset_ids[0]]
 
         if not requested_selected and len(dataset_ids) > 1:
+            self.state_store.clear_current_batch()
             self.state_store.save_session({
                 "mining_state": "idle",
+                "current_batch": None,
+                "last_summary": {},
                 "last_control_action": "start-working",
                 "last_state_change_at": int(time.time()),
             })
@@ -229,9 +232,12 @@ class AgentWorker:
             except Exception as exc:
                 heartbeat_errors.append(f"ws start failed (falling back to HTTP polling): {exc}")
 
+        self.state_store.clear_current_batch()
         session_update: dict[str, Any] = {
             "mining_state": "running",
             "selected_dataset_ids": requested_selected,
+            "current_batch": None,
+            "last_summary": {},
             "last_control_action": "start-working",
             "last_state_change_at": int(time.time()),
             "run_started_at": int(time.time()),
@@ -746,6 +752,8 @@ class AgentWorker:
                             summary.errors.append(f"handle_result failed for {item.item_id}: {handle_exc}")
                             self.state_store.enqueue_backlog([_clone_item(item, resume=True, output_dir=getattr(result, 'output_dir', None))])
 
+    _SUBPROCESS_FATAL_PATTERNS = ("SyntaxError", "IndentationError", "ModuleNotFoundError", "ImportError")
+
     def _run_item(self, item: WorkItem) -> CrawlerRunResult:
         command = self.crawl_mode_planner.choose_command(item)
         writer = self._artifact_writer_for_item(item)
@@ -760,6 +768,14 @@ class AgentWorker:
                 "errors_count": len(result.errors),
             },
         )
+        if result.exit_code != 0 and not result.records and not result.errors:
+            stderr_tail = (result.stderr or "").strip().splitlines()[-5:] if result.stderr else []
+            is_fatal = any(pat in line for line in stderr_tail for pat in self._SUBPROCESS_FATAL_PATTERNS)
+            if is_fatal:
+                detail = "\n".join(stderr_tail)
+                raise SkipItemError(
+                    f"crawler subprocess crashed with a Python error for {item.url}:\n{detail}"
+                )
         return result
 
     def _preflight_item(self, item: WorkItem, *, command: str, writer: RunArtifactWriter | None = None) -> None:
@@ -795,8 +811,13 @@ class AgentWorker:
             return
 
         if not result.records:
-            for error in result.errors:
-                summary.errors.append(f"{item.item_id}: {error.get('error_code') or 'UNKNOWN'}")
+            if result.errors:
+                for error in result.errors:
+                    summary.errors.append(f"{item.item_id}: {error.get('error_code') or 'UNKNOWN'}")
+            elif result.exit_code != 0:
+                stderr_tail = (result.stderr or "").strip().splitlines()[-3:]
+                hint = "; ".join(stderr_tail) if stderr_tail else f"exit_code={result.exit_code}"
+                summary.errors.append(f"{item.item_id}: SUBPROCESS_CRASH ({hint})")
             return
 
         record = result.records[0]

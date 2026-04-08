@@ -32,21 +32,42 @@ _DEFAULT_HTTP_HEADERS = {
 class FetchEngine:
     """Unified fetch engine integrating browser pool, wait strategies, backend routing, and session management."""
 
+    _RATE_LIMITS_PATH = Path(__file__).resolve().parent.parent.parent / "references" / "rate_limits.json"
+
     def __init__(
         self,
         session_root: Path,
         *,
-        max_retries: int = 2,
+        max_retries: int = 3,
         http_timeout: float = 20.0,
     ) -> None:
         self._session_root = session_root
-        self._max_retries = max_retries
+        self._default_max_retries = max_retries
+        self._platform_retries: dict[str, int] = {}
         self._http_timeout = http_timeout
         self._pool = BrowserPool(session_root)
         self._session_mgr = SessionManager(session_root)
         self._rate_limiter = RateLimiter()
         self._circuit_breaker = CircuitBreaker()
         self._started = False
+        self._load_platform_retries()
+
+    def _load_platform_retries(self) -> None:
+        try:
+            cfg = json.loads(self._RATE_LIMITS_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        defaults = cfg.get("defaults", {})
+        if "max_retries" in defaults:
+            self._default_max_retries = int(defaults["max_retries"])
+        for platform, pcfg in cfg.items():
+            if platform == "defaults" or not isinstance(pcfg, dict):
+                continue
+            if "max_retries" in pcfg:
+                self._platform_retries[platform] = int(pcfg["max_retries"])
+
+    def _max_retries_for(self, platform: str) -> int:
+        return self._platform_retries.get(platform, self._default_max_retries)
 
     @property
     def session_manager(self) -> SessionManager:
@@ -103,15 +124,13 @@ class FetchEngine:
             initial_backend, fallback_chain = resolve_backend(platform, resource_type, requires_auth)
 
         backends_to_try = [initial_backend] + fallback_chain
+        max_retries = self._max_retries_for(platform)
         last_error: Exception | None = None
         last_fetch_error: FetchError | None = None
-        consecutive_failures = 0
+        total_failures = 0
 
         for attempt, backend in enumerate(backends_to_try):
-            if consecutive_failures >= self._max_retries:
-                break
             try:
-                # Enforce per-platform rate limit before each request
                 await self._rate_limiter.acquire(platform)
 
                 result = await self._fetch_with_backend(
@@ -130,12 +149,11 @@ class FetchEngine:
                     err = RuntimeError(content_error.message)
                     err.fetch_error = content_error  # type: ignore[attr-defined]
                     raise err
-                consecutive_failures = 0
                 self._circuit_breaker.record_success(platform)
                 return result
             except Exception as exc:
                 last_error = exc
-                consecutive_failures += 1
+                total_failures += 1
                 last_fetch_error = getattr(exc, "fetch_error", None) or classify(exc)
                 logger.warning(
                     "Fetch failed with backend=%s for %s (attempt %d/%d): [%s] %s",
@@ -144,6 +162,8 @@ class FetchEngine:
                     exc,
                 )
                 if last_fetch_error and not last_fetch_error.retryable:
+                    break
+                if total_failures >= max_retries:
                     break
                 if last_fetch_error and last_fetch_error.retryable:
                     backoff_seconds = self._rate_limiter.get_backoff_seconds(platform, attempt)

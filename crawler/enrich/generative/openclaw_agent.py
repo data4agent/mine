@@ -35,7 +35,7 @@ DEFAULT_RATE_LIMIT_BACKOFF_SECONDS: int = 60
 _RATE_LIMIT_HINTS = ("429", "rate limit", "extra usage", "too many requests")
 
 _openclaw_bin: str = ""
-_agent_id: str = ""
+_ready_agents: set[str] = set()
 _rate_limit_until: float = 0.0
 _agent_lock = threading.Lock()
 
@@ -67,6 +67,21 @@ def _configured_agent_id() -> str:
         return explicit
     suffix = os.environ.get("MINE_ENRICH_AGENT_SUFFIX", "").strip()
     return f"{DEFAULT_AGENT_ID}-{suffix}" if suffix else DEFAULT_AGENT_ID
+
+
+def _runtime_agent_id() -> str:
+    """Use a dedicated OpenClaw agent per worker thread.
+
+    The enrich pipeline dispatches generative field groups concurrently via the
+    thread pool. Reusing a single agent across threads causes session-state
+    contention and makes the apparent asyncio parallelism ineffective.
+    """
+    base_agent_id = _configured_agent_id()
+    return f"{base_agent_id}-p{os.getpid()}-t{threading.get_ident()}"
+
+
+def _runtime_session_id(agent_id: str) -> str:
+    return f"{agent_id}-s{time.time_ns()}"
 
 
 def _workspace_for_agent(agent_id: str) -> str:
@@ -203,23 +218,20 @@ def _purge_agent_sessions(agent_id: str) -> None:
         log.info("[AGENT] purged %d session files from %s", count, session_dir)
 
 
-def ensure_agent() -> str:
+def ensure_agent(agent_id: str | None = None) -> str:
     """Ensure the dedicated enrich agent exists."""
-    global _agent_id
-
     with _agent_lock:
-        if _agent_id:
-            return _agent_id
-
-        agent_id = _configured_agent_id()
+        resolved_agent_id = agent_id or _runtime_agent_id()
         _resolve_openclaw_path()
-        if _agent_exists(agent_id):
-            log.info("[AGENT] found existing agent: %s", agent_id)
+        if resolved_agent_id in _ready_agents:
+            return resolved_agent_id
+        if _agent_exists(resolved_agent_id):
+            log.info("[AGENT] found existing agent: %s", resolved_agent_id)
         else:
-            log.info("[AGENT] agent '%s' not found, creating...", agent_id)
-            _create_agent(agent_id)
-        _agent_id = agent_id
-        return _agent_id
+            log.info("[AGENT] agent '%s' not found, creating...", resolved_agent_id)
+            _create_agent(resolved_agent_id)
+        _ready_agents.add(resolved_agent_id)
+        return resolved_agent_id
 
 
 def _mark_rate_limited(stderr: str) -> None:
@@ -301,6 +313,7 @@ def call_agent(
 
     try:
         agent_id = ensure_agent()
+        session_id = _runtime_session_id(agent_id)
         openclaw = _resolve_openclaw_path()
     except OpenClawAgentError as exc:
         return EnrichResponse(content="", success=False, source="benchmark_skill", error=str(exc))
@@ -315,6 +328,8 @@ def call_agent(
                 "agent",
                 "--agent",
                 agent_id,
+                "--session-id",
+                session_id,
                 "--message",
                 prompt,
             ],

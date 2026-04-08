@@ -13,11 +13,12 @@ _DEFAULT_COOLDOWN_SECONDS = 30.0
 _TRIP_ERRORS = {
     "RATE_LIMITED",
     "AUTH_EXPIRED",
-    "CAPTCHA",
     "IP_BLOCKED",
     "SERVER_ERROR",
     "NETWORK_ERROR",
 }
+# CAPTCHA is intentionally excluded: it signals backend escalation,
+# not a platform-wide outage that warrants circuit-breaking.
 
 
 class CircuitBreaker:

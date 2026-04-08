@@ -24,7 +24,9 @@
     "max_retries": 4,
     "preferred_backend": "playwright",
     "fallback_backend": "camoufox",
-    "browser_concurrency": 1
+    "browser_concurrency": 1,
+    "circuit_breaker_threshold": 5,
+    "circuit_breaker_cooldown_seconds": 60
   },
   "base": {
     "requests_per_minute": 24,

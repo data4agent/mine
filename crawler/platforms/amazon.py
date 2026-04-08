@@ -53,7 +53,7 @@ SELLER_FIELD_GROUPS = (
     "amazon_sellers_linkable_ids",
 )
 
-FETCH_PLAN = PlatformFetchPlan(default_backend="http", fallback_backends=("playwright", "camoufox"))
+FETCH_PLAN = PlatformFetchPlan(default_backend="playwright", fallback_backends=("camoufox", "http"))
 EXTRACT_PLAN = PlatformExtractPlan(strategy="commerce_page")
 NORMALIZE_PLAN = PlatformNormalizePlan(hook_name="amazon")
 ENRICH_PLAN = PlatformEnrichmentPlan(
