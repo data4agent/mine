@@ -805,7 +805,11 @@ class AgentWorker:
         if progress_message:
             summary.messages.append(progress_message)
         if command == "discover-crawl":
-            followups = build_follow_up_items_from_discovery(item, result.records)
+            followups = build_follow_up_items_from_discovery(
+                item,
+                result.records,
+                state_store=self.state_store,
+            )
             handoff_count = 0
             backlog_items: list[WorkItem] = []
             for fu in followups:
@@ -1092,6 +1096,8 @@ class AgentWorker:
             if writer is not None:
                 writer.write_json("occupancy/response.json", occupancy if isinstance(occupancy, dict) else {})
             if occupancy.get("occupied"):
+                if item.source in {"dataset_discovery", "discovery_followup"}:
+                    self.state_store.remember_discovery_urls(item.dataset_id, [item.url])
                 return "occupancy_blocked"
         return None
 

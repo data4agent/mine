@@ -20,6 +20,7 @@ class WorkerStateStore:
         self._session_path = self.root / "session.json"
         self._background_session_path = self.root / "background_session.json"
         self._dataset_cooldowns_path = self.root / "dataset_cooldowns.json"
+        self._discovery_history_path = self.root / "discovery_history.json"
         self._lock_path = self.root / "worker.lock.json"
         self._session_cache: dict[str, Any] | None = None
         self._session_dirty = False
@@ -377,6 +378,72 @@ class WorkerStateStore:
             for dataset_id, entry in payload.items()
             if isinstance(entry, dict) and int(entry.get("available_at") or 0) > current
         }
+
+    def recent_discovery_urls(
+        self,
+        dataset_id: str,
+        *,
+        within_seconds: int,
+        now: int | None = None,
+    ) -> set[str]:
+        current = int(time.time()) if now is None else now
+        self._prune_discovery_history(now=current, keep_seconds=max(0, within_seconds))
+        payload = self._read_object(self._discovery_history_path)
+        entries = payload.get(dataset_id)
+        if not isinstance(entries, dict):
+            return set()
+        cutoff = current - max(0, within_seconds)
+        return {
+            str(url)
+            for url, ts in entries.items()
+            if isinstance(url, str) and int(ts or 0) >= cutoff
+        }
+
+    def remember_discovery_urls(
+        self,
+        dataset_id: str,
+        urls: list[str],
+        *,
+        now: int | None = None,
+        max_entries_per_dataset: int = 2000,
+    ) -> None:
+        if not dataset_id:
+            return
+        cleaned = [str(url).strip() for url in urls if str(url).strip()]
+        if not cleaned:
+            return
+        current = int(time.time()) if now is None else now
+        payload = self._read_object(self._discovery_history_path)
+        entries = payload.get(dataset_id)
+        dataset_entries = dict(entries) if isinstance(entries, dict) else {}
+        for url in cleaned:
+            dataset_entries[url] = current
+        ordered = sorted(dataset_entries.items(), key=lambda item: int(item[1] or 0), reverse=True)
+        payload[dataset_id] = dict(ordered[: max(1, max_entries_per_dataset)])
+        self._write_json(self._discovery_history_path, payload)
+
+    def _prune_discovery_history(self, *, now: int, keep_seconds: int) -> None:
+        payload = self._read_object(self._discovery_history_path)
+        if not payload:
+            return
+        cutoff = now - max(0, keep_seconds)
+        changed = False
+        pruned: dict[str, dict[str, int]] = {}
+        for dataset_id, entries in payload.items():
+            if not isinstance(entries, dict):
+                changed = True
+                continue
+            kept = {
+                str(url): int(ts or 0)
+                for url, ts in entries.items()
+                if isinstance(url, str) and int(ts or 0) >= cutoff
+            }
+            if kept:
+                pruned[str(dataset_id)] = kept
+            if kept != entries:
+                changed = True
+        if changed:
+            self._write_json(self._discovery_history_path, pruned)
 
     def _read_list(self, path: Path) -> list[dict[str, Any]]:
         payload = self._read_json(path)

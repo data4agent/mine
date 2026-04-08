@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import random
 import re
 import threading
+import time
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -330,6 +333,9 @@ class WebSocketClaimSource:
 
 
 class DatasetDiscoverySource:
+    _DISCOVERY_HISTORY_TTL_SECONDS = 6 * 60 * 60
+    _DIRECT_URLS_PER_DOMAIN = 12
+
     def __init__(self, client: Any, state_store: WorkerStateStore) -> None:
         self.client = client
         self.state_store = state_store
@@ -337,6 +343,7 @@ class DatasetDiscoverySource:
     def collect(self, *, min_interval_seconds: int) -> list[WorkItem]:
         items: list[WorkItem] = []
         datasets = self.client.list_datasets()
+        now = int(time.time())
 
         # Smart rotation: prioritize datasets by gap to target and availability
         prioritized = self._prioritize_datasets(datasets, min_interval_seconds=min_interval_seconds)
@@ -345,12 +352,22 @@ class DatasetDiscoverySource:
             dataset_id = optional_string(dataset.get("dataset_id")) or optional_string(dataset.get("id"))
             if not dataset_id:
                 continue
-            for domain in _dataset_domains(dataset):
+            recent_urls = self.state_store.recent_discovery_urls(
+                dataset_id,
+                within_seconds=self._DISCOVERY_HISTORY_TTL_SECONDS,
+                now=now,
+            )
+            selected_urls: list[str] = []
+            for domain in self._ordered_dataset_domains(dataset, dataset_id=dataset_id, now=now):
                 host = domain.strip().lower()
-                # arXiv: fetch paper URLs directly via API, skip HTML discovery
-                if host == "arxiv.org" or host.endswith(".arxiv.org"):
-                    paper_urls = _arxiv_recent_papers(count=10)
-                    for url in paper_urls:
+                direct_urls = self._direct_discovery_urls(
+                    domain,
+                    dataset_id=dataset_id,
+                    recent_urls=recent_urls,
+                    now=now,
+                )
+                if direct_urls:
+                    for url in direct_urls:
                         platform, resource_type, inferred_fields = infer_platform_task(url)
                         record = {"url": url, "platform": platform, "resource_type": resource_type}
                         record.update(inferred_fields)
@@ -367,34 +384,12 @@ class DatasetDiscoverySource:
                                 metadata={"dataset": dataset, "source_domain": domain},
                             )
                         )
-                    if paper_urls:
+                    selected_urls.extend(direct_urls)
+                    recent_urls.update(direct_urls)
+                    if direct_urls:
                         continue
 
-                # Wikipedia: use MediaWiki Random API for direct article URLs
-                if host == "wikipedia.org" or host.endswith(".wikipedia.org"):
-                    wiki_host = "en.wikipedia.org" if host == "wikipedia.org" else host
-                    random_urls = _wikipedia_random_articles(wiki_host, count=10)
-                    for url in random_urls:
-                        platform, resource_type, inferred_fields = infer_platform_task(url)
-                        record = {"url": url, "platform": platform, "resource_type": resource_type}
-                        record.update(inferred_fields)
-                        items.append(
-                            WorkItem(
-                                item_id=f"discovery:{dataset_id}:{url}",
-                                source="dataset_discovery",
-                                url=url,
-                                dataset_id=dataset_id,
-                                platform=platform,
-                                resource_type=resource_type,
-                                record=record,
-                                crawler_command="run",
-                                metadata={"dataset": dataset, "source_domain": domain},
-                            )
-                        )
-                    if random_urls:
-                        continue
-
-                for seed_url in _discovery_seed_urls(domain):
+                for seed_url in _discovery_seed_urls(domain, dataset_id=dataset_id, recent_urls=recent_urls, now=now):
                     platform, resource_type, _ = infer_platform_task(seed_url)
                     items.append(
                         WorkItem(
@@ -413,8 +408,49 @@ class DatasetDiscoverySource:
                             metadata={"dataset": dataset, "source_domain": domain},
                         )
                     )
+                    selected_urls.append(seed_url)
+                    recent_urls.add(seed_url)
+            if selected_urls:
+                self.state_store.remember_discovery_urls(dataset_id, selected_urls, now=now)
             self.state_store.mark_dataset_scheduled(dataset_id)
         return items
+
+    def _ordered_dataset_domains(self, dataset: dict[str, Any], *, dataset_id: str, now: int) -> list[str]:
+        domains = _dataset_domains(dataset)
+        if len(domains) <= 1:
+            return domains
+        rng = random.Random(_stable_seed("dataset-domains", dataset_id, bucket=now // 900))
+        ordered = list(domains)
+        rng.shuffle(ordered)
+        return ordered
+
+    def _direct_discovery_urls(
+        self,
+        domain: str,
+        *,
+        dataset_id: str,
+        recent_urls: set[str],
+        now: int,
+    ) -> list[str]:
+        raw = domain.strip()
+        seed_url = raw if "://" in raw else f"https://{raw.strip('/')}/"
+        parsed = urlparse(seed_url)
+        host = (parsed.netloc or parsed.path).lower()
+        normalized_host = "en.wikipedia.org" if host == "wikipedia.org" else host
+
+        if normalized_host == "arxiv.org" or normalized_host.endswith(".arxiv.org"):
+            candidates = _arxiv_recent_papers(
+                count=self._DIRECT_URLS_PER_DOMAIN * 2,
+                dataset_id=dataset_id,
+                now=now,
+            )
+            return _prefer_unseen_urls(candidates, recent_urls, limit=self._DIRECT_URLS_PER_DOMAIN)
+
+        if normalized_host == "en.wikipedia.org" or normalized_host.endswith(".wikipedia.org"):
+            candidates = _wikipedia_random_articles(normalized_host, count=self._DIRECT_URLS_PER_DOMAIN * 2)
+            return _prefer_unseen_urls(candidates, recent_urls, limit=self._DIRECT_URLS_PER_DOMAIN)
+
+        return []
 
     def _prioritize_datasets(
         self,
@@ -500,14 +536,29 @@ def _is_content_url(url: str) -> bool:
     return True
 
 
-def build_follow_up_items_from_discovery(parent: WorkItem, records: list[dict[str, Any]]) -> list[WorkItem]:
+def build_follow_up_items_from_discovery(
+    parent: WorkItem,
+    records: list[dict[str, Any]],
+    *,
+    state_store: WorkerStateStore | None = None,
+    history_ttl_seconds: int = 6 * 60 * 60,
+) -> list[WorkItem]:
     items: list[WorkItem] = []
+    recent_urls: set[str] = set()
+    if state_store is not None and parent.dataset_id:
+        recent_urls = state_store.recent_discovery_urls(
+            parent.dataset_id,
+            within_seconds=history_ttl_seconds,
+        )
+    selected_urls: list[str] = []
     for record in records:
         canonical_url = optional_string(record.get("canonical_url"))
         if not canonical_url:
             continue
         canonical_url = canonicalize_url(canonical_url)
         if not _is_content_url(canonical_url):
+            continue
+        if canonical_url in recent_urls:
             continue
         platform = optional_string(record.get("platform")) or infer_platform_task(canonical_url)[0]
         resource_type = optional_string(record.get("resource_type")) or infer_platform_task(canonical_url)[1]
@@ -529,6 +580,10 @@ def build_follow_up_items_from_discovery(parent: WorkItem, records: list[dict[st
                 },
             )
         )
+        selected_urls.append(canonical_url)
+        recent_urls.add(canonical_url)
+    if state_store is not None and parent.dataset_id and selected_urls:
+        state_store.remember_discovery_urls(parent.dataset_id, selected_urls)
     return items
 
 
@@ -541,33 +596,47 @@ def _dataset_domains(dataset: dict[str, Any]) -> list[str]:
     return []
 
 
-def _arxiv_recent_papers(count: int = 10) -> list[str]:
-    """Fetch recent paper /abs/ URLs via the arXiv API."""
+def _arxiv_recent_papers(count: int = 10, *, dataset_id: str = "", now: int | None = None) -> list[str]:
+    """Fetch diversified /abs/ URLs via the arXiv API."""
     import urllib.request
     import re as _re
 
-    categories = ["cs", "math", "physics", "q-fin", "stat", "econ"]
-    query = "+OR+".join(f"cat:{cat}.*" for cat in categories)
-    api_url = (
-        f"http://export.arxiv.org/api/query"
-        f"?search_query={query}&sortBy=submittedDate&sortOrder=descending"
-        f"&start=0&max_results={count}"
-    )
-    try:
-        req = urllib.request.Request(api_url, headers={"User-Agent": "mine-agent/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            text = resp.read().decode()
-        urls: list[str] = []
-        seen: set[str] = set()
+    categories = ["cs", "math", "physics", "q-fin", "stat", "econ", "q-bio", "eess"]
+    current = int(time.time()) if now is None else now
+    bucket = current // 900
+    rng = random.Random(_stable_seed("arxiv", dataset_id or "global", bucket=bucket))
+    selected_categories = categories[:]
+    rng.shuffle(selected_categories)
+    selected_categories = selected_categories[: min(4, len(selected_categories))]
+    plans: list[tuple[str, int, int, str]] = []
+    for category in selected_categories:
+        start = rng.randint(0, 180)
+        max_results = max(6, min(24, count))
+        sort_by = rng.choice(["submittedDate", "lastUpdatedDate"])
+        plans.append((category, start, max_results, sort_by))
+    urls: list[str] = []
+    seen: set[str] = set()
+    for category, start, max_results, sort_by in plans:
+        api_url = (
+            "http://export.arxiv.org/api/query"
+            f"?search_query=cat:{category}.*&sortBy={sort_by}&sortOrder=descending"
+            f"&start={start}&max_results={max_results}"
+        )
+        try:
+            req = urllib.request.Request(api_url, headers={"User-Agent": "mine-agent/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                text = resp.read().decode()
+        except Exception:
+            continue
         for match in _re.finditer(r"<id>\s*https?://arxiv\.org/abs/([^<\s]+)\s*</id>", text):
             arxiv_id = _re.sub(r"v\d+$", "", match.group(1).strip())
-            url = f"https://arxiv.org/abs/{arxiv_id}"
+            url = canonicalize_url(f"https://arxiv.org/abs/{arxiv_id}")
             if url not in seen:
                 seen.add(url)
                 urls.append(url)
-        return urls[:count]
-    except Exception:
-        return []
+            if len(urls) >= count:
+                return urls[:count]
+    return urls[:count]
 
 
 def _wikipedia_random_articles(wiki_host: str, count: int = 10) -> list[str]:
@@ -594,29 +663,52 @@ def _wikipedia_random_articles(wiki_host: str, count: int = 10) -> list[str]:
             title = page.get("title", "")
             if title:
                 encoded = title.replace(" ", "_")
-                urls.append(f"https://{wiki_host}/wiki/{encoded}")
+                urls.append(canonicalize_url(f"https://{wiki_host}/wiki/{encoded}"))
         return urls
     except Exception:
         return []
 
 
-def _discovery_seed_urls(domain: str) -> list[str]:
+def _discovery_seed_urls(
+    domain: str,
+    *,
+    dataset_id: str = "",
+    recent_urls: set[str] | None = None,
+    now: int | None = None,
+) -> list[str]:
     raw = domain.strip()
     seed_url = raw if "://" in raw else f"https://{raw.strip('/')}/"
     parsed = urlparse(seed_url)
     host = (parsed.netloc or parsed.path).lower()
     normalized_path = parsed.path.rstrip("/")
+    current = int(time.time()) if now is None else now
+    bucket = current // 900
     if (host == "wikipedia.org" or host.endswith(".wikipedia.org")) and normalized_path in {"", "/"}:
         if host == "wikipedia.org":
             host = "en.wikipedia.org"
-        return [canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page")]
+        return _prefer_unseen_urls(
+            [
+                canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Portal:Current_events"),
+                canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Special:Random"),
+                canonicalize_url(f"{parsed.scheme or 'https'}://{host}/wiki/Main_Page"),
+            ],
+            recent_urls or set(),
+            limit=2,
+        )
     # Amazon: redirect homepage to bestsellers page which links to actual products
     if (host.endswith(".amazon.com") or host == "amazon.com" or host.endswith(".amazon.co.uk") or host == "amazon.co.uk" or host.endswith(".amazon.de") or host == "amazon.de") and normalized_path in {"", "/"}:
-        return [canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/bestsellers/")]
+        seeds = [
+            canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/bestsellers/"),
+            canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/new-releases/"),
+            canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/movers-and-shakers/"),
+            canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/most-wished-for/"),
+            canonicalize_url(f"{parsed.scheme or 'https'}://{host}/gp/giftfinder/"),
+        ]
+        return _shuffled_unseen_urls(seeds, recent_urls or set(), limit=3, label=f"amazon:{dataset_id}:{host}", bucket=bucket)
     # arXiv: seed from recent archive listings so one-hop discovery reaches /abs/<id> pages
     if (host == "arxiv.org" or host.endswith(".arxiv.org")) and normalized_path in {"", "/"}:
         scheme = parsed.scheme or "https"
-        return [
+        seeds = [
             canonicalize_url(f"{scheme}://{host}/list/cs/recent"),
             canonicalize_url(f"{scheme}://{host}/list/math/recent"),
             canonicalize_url(f"{scheme}://{host}/list/physics/recent"),
@@ -626,4 +718,55 @@ def _discovery_seed_urls(domain: str) -> list[str]:
             canonicalize_url(f"{scheme}://{host}/list/eess/recent"),
             canonicalize_url(f"{scheme}://{host}/list/econ/recent"),
         ]
-    return [canonicalize_url(seed_url)]
+        return _shuffled_unseen_urls(seeds, recent_urls or set(), limit=3, label=f"arxiv-seeds:{dataset_id}:{host}", bucket=bucket)
+    if (host == "www.linkedin.com" or host == "linkedin.com") and normalized_path in {"", "/"}:
+        scheme = parsed.scheme or "https"
+        seeds = [
+            canonicalize_url(f"{scheme}://www.linkedin.com/jobs/"),
+            canonicalize_url(f"{scheme}://www.linkedin.com/company/"),
+            canonicalize_url(f"{scheme}://www.linkedin.com/feed/"),
+            canonicalize_url(f"{scheme}://www.linkedin.com/news/"),
+        ]
+        return _shuffled_unseen_urls(seeds, recent_urls or set(), limit=2, label=f"linkedin:{dataset_id}", bucket=bucket)
+    if (host.endswith("basescan.org") or host.endswith("base.org")) and normalized_path in {"", "/"}:
+        scheme = parsed.scheme or "https"
+        seeds = [
+            canonicalize_url(f"{scheme}://{host}/txs"),
+            canonicalize_url(f"{scheme}://{host}/accounts"),
+            canonicalize_url(f"{scheme}://{host}/tokens"),
+            canonicalize_url(f"{scheme}://{host}/contractsVerified"),
+        ]
+        return _shuffled_unseen_urls(seeds, recent_urls or set(), limit=2, label=f"base:{dataset_id}:{host}", bucket=bucket)
+    return _prefer_unseen_urls([canonicalize_url(seed_url)], recent_urls or set(), limit=1)
+
+
+def _prefer_unseen_urls(urls: list[str], recent_urls: set[str], *, limit: int) -> list[str]:
+    unique = _dedupe_preserve_order([canonicalize_url(url) for url in urls if canonicalize_url(url)])
+    unseen = [url for url in unique if url not in recent_urls]
+    chosen = unseen[:limit]
+    if chosen:
+        return chosen
+    return unique[:limit]
+
+
+def _shuffled_unseen_urls(urls: list[str], recent_urls: set[str], *, limit: int, label: str, bucket: int) -> list[str]:
+    ordered = _dedupe_preserve_order(urls)
+    rng = random.Random(_stable_seed(label, bucket=bucket))
+    rng.shuffle(ordered)
+    return _prefer_unseen_urls(ordered, recent_urls, limit=limit)
+
+
+def _dedupe_preserve_order(urls: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for url in urls:
+        if url not in seen:
+            seen.add(url)
+            ordered.append(url)
+    return ordered
+
+
+def _stable_seed(*parts: str, bucket: int) -> int:
+    payload = "|".join(str(part) for part in parts)
+    digest = hashlib.sha256(f"{payload}|{bucket}".encode("utf-8")).hexdigest()
+    return int(digest[:16], 16)

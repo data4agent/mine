@@ -448,10 +448,56 @@ def _graceful_stop_chrome(pid: str, profile: str) -> None:
 # ════════════════════════════════════════════════════════════════════════
 #  Display / x11vnc / Chrome lifecycle
 # ════════════════════════════════════════════════════════════════════════
-def _find_novnc_web() -> str:
+def _find_novnc_source() -> Path | None:
     for d in ("/tmp/noVNC", "/usr/share/novnc", "/usr/share/noVNC", "/opt/noVNC"):
-        if os.path.isfile(f"{d}/vnc.html"): return d
-    return ""
+        candidate = Path(d)
+        if (candidate / "vnc.html").is_file():
+            return candidate
+    return None
+
+
+def _replace_path(target: Path) -> None:
+    if not target.exists() and not target.is_symlink():
+        return
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
+        return
+    target.unlink()
+
+
+def _mirror_novnc_entry(source: Path, target: Path) -> None:
+    _replace_path(target)
+    try:
+        target.symlink_to(source, target_is_directory=source.is_dir())
+        return
+    except OSError:
+        pass
+
+    if source.is_dir():
+        shutil.copytree(source, target)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _prepare_novnc_web() -> str:
+    source = _find_novnc_source()
+    if source is None:
+        return ""
+
+    overlay = WORKDIR / "novnc-web"
+    overlay.mkdir(parents=True, exist_ok=True)
+
+    for entry in source.iterdir():
+        if entry.name == "vnc_mode.html":
+            continue
+        target = overlay / entry.name
+        if target.exists() or target.is_symlink():
+            continue
+        _mirror_novnc_entry(entry, target)
+
+    shutil.copy2(SCRIPT_DIR / "vnc_mode.html", overlay / "vnc_mode.html")
+    return str(overlay)
 
 def _wait_chrome_window(dn: str, pid: int, timeout: int = 15) -> str:
     if not _cmd_ok("xdotool"): return ""
@@ -975,7 +1021,7 @@ def cmd_start() -> None:
     if cf_req and not cf_on: _die("REQUIRE_CLOUDFLARE_LINK=1 but ENABLE_CLOUDFLARE_TUNNEL=0")
 
     # ── noVNC ──
-    novnc_web = _find_novnc_web()
+    novnc_web = _prepare_novnc_web()
     if not novnc_web: _die("noVNC static files not found")
 
     # ── Stop previous instance ──
@@ -989,7 +1035,6 @@ def cmd_start() -> None:
     # ── Directories ──
     for d in (WORKDIR, LOGDIR, Path(profile)):
         d.mkdir(parents=True, exist_ok=True) if isinstance(d, Path) else Path(d).mkdir(parents=True, exist_ok=True)
-    shutil.copy2(SCRIPT_DIR / "vnc_mode.html", f"{novnc_web}/vnc_mode.html")
     for p in (f"/tmp/.X{dn}-lock", f"/tmp/.X11-unix/X{dn}"):
         try: os.unlink(p)
         except FileNotFoundError: pass
