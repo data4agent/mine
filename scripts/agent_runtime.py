@@ -69,6 +69,7 @@ class CrawlerRunner:
     def run_item(self, item: WorkItem, command: str) -> CrawlerRunResult:
         output_dir = resolve_item_output_dir(item, output_root=self.output_root)
         output_dir.mkdir(parents=True, exist_ok=True)
+        self._propagate_sessions(output_dir, platform=item.platform)
         input_path = output_dir / "task-input.jsonl"
         input_path.write_text(json.dumps(item.record, ensure_ascii=False) + "\n", encoding="utf-8")
         argv = [self.config.python_bin, "-m", "crawler", command, "--input", str(input_path), "--output", str(output_dir), "--auto-login"]
@@ -107,6 +108,29 @@ class CrawlerRunner:
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
+
+    def _propagate_sessions(self, output_dir: Path, *, platform: str | None = None) -> None:
+        """将公共 session 文件复制到任务 output_dir，让 crawler 子进程能找到。"""
+        import shutil
+        target_sessions = output_dir / ".sessions"
+        platforms = [platform] if platform else ["linkedin"]
+        source_roots = [
+            Path(CRAWLER_ROOT) / "output" / ".sessions",
+            self.output_root / ".sessions",
+        ]
+        for plat in platforms:
+            if not plat:
+                continue
+            filename = f"{plat}.json"
+            target_file = target_sessions / filename
+            if target_file.exists():
+                continue
+            for source_root in source_roots:
+                source_file = source_root / filename
+                if source_file.is_file():
+                    target_sessions.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(source_file), str(target_file))
+                    break
 
     def _append_enrich_argv(self, argv: list[str], *, command: str, output_dir: Path) -> None:
         """Attach LLM enrich args for run/enrich: prefer OpenClaw CLI, then gateway config."""

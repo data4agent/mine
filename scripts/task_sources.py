@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import random
 import re
 import threading
 import time
+from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from lib.canonicalize import canonicalize_url
 from run_models import TaskEnvelope, WorkItem
+
+logger = logging.getLogger(__name__)
 from worker_state import WorkerStateStore
 from ws_client import WSDisconnected
 
@@ -450,6 +455,15 @@ class DatasetDiscoverySource:
             candidates = _wikipedia_random_articles(normalized_host, count=self._DIRECT_URLS_PER_DOMAIN * 2)
             return _prefer_unseen_urls(candidates, recent_urls, limit=self._DIRECT_URLS_PER_DOMAIN)
 
+        if normalized_host in {"www.linkedin.com", "linkedin.com"}:
+            candidates = _linkedin_discover_urls(
+                dataset_id=dataset_id,
+                count=self._DIRECT_URLS_PER_DOMAIN * 2,
+                now=now,
+            )
+            if candidates:
+                return _prefer_unseen_urls(candidates, recent_urls, limit=self._DIRECT_URLS_PER_DOMAIN)
+
         return []
 
     def _prioritize_datasets(
@@ -667,6 +681,178 @@ def _wikipedia_random_articles(wiki_host: str, count: int = 10) -> list[str]:
         return urls
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn: 通过 Voyager API 搜索获取 profile / company URL
+# ---------------------------------------------------------------------------
+
+_LINKEDIN_SEARCH_KEYWORDS: dict[str, list[str]] = {
+    "profile": [
+        "software engineer", "product manager", "data scientist",
+        "marketing manager", "designer", "CEO", "CTO",
+        "machine learning", "full stack developer", "consultant",
+        "analyst", "researcher", "founder", "sales",
+        "operations manager", "HR manager", "devops",
+    ],
+    "company": [
+        "technology", "AI", "fintech", "healthcare",
+        "SaaS", "startup", "consulting", "marketing",
+        "logistics", "enterprise", "education", "biotech",
+        "cybersecurity", "cloud", "blockchain",
+    ],
+}
+
+_LINKEDIN_DATASET_TYPE_MAP: dict[str, str] = {
+    "ds_linkedin_profiles": "profile",
+    "ds_linkedin_profile": "profile",
+    "ds_linkedin_companies": "company",
+    "ds_linkedin_company": "company",
+}
+
+
+def _linkedin_session_path() -> str | None:
+    """在 output/.sessions/ 目录下查找 linkedin.json session 文件。"""
+    candidates = [
+        Path(__file__).resolve().parent.parent / "output" / ".sessions" / "linkedin.json",
+        Path(__file__).resolve().parent.parent / "output" / "agent-runs" / ".sessions" / "linkedin.json",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def _linkedin_discover_urls(
+    *,
+    dataset_id: str,
+    count: int = 24,
+    now: int | None = None,
+) -> list[str]:
+    """通过 LinkedIn Voyager search API 获取 profile/company URL 列表。
+
+    模式与 _arxiv_recent_papers / _wikipedia_random_articles 一致:
+    使用 API 直接获取具体实体 URL，跳过 discover-crawl 阶段。
+
+    策略：
+    1. 用 Voyager search/dash/clusters API 搜索关键词
+    2. 从 navigationUrl 中提取有效的 /in/ 或 /company/ URL
+    3. 多关键词轮换 + start 偏移保证多样性
+    """
+    import httpx
+
+    session_path = _linkedin_session_path()
+    if not session_path:
+        logger.debug("LinkedIn session 文件不存在，跳过 discovery")
+        return []
+
+    resource_type = _LINKEDIN_DATASET_TYPE_MAP.get(dataset_id, "profile")
+    keywords = _LINKEDIN_SEARCH_KEYWORDS.get(resource_type, _LINKEDIN_SEARCH_KEYWORDS["profile"])
+
+    current = int(time.time()) if now is None else now
+    bucket = current // 900
+    rng = random.Random(_stable_seed("linkedin-discovery", dataset_id, bucket=bucket))
+
+    selected_keywords = keywords[:]
+    rng.shuffle(selected_keywords)
+    selected_keywords = selected_keywords[:min(6, len(selected_keywords))]
+
+    try:
+        from crawler.platforms.linkedin import _storage_state_headers
+        headers = _storage_state_headers(session_path)
+    except Exception:
+        logger.debug("无法加载 LinkedIn session headers，跳过 discovery")
+        return []
+
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    for keyword in selected_keywords:
+        start = rng.randint(0, 40)
+        extracted = _linkedin_search_extract_urls(
+            keyword, resource_type, headers, start=start,
+        )
+        for url in extracted:
+            canonical = canonicalize_url(url)
+            if canonical and canonical not in seen:
+                seen.add(canonical)
+                urls.append(canonical)
+            if len(urls) >= count:
+                return urls[:count]
+
+    return urls[:count]
+
+
+def _linkedin_search_extract_urls(
+    keyword: str,
+    resource_type: str,
+    headers: dict[str, str],
+    *,
+    start: int = 0,
+) -> list[str]:
+    """通过 Voyager search/dash/clusters API 搜索并提取 URL。
+
+    从响应的 navigationUrl + included 数据中提取实体 URL：
+    - profile: /in/<publicIdentifier>/
+    - company: /company/<slug>/
+    """
+    import httpx
+
+    result_type = "PEOPLE" if resource_type == "profile" else "COMPANIES"
+    api_url = (
+        "https://www.linkedin.com/voyager/api/search/dash/clusters"
+        "?decorationId=com.linkedin.voyager.dash.deco.search.SearchClusterCollection-186"
+        "&origin=GLOBAL_SEARCH_HEADER&q=all"
+        f"&query=(flagshipSearchIntent:SEARCH_SRP,keywords:{quote(keyword)},"
+        f"queryParameters:(resultType:List({result_type})))"
+        f"&start={start}&count=25"
+    )
+    try:
+        resp = httpx.get(api_url, headers=headers, timeout=20, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        logger.debug("LinkedIn search API 失败 keyword=%s: %s", keyword, exc)
+        return []
+
+    raw = json.dumps(data, ensure_ascii=False)
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    if resource_type == "profile":
+        for match in re.finditer(r'/in/([A-Za-z0-9][A-Za-z0-9\-_%]*[A-Za-z0-9])', raw):
+            identifier = match.group(1).rstrip("/").split("?")[0]
+            if len(identifier) < 3 or identifier in _LINKEDIN_SKIP_SLUGS:
+                continue
+            url = f"https://www.linkedin.com/in/{identifier}/"
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+    elif resource_type == "company":
+        for match in re.finditer(r'"universalName"\s*:\s*"([^"]+)"', raw):
+            slug = match.group(1)
+            if slug and slug not in _LINKEDIN_SKIP_SLUGS:
+                url = f"https://www.linkedin.com/company/{slug}/"
+                if url not in seen:
+                    seen.add(url)
+                    urls.append(url)
+        if not urls:
+            for match in re.finditer(r'/company/([A-Za-z0-9][A-Za-z0-9\-_%]*[A-Za-z0-9])', raw):
+                slug = match.group(1).rstrip("/").split("?")[0]
+                if len(slug) < 2 or slug in _LINKEDIN_SKIP_SLUGS:
+                    continue
+                url = f"https://www.linkedin.com/company/{slug}/"
+                if url not in seen:
+                    seen.add(url)
+                    urls.append(url)
+    return urls
+
+
+_LINKEDIN_SKIP_SLUGS = frozenset({
+    "login", "signup", "feed", "404", "search", "pub", "company",
+    "in", "jobs", "settings", "notifications", "messaging", "mynetwork",
+    "learning", "sales", "talent", "marketing", "premium", "business",
+})
 
 
 def _discovery_seed_urls(
