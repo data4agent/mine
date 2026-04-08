@@ -541,8 +541,11 @@ def _amazon_review_dedup_key(record: Record) -> str | None:
 def _get_voyager_profile(record: Record) -> dict[str, Any]:
     """Extract the primary profile element from voyager data."""
     voyager = record.get("voyager") or _structured(record).get("voyager") or {}
-    data = voyager.get("data", {})
-    elements = data.get("identityDashProfilesByMemberIdentity", {}).get("elements", [])
+    data = voyager.get("data") or {}
+    if not isinstance(data, dict):
+        return {}
+    identity = data.get("identityDashProfilesByMemberIdentity") or {}
+    elements = identity.get("elements", []) if isinstance(identity, dict) else []
     return elements[0] if elements else {}
 
 
