@@ -1,0 +1,262 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Amazon Sellers Dataset",
+  "dedup_key": "seller_id + marketplace",
+  "url_normalize_regex": "^https?://(?:www\\.)?amazon\\.(com|co\\.uk|de|...)/(?:sp|shops/seller)\\?(?:.*&)?(?:seller|merchant)=([A-Z0-9]+)(?:&.*)?$ → https://www.amazon.$1/sp?seller=$2",
+  "type": "object",
+  "required": [
+    "seller_id",
+    "seller_name",
+    "dedup_key",
+    "canonical_url"
+  ],
+  "properties": {
+    "dedup_key": {
+      "type": "string"
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "marketplace": {
+      "type": "string"
+    },
+    "seller_id": {
+      "type": "string"
+    },
+    "URL": {
+      "type": "string",
+      "format": "uri"
+    },
+    "seller_name": {
+      "type": "string"
+    },
+    "seller_email": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_phone": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stars": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "feedbacks": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "return_policy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "detailed_info": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "brand_owner",
+        "reseller",
+        "arbitrage",
+        "manufacturer",
+        "dropshipper",
+        null
+      ]
+    },
+    "business_name_registered": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_health_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "response_time_tier": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dispute_rate_estimated": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "brands_featured_on_storefront": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "product_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "category_focus": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "brand_portfolio": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "price_range": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "avg_product_rating": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 5
+    },
+    "years_on_amazon": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "growth_trajectory": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "geographic_focus": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fulfillment_strategy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_one_liner": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_profile_narrative": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "linkable_identifiers": {
+      "type": "object",
+      "properties": {
+        "seller_website_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "linkedin_company_search_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "brands_featured_on_storefront": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "seller_legitimacy_signals": {
+      "type": "object",
+      "properties": {
+        "positive_signals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "negative_signals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "legitimacy_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "seller_origin_country_inferred": {
+      "type": "object",
+      "properties": {
+        "country": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,412 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LinkedIn Jobs Dataset",
+  "dedup_key": "job_posting_id",
+  "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/jobs/view/(\\d+).*$ → https://www.linkedin.com/jobs/view/$1",
+  "type": "object",
+  "required": [
+    "job_posting_id",
+    "job_title",
+    "company_name",
+    "dedup_key",
+    "canonical_url"
+  ],
+  "properties": {
+    "dedup_key": {
+      "type": "string"
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "job_posting_id": {
+      "type": "string"
+    },
+    "job_title": {
+      "type": "string"
+    },
+    "company_name": {
+      "type": "string"
+    },
+    "company_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "job_location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "workplace_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "On-site",
+        "Remote",
+        "Hybrid",
+        null
+      ]
+    },
+    "application_method": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "Easy Apply",
+        "external_link",
+        "email",
+        null
+      ]
+    },
+    "job_summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "job_description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "job_seniority_level": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "job_function": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "applicants_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "date_posted": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "job_title_standardized": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "remote_policy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "remote_policy_detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "location_parsed": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "country": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "responsibilities_extracted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requirements_extracted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "string"
+          },
+          "required_or_preferred": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "required",
+              "preferred",
+              null
+            ]
+          },
+          "years_experience": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "salary_range_inferred": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "benefits_extracted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "team_size_hint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reporting_to_level": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "role_category_fine_grained": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "industry_vertical": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "visa_sponsorship_signal": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "equity_compensation_signal": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "required_skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "preferred_skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tools_and_platforms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "programming_languages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "frameworks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "competition_level": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "days_to_fill_estimated": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "urgency_signal": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reposting_frequency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "candidate_facing_summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hiring_manager_brief": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "red_flags_detected": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "culture_signals_extracted": {
+      "type": "object",
+      "properties": {
+        "management_style_hints": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "growth_opportunity_signals": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "work_life_balance_indicators": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "tech_stack_full_picture": {
+      "type": "object",
+      "properties": {
+        "must_have": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nice_to_have": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "infrastructure": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "methodology": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "jd_internal_contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "contradiction": {
+            "type": "string"
+          },
+          "field_a": {
+            "type": "string"
+          },
+          "field_b": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "role_clarity_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "ideal_candidate_persona": {
+      "type": "object",
+      "properties": {
+        "years_experience_sweet_spot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "background_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "must_have_vs_nice_to_have_ratio": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "deal_breaker_skills": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

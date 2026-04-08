@@ -1,0 +1,388 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LinkedIn Posts Dataset",
+  "dedup_key": "post_id (from urn:li:activity:{id})",
+  "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/(?:feed/update/urn:li:activity:|posts/[^/]+-activity-)(\\d+).*$ → https://www.linkedin.com/feed/update/urn:li:activity:$1",
+  "type": "object",
+  "required": [
+    "post_id",
+    "post_text",
+    "dedup_key",
+    "canonical_url"
+  ],
+  "properties": {
+    "dedup_key": {
+      "type": "string"
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "post_id": {
+      "type": "string"
+    },
+    "post_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "headline": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hashtags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      }
+    },
+    "videos": {
+      "type": "array",
+      "items": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      }
+    },
+    "num_likes": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "num_comments": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "top_visible_comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "user_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "user_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "user_followers": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "date_posted": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "post_topic_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "post_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "thought_leadership",
+        "job_announcement",
+        "company_news",
+        "personal_story",
+        "engagement_bait",
+        null
+      ]
+    },
+    "key_claims_extracted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "entities_mentioned": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sentiment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "engagement_quality_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "comment_sentiment_distribution": {
+      "type": "object",
+      "properties": {
+        "positive": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "negative": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "neutral": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "viral_coefficient_estimated": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "controversial_flag": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "author_authority_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "author_industry": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "is_corporate_voice": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "trending_topic_relevance": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "news_event_linkage": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "post_image_analysis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "image_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text_extracted_from_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chart_data_described": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visual_sentiment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "shared_link_content_summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "post_one_liner": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "post_takeaway": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "thought_leadership_depth": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "surface_commentary",
+        "practical_insight",
+        "original_research",
+        "contrarian_take",
+        null
+      ]
+    },
+    "self_promotion_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "argument_structure": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "claim_only",
+        "claim+evidence",
+        "narrative",
+        "question_posing",
+        null
+      ]
+    },
+    "posting_intent": {
+      "type": "object",
+      "properties": {
+        "primary_intent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "secondary_intent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "audience_targeting": {
+      "type": "object",
+      "properties": {
+        "target_audience": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "factual_claims_checkable": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "verifiability": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "easily_verifiable",
+              "hard_to_verify",
+              "opinion",
+              "anecdotal",
+              null
+            ]
+          }
+        }
+      }
+    }
+  }
+}

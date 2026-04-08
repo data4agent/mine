@@ -1,0 +1,507 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Amazon Reviews Dataset",
+  "dedup_key": "review_id + marketplace",
+  "url_normalize_regex": "^https?://(?:www\\.)?amazon\\.(com|co\\.uk|de|...)/gp/customer-reviews/([A-Z0-9]+)(?:[/?#].*)?$ → https://www.amazon.$1/gp/customer-reviews/$2",
+  "type": "object",
+  "required": [
+    "review_id",
+    "asin",
+    "dedup_key",
+    "canonical_url"
+  ],
+  "properties": {
+    "dedup_key": {
+      "type": "string"
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "marketplace": {
+      "type": "string"
+    },
+    "review_id": {
+      "type": "string"
+    },
+    "asin": {
+      "type": "string"
+    },
+    "URL": {
+      "type": "string",
+      "format": "uri"
+    },
+    "author_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "author_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "variant_purchased": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_country": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rating": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 5
+    },
+    "review_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_headline": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "date_posted": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "helpful_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "verified_purchase": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "seller_response": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_images": {
+      "type": "array",
+      "items": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      }
+    },
+    "reviewer_profile_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "power_reviewer",
+        "verified_buyer",
+        "one_time",
+        "suspicious",
+        null
+      ]
+    },
+    "sentiment_overall": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "positive",
+        "negative",
+        "mixed",
+        "neutral",
+        null
+      ]
+    },
+    "sentiment_aspects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "aspect": {
+            "type": "string"
+          },
+          "sentiment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "product_pros_extracted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "product_cons_extracted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "feature_satisfaction_map": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "use_case_mentioned": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "comparison_to_alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "advantage_or_disadvantage": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "review_quality_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "review_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "detailed_analysis",
+        "brief_opinion",
+        "complaint",
+        "praise",
+        "question",
+        null
+      ]
+    },
+    "authenticity_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "information_density": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "issues_reported": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "issue": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_component": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "customer_segment_inferred": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "professional",
+        "hobbyist",
+        "first_time",
+        "gift_buyer",
+        null
+      ]
+    },
+    "purchase_context": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "personal",
+        "business",
+        "gift",
+        null
+      ]
+    },
+    "seller_response_quality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "helpful",
+        "generic",
+        "defensive",
+        "absent",
+        null
+      ]
+    },
+    "issue_resolution_status": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "resolved",
+        "unresolved",
+        "partial",
+        null
+      ]
+    },
+    "image_content_described": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "shows_product_in_use": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "shows_defect": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "review_image_analysis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "image_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defect_described": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usage_context_shown": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matches_review_text": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "review_one_liner": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "purchase_decision_factor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "usage_duration_mentioned": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "expertise_level_inferred": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "novice",
+        "intermediate",
+        "expert",
+        null
+      ]
+    },
+    "actionable_feedback": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "competitor_products_mentioned": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "review_text_rating_mismatch": {
+      "type": "object",
+      "properties": {
+        "mismatch_detected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mismatch_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "sponsored_review_indicators": {
+      "type": "object",
+      "properties": {
+        "likelihood": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            null
+          ]
+        },
+        "indicators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "temporal_context_of_opinion": {
+      "type": "object",
+      "properties": {
+        "usage_duration_inferred": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opinion_maturity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "first_impression",
+            "short_term",
+            "long_term",
+            null
+          ]
+        }
+      }
+    },
+    "problem_root_cause_inferred": {
+      "type": "object",
+      "properties": {
+        "problem_reported": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "root_cause_category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "manufacturing_defect",
+            "design_flaw",
+            "sizing_info_gap",
+            "user_error",
+            "shipping_damage",
+            null
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,6369 @@
+{
+  "amazon_products": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Amazon Products Dataset",
+    "dedup_key": "asin + marketplace",
+    "url_normalize_regex": "^https?://(?:www\\.)?amazon\\.(com|co\\.uk|de|...)/(?:.*/)?(dp|gp/product)/([A-Z0-9]{10})(?:[/?#].*)?$ → https://www.amazon.$1/dp/$3",
+    "type": "object",
+    "required": [
+      "asin",
+      "title",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "marketplace": {
+        "type": "string"
+      },
+      "asin": {
+        "type": "string"
+      },
+      "URL": {
+        "type": "string",
+        "format": "uri"
+      },
+      "title": {
+        "type": "string"
+      },
+      "brand": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "initial_price": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "final_price": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "currency": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "discount": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "coupon_available": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "subscribe_and_save_available": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "bullet_points": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "features": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "categories": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "breadcrumbs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "category_tree": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "best_sellers_rank": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "description": "BSR by category"
+      },
+      "sales_volume_hint": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "e.g. 10K+ bought in past month"
+      },
+      "estimated_monthly_sales": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "images": {
+        "type": "array",
+        "items": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        }
+      },
+      "main_image": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "availability": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "stock_status": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reviews_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "rating": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 5
+      },
+      "answered_questions_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "sizes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "colors": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "styles": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "date_first_available": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date"
+      },
+      "product_dimensions": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "product_weight": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "warranty_info": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "a_plus_content_present": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "frequently_bought_together": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "asin": {
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "customers_also_viewed": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "asin": {
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "title_cleaned": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "brand_standardized": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "is_brand_official_store": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "price_tier": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "budget",
+          "mid",
+          "premium",
+          "luxury",
+          null
+        ]
+      },
+      "price_vs_category_avg": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "historical_price_trend": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "deal_quality_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "price_signals_on_page": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "features_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "feature_name": {
+              "type": "string"
+            },
+            "feature_value": {
+              "type": "string"
+            },
+            "feature_unit": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "key_specs_table": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "use_cases_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "target_audience_inferred": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "category_standardized": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "niche_tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "seasonal_relevance": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "competitive_position": {
+        "type": "object",
+        "properties": {
+          "rank_in_category": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "top_competitors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "listing_quality_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "seo_keyword_density": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "image_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "has_lifestyle_images": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "has_infographic": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "has_video": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "visual_quality_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "fulfillment_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "FBA",
+          "FBM",
+          "AMZ",
+          null
+        ]
+      },
+      "shipping_speed_tier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "prime_eligible": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "recent_rating_signal": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "improving",
+          "stable",
+          "declining",
+          null
+        ]
+      },
+      "rating_trend": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "review_velocity": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "review_pattern_risk_indicators": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fake_review_risk_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "verified_purchase_ratio": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "variant_matrix_structured": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "best_seller_variant": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "variant_price_range": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "certifications_mentioned": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "country_of_origin": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "material_composition_extracted": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "safety_warnings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "cross_sell_category_hints": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "main_image_analysis": {
+        "type": "object",
+        "properties": {
+          "background_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "product_clearly_visible": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "image_resolution_adequate": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "product_angle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "all_images_analysis": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "image_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text_extracted_from_image": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scene_description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "image_text_consistency_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "listing_visual_completeness": {
+        "type": "object",
+        "properties": {
+          "has_hero": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "has_lifestyle": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "has_infographic": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "has_size_reference": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "has_packaging": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "missing_recommended": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "buyer_quick_take": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "product_elevator_pitch": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_competitive_brief": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seo_optimized_description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "product_lifecycle_stage_inferred": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "new_launch",
+          "growth",
+          "mature",
+          "declining",
+          null
+        ]
+      },
+      "lifecycle_evidence": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "unique_selling_points": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "purchase_decision_factors_from_listing": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "factor": {
+              "type": "string"
+            },
+            "prominence_in_listing": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value_claim": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "listing_optimization_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 100
+      },
+      "listing_issues_detected": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "issue": {
+              "type": "string"
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fix_suggestion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "listing_completeness": {
+        "type": "object",
+        "properties": {
+          "title_quality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bullet_point_quality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description_quality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "image_quality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "a_plus_content_present": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "linkable_identifiers": {
+        "type": "object",
+        "properties": {
+          "brand_website_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "brand_linkedin_search_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wikipedia_product_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patent_numbers_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "certification_bodies_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "upc_ean_isbn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "manufacturer_model_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "spec_description_mismatch": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string"
+            },
+            "description_claim": {
+              "type": "string"
+            },
+            "spec_value": {
+              "type": "string"
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "misleading_claim_flags": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": {
+              "type": "string"
+            },
+            "flag_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoning": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "title_description_coherence_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "buyer_persona_from_qa": {
+        "type": "object",
+        "properties": {
+          "personas_detected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "return_risk_indicators": {
+        "type": "object",
+        "properties": {
+          "risk_factors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "risk_level": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              null
+            ]
+          }
+        }
+      },
+      "gift_potential_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "customer_faq_generated": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string"
+            },
+            "reasoning": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "product_comparison_dimensions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "dimension": {
+              "type": "string"
+            },
+            "this_product_value": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "comparison_note": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "amazon_reviews": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Amazon Reviews Dataset",
+    "dedup_key": "review_id + marketplace",
+    "url_normalize_regex": "^https?://(?:www\\.)?amazon\\.(com|co\\.uk|de|...)/gp/customer-reviews/([A-Z0-9]+)(?:[/?#].*)?$ → https://www.amazon.$1/gp/customer-reviews/$2",
+    "type": "object",
+    "required": [
+      "review_id",
+      "asin",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "marketplace": {
+        "type": "string"
+      },
+      "review_id": {
+        "type": "string"
+      },
+      "asin": {
+        "type": "string"
+      },
+      "URL": {
+        "type": "string",
+        "format": "uri"
+      },
+      "author_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "author_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "variant_purchased": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "review_country": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "rating": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 5
+      },
+      "review_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "review_headline": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "date_posted": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date"
+      },
+      "helpful_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "verified_purchase": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "seller_response": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "review_images": {
+        "type": "array",
+        "items": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        }
+      },
+      "reviewer_profile_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "power_reviewer",
+          "verified_buyer",
+          "one_time",
+          "suspicious",
+          null
+        ]
+      },
+      "sentiment_overall": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "positive",
+          "negative",
+          "mixed",
+          "neutral",
+          null
+        ]
+      },
+      "sentiment_aspects": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "aspect": {
+              "type": "string"
+            },
+            "sentiment": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "detail": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "product_pros_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "product_cons_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "feature_satisfaction_map": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number"
+        }
+      },
+      "use_case_mentioned": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "comparison_to_alternatives": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "product": {
+              "type": "string"
+            },
+            "advantage_or_disadvantage": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "review_quality_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "review_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "detailed_analysis",
+          "brief_opinion",
+          "complaint",
+          "praise",
+          "question",
+          null
+        ]
+      },
+      "authenticity_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "information_density": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "issues_reported": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "issue": {
+              "type": "string"
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "product_component": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "customer_segment_inferred": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "professional",
+          "hobbyist",
+          "first_time",
+          "gift_buyer",
+          null
+        ]
+      },
+      "purchase_context": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "personal",
+          "business",
+          "gift",
+          null
+        ]
+      },
+      "seller_response_quality": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "helpful",
+          "generic",
+          "defensive",
+          "absent",
+          null
+        ]
+      },
+      "issue_resolution_status": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "resolved",
+          "unresolved",
+          "partial",
+          null
+        ]
+      },
+      "image_content_described": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "shows_product_in_use": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "shows_defect": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "review_image_analysis": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "image_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "defect_described": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "usage_context_shown": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "matches_review_text": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "review_one_liner": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "purchase_decision_factor": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "usage_duration_mentioned": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "expertise_level_inferred": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "novice",
+          "intermediate",
+          "expert",
+          null
+        ]
+      },
+      "actionable_feedback": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "competitor_products_mentioned": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "review_text_rating_mismatch": {
+        "type": "object",
+        "properties": {
+          "mismatch_detected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "mismatch_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "sponsored_review_indicators": {
+        "type": "object",
+        "properties": {
+          "likelihood": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              null
+            ]
+          },
+          "indicators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "temporal_context_of_opinion": {
+        "type": "object",
+        "properties": {
+          "usage_duration_inferred": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "opinion_maturity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "first_impression",
+              "short_term",
+              "long_term",
+              null
+            ]
+          }
+        }
+      },
+      "problem_root_cause_inferred": {
+        "type": "object",
+        "properties": {
+          "problem_reported": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "root_cause_category": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "manufacturing_defect",
+              "design_flaw",
+              "sizing_info_gap",
+              "user_error",
+              "shipping_damage",
+              null
+            ]
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "amazon_sellers": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Amazon Sellers Dataset",
+    "dedup_key": "seller_id + marketplace",
+    "url_normalize_regex": "^https?://(?:www\\.)?amazon\\.(com|co\\.uk|de|...)/(?:sp|shops/seller)\\?(?:.*&)?(?:seller|merchant)=([A-Z0-9]+)(?:&.*)?$ → https://www.amazon.$1/sp?seller=$2",
+    "type": "object",
+    "required": [
+      "seller_id",
+      "seller_name",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "marketplace": {
+        "type": "string"
+      },
+      "seller_id": {
+        "type": "string"
+      },
+      "URL": {
+        "type": "string",
+        "format": "uri"
+      },
+      "seller_name": {
+        "type": "string"
+      },
+      "seller_email": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_phone": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "stars": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "feedbacks": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "return_policy": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "detailed_info": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "brand_owner",
+          "reseller",
+          "arbitrage",
+          "manufacturer",
+          "dropshipper",
+          null
+        ]
+      },
+      "business_name_registered": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_health_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "response_time_tier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "dispute_rate_estimated": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "brands_featured_on_storefront": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "product_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "category_focus": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "brand_portfolio": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "price_range": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "avg_product_rating": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 5
+      },
+      "years_on_amazon": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "growth_trajectory": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "geographic_focus": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fulfillment_strategy": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_one_liner": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seller_profile_narrative": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "linkable_identifiers": {
+        "type": "object",
+        "properties": {
+          "seller_website_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "linkedin_company_search_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "brands_featured_on_storefront": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "seller_legitimacy_signals": {
+        "type": "object",
+        "properties": {
+          "positive_signals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "negative_signals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "legitimacy_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "seller_origin_country_inferred": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "arxiv": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "arXiv Dataset",
+    "dedup_key": "arxiv_id (versioned: arxiv_id + version)",
+    "url_normalize_regex": "^https?://(?:www\\.)?arxiv\\.org/(?:abs|pdf|html)/(\\d{4}\\.\\d{4,5}(?:v\\d+)?)(?:\\.pdf)?.*$ → https://arxiv.org/abs/$1",
+    "type": "object",
+    "required": [
+      "arxiv_id",
+      "title",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "arxiv_id": {
+        "type": "string"
+      },
+      "DOI": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "URL": {
+        "type": "string",
+        "format": "uri"
+      },
+      "title": {
+        "type": "string"
+      },
+      "abstract": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "page_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "num_authors": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "num_figures": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "authors": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "affiliation": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "categories": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "primary_category": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "submission_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date"
+      },
+      "update_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date"
+      },
+      "versions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "submission_comments": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "journal_ref": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "license": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "raw_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "PDF_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "references": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "title_normalized": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "abstract_plain_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "authors_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "full_name": {
+              "type": "string"
+            },
+            "first_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "affiliation_standardized": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "affiliation_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "university",
+                "company",
+                "lab",
+                "government",
+                null
+              ]
+            },
+            "affiliation_country": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "orcid_mentioned": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "career_stage_inferred": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "topic_hierarchy": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "keywords_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "total_citation_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "influential_citation_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "research_area_plain_english": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "interdisciplinary_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "venue_mentioned": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "venue_published": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "venue_tier_mapped": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "A*",
+          "A",
+          "B",
+          "C",
+          "Workshop",
+          null
+        ]
+      },
+      "venue_tier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "acceptance_status_inferred": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "published",
+          "preprint",
+          "withdrawn",
+          null
+        ]
+      },
+      "sections_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "heading": {
+              "type": "string"
+            },
+            "content_summary": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "section_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "main_contributions": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "novelty_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "new_method",
+          "new_dataset",
+          "new_theory",
+          "new_application",
+          "survey",
+          null
+        ]
+      },
+      "problem_statement": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "proposed_solution_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "methods_used": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "method_name": {
+              "type": "string"
+            },
+            "method_category": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "is_novel": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "baselines_compared": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "evaluation_metrics": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "datasets_used": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "URL": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "size": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "domain": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "experimental_setup_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "key_results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "baseline_comparison": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "improvement_percentage": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "state_of_art_claimed": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "statistical_significance_reported": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "reproducibility_indicators": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "limitations_stated": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "future_work_directions": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "threats_to_validity": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "references_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "authors": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "year": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "venue": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "citation_context": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "background",
+                "method",
+                "comparison",
+                "extension",
+                null
+              ]
+            },
+            "citation_sentiment": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "positive",
+                "negative",
+                "neutral",
+                null
+              ]
+            }
+          }
+        }
+      },
+      "code_available": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "code_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "code_framework": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "dataset_released": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "dataset_url": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "open_access_status": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "title_embedding": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "description": "768-dim embedding vector",
+        "minItems": 768,
+        "maxItems": 768
+      },
+      "abstract_embedding": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "description": "768-dim embedding vector",
+        "minItems": 768,
+        "maxItems": 768
+      },
+      "full_paper_embedding": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "description": "768-dim embedding vector",
+        "minItems": 768,
+        "maxItems": 768
+      },
+      "builds_upon": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "contradicts": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "replicates": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "uses_dataset_from": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "uses_method_from": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "figures_analyzed": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "figure_id": {
+              "type": "string"
+            },
+            "figure_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "caption_original": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "caption_enhanced": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key_findings_from_figure": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data_points_extracted": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "components_identified": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "key_equations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "equation_latex": {
+              "type": "string"
+            },
+            "equation_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "plain_english_explanation": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "variables_defined": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "equation_role": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "tweet_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "one_line_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "executive_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "layman_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "technical_abstract_enhanced": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "review_style_summary": {
+        "type": "object",
+        "properties": {
+          "strengths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "weaknesses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "overall": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "mathematical_complexity_score": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "description": "1-5",
+        "minimum": 1,
+        "maximum": 5
+      },
+      "mathematical_complexity_evidence": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "novelty_delta_assessment": {
+        "type": "object",
+        "properties": {
+          "novelty_claim": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actual_delta": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closest_prior_work": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "methodology_transferability": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "claim_verification_notes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": {
+              "type": "string"
+            },
+            "evidence_strength": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "strong",
+                "moderate",
+                "weak",
+                "unsupported",
+                null
+              ]
+            },
+            "evidence_detail": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "potential_issues": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "linkable_identifiers": {
+        "type": "object",
+        "properties": {
+          "author_linkedin_hints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "affiliation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "query_hint": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "github_repos_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "project_urls_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "wikipedia_concept_hints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dataset_source_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "related_arxiv_ids_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "internal_consistency_issues": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "issue": {
+              "type": "string"
+            },
+            "location_a": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "location_b": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "minor",
+                "moderate",
+                "critical",
+                null
+              ]
+            }
+          }
+        }
+      },
+      "missing_baselines_or_ablations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "missing_element": {
+              "type": "string"
+            },
+            "importance": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "critical",
+                "recommended",
+                "minor",
+                null
+              ]
+            }
+          }
+        }
+      },
+      "cherry_picking_indicators": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "indicator": {
+              "type": "string"
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "writing_quality_assessment": {
+        "type": "object",
+        "properties": {
+          "overall_quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "excellent",
+              "good",
+              "average",
+              "poor",
+              null
+            ]
+          },
+          "clarity_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "organization_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "common_problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "experiment_rigor_score": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "positive_indicators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "negative_indicators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "readability_for_audience": {
+        "type": "object",
+        "properties": {
+          "in_field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outside_field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "practitioners": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "students": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "follow_up_research_questions": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "practitioner_takeaway": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "target_venue_inferred": {
+        "type": "object",
+        "properties": {
+          "venue_guesses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "venue": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "evidence": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "qa_pairs_generated": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "string"
+            },
+            "difficulty": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_section": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "linkedin_company": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LinkedIn Company Dataset",
+    "dedup_key": "company_id",
+    "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/company/([^/?#]+).*$ → https://www.linkedin.com/company/$1",
+    "type": "object",
+    "required": [
+      "company_id",
+      "name",
+      "URL",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "ID": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "company_id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "URL": {
+        "type": "string",
+        "format": "uri"
+      },
+      "country_code": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "locations": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "website": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "headquarters_location": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "founded_year": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "company_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "public",
+          "private",
+          "nonprofit",
+          "educational",
+          "government",
+          null
+        ]
+      },
+      "company_size_range": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "e.g. 51-200 employees"
+      },
+      "about": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "specialties": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "industry": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "followers": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "employees_in_linkedin": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "employee_growth_trend": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "hiring_velocity": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "attrition_signal": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "department_distribution_estimated": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": {
+          "type": "number"
+        }
+      },
+      "posts_recent": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "company_legal_name_inferred": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "parent_company": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "parent_company_mentioned": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "subsidiary_tree": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "subsidiary_mentioned": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "about_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "core_business_extracted": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "value_proposition": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "target_market_inferred": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "industry_standardized": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "tech_stack_mentioned_in_about": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "tech_stack_inferred": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "engineering_team_size_estimated": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "funding_stage_inferred": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "revenue_range_estimated": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "business_model_type": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "revenue_hints_in_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "content_strategy_analysis": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "posting_frequency": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "top_topics": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "brand_voice_profile": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "elevator_pitch": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "investor_brief": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "competitor_brief": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "linkable_identifiers": {
+        "type": "object",
+        "properties": {
+          "website_domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amazon_seller_search_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wikipedia_entity_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "github_org_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "crunchbase_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "company_stage_signals": {
+        "type": "object",
+        "properties": {
+          "stage_inferred": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evidence_phrases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "hiring_intent_from_about": {
+        "type": "object",
+        "properties": {
+          "detected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "linkedin_jobs": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LinkedIn Jobs Dataset",
+    "dedup_key": "job_posting_id",
+    "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/jobs/view/(\\d+).*$ → https://www.linkedin.com/jobs/view/$1",
+    "type": "object",
+    "required": [
+      "job_posting_id",
+      "job_title",
+      "company_name",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "job_posting_id": {
+        "type": "string"
+      },
+      "job_title": {
+        "type": "string"
+      },
+      "company_name": {
+        "type": "string"
+      },
+      "company_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "job_location": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "workplace_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "On-site",
+          "Remote",
+          "Hybrid",
+          null
+        ]
+      },
+      "application_method": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "Easy Apply",
+          "external_link",
+          "email",
+          null
+        ]
+      },
+      "job_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "job_description": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "job_seniority_level": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "job_function": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "applicants_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "date_posted": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date"
+      },
+      "job_title_standardized": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "remote_policy": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "remote_policy_detail": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "location_parsed": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "responsibilities_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "requirements_extracted": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "skill": {
+              "type": "string"
+            },
+            "required_or_preferred": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "required",
+                "preferred",
+                null
+              ]
+            },
+            "years_experience": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "salary_range_inferred": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "benefits_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "team_size_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reporting_to_level": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "role_category_fine_grained": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "industry_vertical": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "visa_sponsorship_signal": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "equity_compensation_signal": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "required_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "preferred_skills": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "tools_and_platforms": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "programming_languages": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "frameworks": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "competition_level": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "days_to_fill_estimated": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "urgency_signal": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reposting_frequency": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "candidate_facing_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "hiring_manager_brief": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "red_flags_detected": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "culture_signals_extracted": {
+        "type": "object",
+        "properties": {
+          "management_style_hints": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "growth_opportunity_signals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "work_life_balance_indicators": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "tech_stack_full_picture": {
+        "type": "object",
+        "properties": {
+          "must_have": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nice_to_have": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "infrastructure": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "methodology": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "jd_internal_contradictions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "contradiction": {
+              "type": "string"
+            },
+            "field_a": {
+              "type": "string"
+            },
+            "field_b": {
+              "type": "string"
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "role_clarity_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "ideal_candidate_persona": {
+        "type": "object",
+        "properties": {
+          "years_experience_sweet_spot": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "background_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "must_have_vs_nice_to_have_ratio": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "deal_breaker_skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "linkedin_posts": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LinkedIn Posts Dataset",
+    "dedup_key": "post_id (from urn:li:activity:{id})",
+    "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/(?:feed/update/urn:li:activity:|posts/[^/]+-activity-)(\\d+).*$ → https://www.linkedin.com/feed/update/urn:li:activity:$1",
+    "type": "object",
+    "required": [
+      "post_id",
+      "post_text",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "post_id": {
+        "type": "string"
+      },
+      "post_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "title": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "headline": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "hashtags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "images": {
+        "type": "array",
+        "items": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        }
+      },
+      "videos": {
+        "type": "array",
+        "items": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        }
+      },
+      "num_likes": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "num_comments": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "top_visible_comments": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "user_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "user_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "user_followers": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "date_posted": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date"
+      },
+      "post_topic_tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "post_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "thought_leadership",
+          "job_announcement",
+          "company_news",
+          "personal_story",
+          "engagement_bait",
+          null
+        ]
+      },
+      "key_claims_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "entities_mentioned": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sentiment": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "engagement_quality_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "comment_sentiment_distribution": {
+        "type": "object",
+        "properties": {
+          "positive": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "negative": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "neutral": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "viral_coefficient_estimated": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "controversial_flag": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "author_authority_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "author_industry": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "is_corporate_voice": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "trending_topic_relevance": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "news_event_linkage": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "post_image_analysis": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "image_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text_extracted_from_image": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "chart_data_described": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "visual_sentiment": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "shared_link_content_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "post_one_liner": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "post_takeaway": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "thought_leadership_depth": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "surface_commentary",
+          "practical_insight",
+          "original_research",
+          "contrarian_take",
+          null
+        ]
+      },
+      "self_promotion_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "argument_structure": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "claim_only",
+          "claim+evidence",
+          "narrative",
+          "question_posing",
+          null
+        ]
+      },
+      "posting_intent": {
+        "type": "object",
+        "properties": {
+          "primary_intent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secondary_intent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "audience_targeting": {
+        "type": "object",
+        "properties": {
+          "target_audience": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "factual_claims_checkable": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": {
+              "type": "string"
+            },
+            "verifiability": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "easily_verifiable",
+                "hard_to_verify",
+                "opinion",
+                "anecdotal",
+                null
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "linkedin_profiles": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "LinkedIn Profiles Dataset",
+    "dedup_key": "linkedin_num_id",
+    "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/in/([^/?#]+).*$ → https://www.linkedin.com/in/$1",
+    "type": "object",
+    "required": [
+      "linkedin_num_id",
+      "name",
+      "URL",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string",
+        "description": "Value of linkedin_num_id"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "ID": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "linkedin_num_id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "city": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "country_code": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "avatar": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "banner_image": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "URL": {
+        "type": "string",
+        "format": "uri"
+      },
+      "profile_url_custom": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "position": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "current_company": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "current_company_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "current_company_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "about": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "open_to_work": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "open_to_work_details": {
+        "type": "object",
+        "properties": {
+          "desired_titles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "desired_locations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "work_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "experience": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "education": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "educations_details": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "followers": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "connections": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "posts_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "recommendations_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "people_also_viewed": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "certifications": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "languages": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "courses": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "publications_listed": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "publisher": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "date": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "honors_and_awards": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "issuer": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "date": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "projects_listed": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "date_range": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "team_members": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "patents_listed": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "patent_number": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "date": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "volunteer_experience": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "type": "string"
+            },
+            "organization": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "date_range": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cause": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "featured_content": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "post",
+                "article",
+                "link",
+                "media",
+                null
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "timestamp": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "input_url": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      },
+      "name_gender_inference": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "name_ethnicity_estimation": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "profile_language_detected": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "standardized_job_title": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seniority_level": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "C-suite",
+          "VP",
+          "Director",
+          "Manager",
+          "Senior IC",
+          "IC",
+          "Entry",
+          null
+        ]
+      },
+      "job_function_category": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "about_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "about_topics": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "about_sentiment": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "career_narrative_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "builder",
+          "leader",
+          "specialist",
+          "entrepreneur",
+          null
+        ]
+      },
+      "job_change_signal_strength": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "experience_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "company": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "start_date": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "end_date": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "duration_months": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "responsibilities_extracted": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "technologies_mentioned": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "achievements_quantified": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "industry_standardized": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "education_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "institution": {
+              "type": "string"
+            },
+            "degree_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "PhD",
+                "Master",
+                "Bachelor",
+                "Associate",
+                "Diploma",
+                "Certificate",
+                null
+              ]
+            },
+            "field_of_study_standardized": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "graduation_year": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "institution_recognition_level": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "world-class",
+                "well-known",
+                "regional",
+                "unknown",
+                null
+              ]
+            }
+          }
+        }
+      },
+      "skills_extracted": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "skill_categories": {
+        "type": "object",
+        "properties": {
+          "Technical": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Soft": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "Domain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "skill_proficiency_inferred": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "influence_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "engagement_rate": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "content_creator_tier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "content_activity_level": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "active",
+          "moderate",
+          "passive",
+          "lurker",
+          null
+        ]
+      },
+      "professional_cluster": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "career_trajectory_vector": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "description": "768-dim embedding vector"
+      },
+      "certification_expiry_mentioned": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "certification_validity": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "language_proficiency_level": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "publication_type": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "publication_topics": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "award_significance_level": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "international",
+          "national",
+          "institutional",
+          "team",
+          null
+        ]
+      },
+      "project_domain": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "technologies_used": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "project_scale_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "patent_domain": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "patent_innovation_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "utility",
+          "design",
+          "process",
+          null
+        ]
+      },
+      "cause_categories": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "featured_content_themes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "personal_brand_focus": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "profile_completeness_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "last_active_estimate": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "profile_freshness_grade": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "avatar_quality_assessment": {
+        "type": "object",
+        "properties": {
+          "is_professional_headshot": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "face_detected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "lighting_quality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "background_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "banner_content_analysis": {
+        "type": "object",
+        "properties": {
+          "depicts": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "brand_alignment_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "text_extracted_from_banner": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "one_line_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "recruiter_brief": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "investor_brief": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "full_profile_narrative": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "writing_style_profile": {
+        "type": "object",
+        "properties": {
+          "formality_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vocabulary_richness": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "jargon_density": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "persuasion_style": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "culture_fit_indicators": {
+        "type": "object",
+        "properties": {
+          "work_style_inferred": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "values_expressed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "communication_style": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "linkable_identifiers": {
+        "type": "object",
+        "properties": {
+          "github_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "personal_website_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "twitter_handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orcid_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "google_scholar_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "arxiv_author_query_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "company_domains_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "patent_numbers_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "publication_titles_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "internal_consistency_flags": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "inconsistency": {
+              "type": "string"
+            },
+            "field_a": {
+              "type": "string"
+            },
+            "field_b": {
+              "type": "string"
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "minor",
+                "moderate",
+                "critical",
+                null
+              ]
+            }
+          }
+        }
+      },
+      "experience_gap_analysis": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "gap_start": {
+              "type": "string"
+            },
+            "gap_end": {
+              "type": "string"
+            },
+            "duration_months": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "context_hint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "career_transition_detected": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "from_role": {
+              "type": "string"
+            },
+            "to_role": {
+              "type": "string"
+            },
+            "transition_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "upward",
+                "lateral",
+                "career_pivot",
+                "industry_switch",
+                null
+              ]
+            },
+            "transition_risk_level": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "motivation_signals": {
+        "type": "object",
+        "properties": {
+          "primary_motivation": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "impact",
+              "money",
+              "learning",
+              "status",
+              "autonomy",
+              "creativity",
+              null
+            ]
+          },
+          "evidence_phrases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "side_project_signals": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "project_name": {
+              "type": "string"
+            },
+            "nature": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "commitment_level": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "credibility_assessment": {
+        "type": "object",
+        "properties": {
+          "overall_score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "red_flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "green_flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "cold_outreach_hooks": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "interview_questions_suggested": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "qa_pairs_generated": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "string"
+            },
+            "source_field": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "wikipedia": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Wikipedia Dataset",
+    "dedup_key": "page_id + language (cross-language: wikidata_id)",
+    "url_normalize_regex": "^https?://([a-z]{2,3}(?:-[a-z]+)?)\\.(?:m\\.)?wikipedia\\.org/wiki/([^?#]+).*$ → https://$1.wikipedia.org/wiki/$2",
+    "type": "object",
+    "required": [
+      "page_id",
+      "title",
+      "language",
+      "dedup_key",
+      "canonical_url"
+    ],
+    "properties": {
+      "dedup_key": {
+        "type": "string"
+      },
+      "canonical_url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "URL": {
+        "type": "string",
+        "format": "uri"
+      },
+      "page_id": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "title": {
+        "type": "string"
+      },
+      "language": {
+        "type": "string"
+      },
+      "article_creation_date": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date"
+      },
+      "protection_level": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "unprotected",
+          "semi-protected",
+          "fully-protected",
+          null
+        ]
+      },
+      "raw_text": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "HTML": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "word_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "number_of_sections": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "has_infobox": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "infobox_raw": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "categories": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "references_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "external_links_count": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "references": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "see_also": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "images": {
+        "type": "array",
+        "items": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uri"
+        }
+      },
+      "title_disambiguated": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "canonical_entity_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "entity_type": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "person",
+          "place",
+          "organization",
+          "event",
+          "concept",
+          "thing",
+          null
+        ]
+      },
+      "wikidata_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "sections_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "heading": {
+              "type": "string"
+            },
+            "content": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "section_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "table_of_contents": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "article_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "reading_level": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "Flesch-Kincaid"
+      },
+      "tables_structured": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "table_title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "headers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "table_topic": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "infobox_structured": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "categories_cleaned": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "topic_hierarchy": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "domain": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "subject_tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "external_links_classified": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "source_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reliability_tier": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "entities_extracted": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "wikidata_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "first_mention_context": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "relation_to_subject": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "structured_facts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "subject": {
+              "type": "string"
+            },
+            "predicate": {
+              "type": "string"
+            },
+            "object": {
+              "type": "string"
+            },
+            "confidence_score": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "temporal_scope": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source_sentence": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "temporal_events": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "date": {
+              "type": "string"
+            },
+            "event_description": {
+              "type": "string"
+            },
+            "event_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "participants": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "related_entities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "entity": {
+              "type": "string"
+            },
+            "relation_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bidirectional": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "article_quality_class": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "neutrality_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "citation_density": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "last_major_edit": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "edit_controversy_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "cross_language_links": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "translation_coverage_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "entity_name_translations": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "article_embedding": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "description": "768-dim embedding vector",
+        "minItems": 768,
+        "maxItems": 768
+      },
+      "section_embeddings": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "768-dim embedding vector",
+          "minItems": 768,
+          "maxItems": 768
+        }
+      },
+      "images_annotated": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "caption_generated": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "depicts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "image_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "spatial_description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "historical_period_depicted": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scientific_annotation": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "one_line_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "eli5_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "standard_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "academic_summary": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "key_takeaways": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "prerequisite_concepts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "concept_name": {
+              "type": "string"
+            },
+            "wikipedia_title_hint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why_needed": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "difficulty_level": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "elementary",
+          "middle_school",
+          "high_school",
+          "undergraduate",
+          "graduate",
+          "expert",
+          null
+        ]
+      },
+      "quiz_questions_generated": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "string"
+            },
+            "difficulty": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "question_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "distractor_answers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "common_misconceptions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "misconception": {
+              "type": "string"
+            },
+            "correction": {
+              "type": "string"
+            },
+            "evidence_from_article": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "bias_detection": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "section_heading": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bias_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_quote_location": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "suggested_neutral_framing": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "missing_perspectives": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "weasel_words_detected": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "phrase": {
+              "type": "string"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "issue": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "information_freshness_score": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "potentially_outdated_claims": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": {
+              "type": "string"
+            },
+            "date_context": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason_suspect": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "temporal_coverage_gap": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "linkable_identifiers": {
+        "type": "object",
+        "properties": {
+          "arxiv_paper_hints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "linkedin_person_hints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "organization": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "amazon_product_hints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "external_database_ids": {
+            "type": "object",
+            "properties": {
+              "imdb_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "isbn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "doi": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "patent_numbers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "official_website": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "citation_needed_gaps": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "claim": {
+              "type": "string"
+            },
+            "paragraph_index": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "claim_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "importance": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "internal_contradictions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "contradiction": {
+              "type": "string"
+            },
+            "location_a": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "location_b": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "infobox_text_consistency": {
+        "type": "object",
+        "properties": {
+          "mismatches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "infobox_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "text_value": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "article_completeness_assessment": {
+        "type": "object",
+        "properties": {
+          "expected_sections_missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "overall_completeness_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "source_diversity_assessment": {
+        "type": "object",
+        "properties": {
+          "source_type_distribution": {
+            "type": "object",
+            "properties": {
+              "academic": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "news": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "government": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "corporate": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "self_published": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          },
+          "geographic_diversity_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "over_reliance_on_single_source": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "alternative_explanations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "approach": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "explanation_text": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "controversy_map": {
+        "type": "object",
+        "properties": {
+          "positions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stance": {
+                  "type": "string"
+                },
+                "supporting_arguments": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "key_proponents": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "section_interdependency_map": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "section_a": {
+              "type": "string"
+            },
+            "section_b": {
+              "type": "string"
+            },
+            "dependency_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "qa_pairs_generated": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "string"
+            },
+            "difficulty": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "question_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

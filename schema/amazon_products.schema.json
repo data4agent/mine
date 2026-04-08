@@ -1,0 +1,1000 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Amazon Products Dataset",
+  "dedup_key": "asin + marketplace",
+  "url_normalize_regex": "^https?://(?:www\\.)?amazon\\.(com|co\\.uk|de|...)/(?:.*/)?(dp|gp/product)/([A-Z0-9]{10})(?:[/?#].*)?$ → https://www.amazon.$1/dp/$3",
+  "type": "object",
+  "required": [
+    "asin",
+    "title",
+    "dedup_key",
+    "canonical_url"
+  ],
+  "properties": {
+    "dedup_key": {
+      "type": "string"
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "marketplace": {
+      "type": "string"
+    },
+    "asin": {
+      "type": "string"
+    },
+    "URL": {
+      "type": "string",
+      "format": "uri"
+    },
+    "title": {
+      "type": "string"
+    },
+    "brand": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "initial_price": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "final_price": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "discount": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "coupon_available": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "subscribe_and_save_available": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "bullet_points": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "breadcrumbs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "category_tree": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "best_sellers_rank": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "description": "BSR by category"
+    },
+    "sales_volume_hint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "e.g. 10K+ bought in past month"
+    },
+    "estimated_monthly_sales": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "uri"
+      }
+    },
+    "main_image": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "availability": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stock_status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reviews_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "rating": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 5
+    },
+    "answered_questions_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "sizes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "colors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "styles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "date_first_available": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "product_dimensions": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "product_weight": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "warranty_info": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "a_plus_content_present": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "frequently_bought_together": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "asin": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "customers_also_viewed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "asin": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "title_cleaned": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "brand_standardized": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "is_brand_official_store": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "price_tier": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "budget",
+        "mid",
+        "premium",
+        "luxury",
+        null
+      ]
+    },
+    "price_vs_category_avg": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "historical_price_trend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "deal_quality_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "price_signals_on_page": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "features_structured": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "feature_name": {
+            "type": "string"
+          },
+          "feature_value": {
+            "type": "string"
+          },
+          "feature_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "key_specs_table": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "use_cases_extracted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "target_audience_inferred": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "category_standardized": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "niche_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "seasonal_relevance": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "competitive_position": {
+      "type": "object",
+      "properties": {
+        "rank_in_category": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "top_competitors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "listing_quality_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "seo_keyword_density": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "image_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "has_lifestyle_images": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "has_infographic": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "has_video": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "visual_quality_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "fulfillment_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "FBA",
+        "FBM",
+        "AMZ",
+        null
+      ]
+    },
+    "shipping_speed_tier": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prime_eligible": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "recent_rating_signal": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "improving",
+        "stable",
+        "declining",
+        null
+      ]
+    },
+    "rating_trend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_velocity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "review_pattern_risk_indicators": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fake_review_risk_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "verified_purchase_ratio": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "variant_matrix_structured": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "best_seller_variant": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "variant_price_range": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "certifications_mentioned": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "country_of_origin": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "material_composition_extracted": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "safety_warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cross_sell_category_hints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "main_image_analysis": {
+      "type": "object",
+      "properties": {
+        "background_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "product_clearly_visible": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "image_resolution_adequate": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "product_angle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "all_images_analysis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "image_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text_extracted_from_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scene_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "image_text_consistency_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "listing_visual_completeness": {
+      "type": "object",
+      "properties": {
+        "has_hero": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "has_lifestyle": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "has_infographic": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "has_size_reference": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "has_packaging": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "missing_recommended": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "buyer_quick_take": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "product_elevator_pitch": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seller_competitive_brief": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seo_optimized_description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "product_lifecycle_stage_inferred": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "new_launch",
+        "growth",
+        "mature",
+        "declining",
+        null
+      ]
+    },
+    "lifecycle_evidence": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "unique_selling_points": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "purchase_decision_factors_from_listing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "factor": {
+            "type": "string"
+          },
+          "prominence_in_listing": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value_claim": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "listing_optimization_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "listing_issues_detected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "issue": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fix_suggestion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "listing_completeness": {
+      "type": "object",
+      "properties": {
+        "title_quality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bullet_point_quality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description_quality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_quality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "a_plus_content_present": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "linkable_identifiers": {
+      "type": "object",
+      "properties": {
+        "brand_website_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "brand_linkedin_search_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wikipedia_product_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "patent_numbers_mentioned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "certification_bodies_mentioned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "upc_ean_isbn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manufacturer_model_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "spec_description_mismatch": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "description_claim": {
+            "type": "string"
+          },
+          "spec_value": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "misleading_claim_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "flag_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasoning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "title_description_coherence_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "buyer_persona_from_qa": {
+      "type": "object",
+      "properties": {
+        "personas_detected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "return_risk_indicators": {
+      "type": "object",
+      "properties": {
+        "risk_factors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "risk_level": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            null
+          ]
+        }
+      }
+    },
+    "gift_potential_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "customer_faq_generated": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "reasoning": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "product_comparison_dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "this_product_value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comparison_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

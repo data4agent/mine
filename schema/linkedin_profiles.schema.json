@@ -1,0 +1,1189 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LinkedIn Profiles Dataset",
+  "dedup_key": "linkedin_num_id",
+  "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/in/([^/?#]+).*$ → https://www.linkedin.com/in/$1",
+  "type": "object",
+  "required": [
+    "linkedin_num_id",
+    "name",
+    "URL",
+    "dedup_key",
+    "canonical_url"
+  ],
+  "properties": {
+    "dedup_key": {
+      "type": "string",
+      "description": "Value of linkedin_num_id"
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "ID": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "linkedin_num_id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "city": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "country_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "avatar": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "banner_image": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "URL": {
+      "type": "string",
+      "format": "uri"
+    },
+    "profile_url_custom": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "position": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "current_company": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "current_company_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "current_company_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "about": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "open_to_work": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "open_to_work_details": {
+      "type": "object",
+      "properties": {
+        "desired_titles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "desired_locations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "work_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "educations_details": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "followers": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "connections": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "posts_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "recommendations_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "people_also_viewed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "courses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "publications_listed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "honors_and_awards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "projects_listed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_range": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "team_members": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "patents_listed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "patent_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "volunteer_experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "organization": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_range": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cause": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "featured_content": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "post",
+              "article",
+              "link",
+              "media",
+              null
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "timestamp": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "input_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "name_gender_inference": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name_ethnicity_estimation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "profile_language_detected": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "standardized_job_title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seniority_level": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "C-suite",
+        "VP",
+        "Director",
+        "Manager",
+        "Senior IC",
+        "IC",
+        "Entry",
+        null
+      ]
+    },
+    "job_function_category": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "about_summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "about_topics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "about_sentiment": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "career_narrative_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "builder",
+        "leader",
+        "specialist",
+        "entrepreneur",
+        null
+      ]
+    },
+    "job_change_signal_strength": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "experience_structured": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "company": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_months": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "responsibilities_extracted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "technologies_mentioned": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "achievements_quantified": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "industry_standardized": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "education_structured": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "institution": {
+            "type": "string"
+          },
+          "degree_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PhD",
+              "Master",
+              "Bachelor",
+              "Associate",
+              "Diploma",
+              "Certificate",
+              null
+            ]
+          },
+          "field_of_study_standardized": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "graduation_year": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "institution_recognition_level": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "world-class",
+              "well-known",
+              "regional",
+              "unknown",
+              null
+            ]
+          }
+        }
+      }
+    },
+    "skills_extracted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "skill_categories": {
+      "type": "object",
+      "properties": {
+        "Technical": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Soft": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Domain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "skill_proficiency_inferred": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "influence_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "engagement_rate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "content_creator_tier": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "content_activity_level": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "active",
+        "moderate",
+        "passive",
+        "lurker",
+        null
+      ]
+    },
+    "professional_cluster": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "career_trajectory_vector": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "768-dim embedding vector"
+    },
+    "certification_expiry_mentioned": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "certification_validity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "language_proficiency_level": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "publication_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publication_topics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "award_significance_level": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "international",
+        "national",
+        "institutional",
+        "team",
+        null
+      ]
+    },
+    "project_domain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "technologies_used": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "project_scale_hint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "patent_domain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "patent_innovation_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "utility",
+        "design",
+        "process",
+        null
+      ]
+    },
+    "cause_categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "featured_content_themes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "personal_brand_focus": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "profile_completeness_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "last_active_estimate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "profile_freshness_grade": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "avatar_quality_assessment": {
+      "type": "object",
+      "properties": {
+        "is_professional_headshot": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "face_detected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "lighting_quality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "background_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "banner_content_analysis": {
+      "type": "object",
+      "properties": {
+        "depicts": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "brand_alignment_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "text_extracted_from_banner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "one_line_summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recruiter_brief": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "investor_brief": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "full_profile_narrative": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "writing_style_profile": {
+      "type": "object",
+      "properties": {
+        "formality_level": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vocabulary_richness": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "jargon_density": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "persuasion_style": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "culture_fit_indicators": {
+      "type": "object",
+      "properties": {
+        "work_style_inferred": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "values_expressed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "communication_style": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "linkable_identifiers": {
+      "type": "object",
+      "properties": {
+        "github_urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "personal_website_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "twitter_handle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "orcid_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "google_scholar_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "arxiv_author_query_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "company_domains_mentioned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "patent_numbers_mentioned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "publication_titles_mentioned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "internal_consistency_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "inconsistency": {
+            "type": "string"
+          },
+          "field_a": {
+            "type": "string"
+          },
+          "field_b": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "minor",
+              "moderate",
+              "critical",
+              null
+            ]
+          }
+        }
+      }
+    },
+    "experience_gap_analysis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "gap_start": {
+            "type": "string"
+          },
+          "gap_end": {
+            "type": "string"
+          },
+          "duration_months": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "context_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "career_transition_detected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from_role": {
+            "type": "string"
+          },
+          "to_role": {
+            "type": "string"
+          },
+          "transition_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "upward",
+              "lateral",
+              "career_pivot",
+              "industry_switch",
+              null
+            ]
+          },
+          "transition_risk_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "motivation_signals": {
+      "type": "object",
+      "properties": {
+        "primary_motivation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "impact",
+            "money",
+            "learning",
+            "status",
+            "autonomy",
+            "creativity",
+            null
+          ]
+        },
+        "evidence_phrases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "side_project_signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string"
+          },
+          "nature": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commitment_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "credibility_assessment": {
+      "type": "object",
+      "properties": {
+        "overall_score": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "red_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "green_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "cold_outreach_hooks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "interview_questions_suggested": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "qa_pairs_generated": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          },
+          "source_field": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

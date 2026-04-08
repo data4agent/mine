@@ -1,0 +1,374 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LinkedIn Company Dataset",
+  "dedup_key": "company_id",
+  "url_normalize_regex": "^https?://(?:www\\.)?linkedin\\.com/company/([^/?#]+).*$ → https://www.linkedin.com/company/$1",
+  "type": "object",
+  "required": [
+    "company_id",
+    "name",
+    "URL",
+    "dedup_key",
+    "canonical_url"
+  ],
+  "properties": {
+    "dedup_key": {
+      "type": "string"
+    },
+    "canonical_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "ID": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "URL": {
+      "type": "string",
+      "format": "uri"
+    },
+    "country_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "locations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "website": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
+    },
+    "headquarters_location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "founded_year": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "company_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "public",
+        "private",
+        "nonprofit",
+        "educational",
+        "government",
+        null
+      ]
+    },
+    "company_size_range": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "e.g. 51-200 employees"
+    },
+    "about": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "specialties": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "industry": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "followers": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "employees_in_linkedin": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "employee_growth_trend": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hiring_velocity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "attrition_signal": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "department_distribution_estimated": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "posts_recent": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "company_legal_name_inferred": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parent_company": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parent_company_mentioned": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "subsidiary_tree": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "subsidiary_mentioned": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "about_summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "core_business_extracted": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "value_proposition": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "target_market_inferred": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "industry_standardized": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tech_stack_mentioned_in_about": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tech_stack_inferred": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "engineering_team_size_estimated": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "funding_stage_inferred": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revenue_range_estimated": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "business_model_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "revenue_hints_in_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "content_strategy_analysis": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "posting_frequency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "top_topics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "brand_voice_profile": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "elevator_pitch": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "investor_brief": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "competitor_brief": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "linkable_identifiers": {
+      "type": "object",
+      "properties": {
+        "website_domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "amazon_seller_search_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wikipedia_entity_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "github_org_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "crunchbase_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "company_stage_signals": {
+      "type": "object",
+      "properties": {
+        "stage_inferred": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "evidence_phrases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "hiring_intent_from_about": {
+      "type": "object",
+      "properties": {
+        "detected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
