@@ -195,6 +195,72 @@ class WorkerStateStore:
             return False
         return True
 
+    # ── Agent Handoff 队列：discovery follow-up 的异步子任务持久化 ──
+
+    def _handoff_path(self) -> Path:
+        return self.root / "agent_handoff.json"
+
+    def load_handoffs(self) -> list[dict[str, Any]]:
+        return self._read_list(self._handoff_path())
+
+    def enqueue_handoff(self, item: WorkItem, *, output_dir: str | None = None) -> dict[str, Any]:
+        """将 discovery follow-up 加入 handoff 队列，返回新建条目。"""
+        entries = self._read_list(self._handoff_path())
+        merged = {str(e.get("handoff_id") or ""): e for e in entries if e.get("handoff_id")}
+        handoff_id = f"ho:{item.item_id}"
+        if handoff_id in merged and merged[handoff_id].get("status") in ("completed", "running"):
+            return merged[handoff_id]
+        now = int(time.time())
+        entry: dict[str, Any] = {
+            "handoff_id": handoff_id,
+            "item": item.to_dict(),
+            "status": "queued",
+            "output_dir": output_dir,
+            "attempts": 0,
+            "created_at": now,
+            "updated_at": now,
+            "last_error": None,
+            "report_result": None,
+        }
+        merged[handoff_id] = entry
+        self._write_json(self._handoff_path(), list(merged.values()))
+        return entry
+
+    def update_handoff(self, handoff_id: str, update: dict[str, Any]) -> None:
+        entries = self._read_list(self._handoff_path())
+        merged = {str(e.get("handoff_id") or ""): e for e in entries if e.get("handoff_id")}
+        if handoff_id not in merged:
+            return
+        merged[handoff_id].update(update)
+        merged[handoff_id]["updated_at"] = int(time.time())
+        self._write_json(self._handoff_path(), list(merged.values()))
+
+    def pop_queued_handoffs(self, limit: int) -> list[dict[str, Any]]:
+        """取出 queued 状态的 handoff 条目（标记为 running），返回取出列表。"""
+        entries = self._read_list(self._handoff_path())
+        popped: list[dict[str, Any]] = []
+        for entry in entries:
+            if entry.get("status") == "queued" and len(popped) < limit:
+                entry["status"] = "running"
+                entry["attempts"] = int(entry.get("attempts") or 0) + 1
+                entry["updated_at"] = int(time.time())
+                popped.append(entry)
+        self._write_json(self._handoff_path(), entries)
+        return popped
+
+    def clear_handoff(self, handoff_id: str) -> None:
+        entries = [e for e in self._read_list(self._handoff_path()) if str(e.get("handoff_id")) != handoff_id]
+        self._write_json(self._handoff_path(), entries)
+
+    def handoff_stats(self) -> dict[str, int]:
+        """返回各状态 handoff 数量。"""
+        entries = self._read_list(self._handoff_path())
+        stats: dict[str, int] = {"queued": 0, "running": 0, "completed": 0, "failed": 0}
+        for entry in entries:
+            status = str(entry.get("status") or "queued")
+            stats[status] = stats.get(status, 0) + 1
+        return stats
+
     def set_pow_challenge(self, challenge: dict[str, Any] | None) -> None:
         self._memory_state["pow_challenge"] = dict(challenge) if isinstance(challenge, dict) else None
 
@@ -340,7 +406,7 @@ class WorkerStateStore:
         temp_path.replace(path)
 
     def _default_json_payload(self, path: Path) -> Any:
-        if path in {self._backlog_path, self._auth_pending_path, self._submit_pending_path}:
+        if path in {self._backlog_path, self._auth_pending_path, self._submit_pending_path, self._handoff_path()}:
             return []
         return {}
 

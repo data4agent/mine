@@ -521,7 +521,12 @@ def build_follow_up_items_from_discovery(parent: WorkItem, records: list[dict[st
                 resource_type=resource_type,
                 record=build_platform_record(canonical_url, platform=platform, resource_type=resource_type),
                 crawler_command="run",
-                metadata={"discovered_from": parent.item_id},
+                metadata={
+                    "discovered_from": parent.item_id,
+                    "execution_mode": "agent_handoff",
+                    "origin": "discovery_followup",
+                    "origin_item_id": parent.item_id,
+                },
             )
         )
     return items

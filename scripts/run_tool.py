@@ -848,6 +848,7 @@ def build_parser() -> argparse.ArgumentParser:
             "run-once",
             "run-loop",
             "agent-run",
+            "run-agent-handoff",
             "process-task-file",
             "export-core-submissions",
             # Legacy aliases
@@ -1147,6 +1148,10 @@ def run_agent_control(action: str = "status") -> str:
                 user_msg += f" Last error: {recent_errors[-1][:120]}"
             user_acts = ["Start mining"]
             action_map = {"Start mining": "python scripts/run_tool.py agent-start"}
+        handoff_stats = store.handoff_stats()
+        if any(v > 0 for v in handoff_stats.values()):
+            handoff_msg = ", ".join(f"{k}={v}" for k, v in handoff_stats.items() if v > 0)
+            user_msg += f" Agent handoffs: {handoff_msg}."
         return json.dumps({
             "state": "running" if is_running else "stopped",
             "user_message": user_msg,
@@ -1157,6 +1162,7 @@ def run_agent_control(action: str = "status") -> str:
                 "status": status,
                 "log_path": log_path,
                 "recent_errors": recent_errors,
+                "agent_handoff": handoff_stats,
             },
         }, ensure_ascii=False, indent=2)
 
@@ -1739,6 +1745,23 @@ def main() -> int:
         except ValueError:
             raise SystemExit(f"agent-run: expected integer argument, got {namespace.args[0]!r}")
         print(run_agent_loop(max_iterations=max_iter))
+        return 0
+
+    if namespace.command == "run-agent-handoff":
+        if not namespace.args:
+            print("Usage: run-agent-handoff <handoff_id> [--state-root <path>]")
+            return 1
+        handoff_id = namespace.args[0]
+        state_root_arg = None
+        if "--state-root" in namespace.args:
+            idx = namespace.args.index("--state-root")
+            if idx + 1 < len(namespace.args):
+                state_root_arg = namespace.args[idx + 1]
+        if state_root_arg is None:
+            output_root = Path(os.environ.get("CRAWLER_OUTPUT_ROOT", str(SKILL_ROOT / "output" / "agent-runs"))).resolve()
+            state_root_arg = str(Path(os.environ.get("WORKER_STATE_ROOT", str(output_root / "_worker_state"))).resolve())
+        from agent_handoff_runner import run_handoff
+        run_handoff(state_root_arg, handoff_id)
         return 0
 
     if namespace.command == "browser-session":

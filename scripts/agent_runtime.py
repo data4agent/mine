@@ -378,6 +378,7 @@ class AgentWorker:
                 "backlog": len(self.state_store.load_backlog()),
                 "auth_pending": len(self.state_store.load_auth_pending()),
                 "submit_pending": len(self.state_store.load_submit_pending()),
+                "agent_handoff": self.state_store.handoff_stats(),
             },
             "cooldowns": self.state_store.active_dataset_cooldowns(),
             "last_summary": dict(session.get("last_summary") or {}),
@@ -465,6 +466,8 @@ class AgentWorker:
             batch_state = self._save_current_batch(iteration=iteration, items=[], state="settled", summary=summary, stop_reason=stop_reason)
             return self._finalize_iteration(summary, current_batch=batch_state, stop_reason=stop_reason)
         self._drain_submit_pending(summary)
+        self._drain_agent_results(summary)
+        self._drain_agent_handoffs(summary)
         work_items = self._collect_work_items(summary)
         if not work_items:
             summary.messages.append("no task available")
@@ -803,11 +806,23 @@ class AgentWorker:
             summary.messages.append(progress_message)
         if command == "discover-crawl":
             followups = build_follow_up_items_from_discovery(item, result.records)
-            if followups:
-                self.state_store.enqueue_backlog(followups)
+            handoff_count = 0
+            backlog_items: list[WorkItem] = []
+            for fu in followups:
+                if fu.metadata.get("execution_mode") == "agent_handoff":
+                    od = resolve_item_output_dir(fu, output_root=self.runner.output_root)
+                    self.state_store.enqueue_handoff(fu, output_dir=str(od))
+                    handoff_count += 1
+                else:
+                    backlog_items.append(fu)
+            if backlog_items:
+                self.state_store.enqueue_backlog(backlog_items)
             summary.discovered_followups += len(followups)
             summary.processed_items += 1
-            summary.messages.append(f"discovered {len(followups)} follow-up URLs from {item.url}")
+            msg = f"discovered {len(followups)} follow-up URLs from {item.url}"
+            if handoff_count:
+                msg += f" ({handoff_count} queued as agent handoffs)"
+            summary.messages.append(msg)
             return
 
         if not result.records:
@@ -897,6 +912,157 @@ class AgentWorker:
                 continue
             self.state_store.clear_submit_pending(item.item_id)
             summary.submitted_items += 1
+
+    # ── Agent Handoff 编排 ──
+
+    def _drain_agent_handoffs(self, summary: WorkerIterationSummary) -> None:
+        """将 queued handoff 启动为后台子进程，限制并发数。"""
+        max_concurrent = max(1, self.config.max_parallel)
+        stats = self.state_store.handoff_stats()
+        running = stats.get("running", 0)
+        slots = max(0, max_concurrent - running)
+        if slots <= 0:
+            return
+        handoffs = self.state_store.pop_queued_handoffs(slots)
+        for entry in handoffs:
+            handoff_id = str(entry.get("handoff_id") or "")
+            item_data = entry.get("item")
+            output_dir = entry.get("output_dir")
+            if not isinstance(item_data, dict):
+                self.state_store.update_handoff(handoff_id, {"status": "failed", "last_error": "invalid item data"})
+                continue
+            try:
+                self._start_handoff_subprocess(handoff_id, item_data, output_dir)
+            except Exception as exc:
+                self.state_store.update_handoff(handoff_id, {"status": "failed", "last_error": str(exc)})
+                summary.errors.append(f"handoff launch failed for {handoff_id}: {exc}")
+
+    def _start_handoff_subprocess(self, handoff_id: str, item_data: dict[str, Any], output_dir: str | None) -> None:
+        """启动子 agent 进程执行 crawl + enrich，非阻塞。"""
+        runner_script = Path(__file__).resolve().parent / "agent_handoff_runner.py"
+        result_path = Path(output_dir) / "agent_result.json" if output_dir else None
+        if result_path is not None:
+            try:
+                result_path.unlink()
+            except FileNotFoundError:
+                pass
+        argv = [
+            self.config.python_bin,
+            str(runner_script),
+            "--state-root", str(self.config.state_root),
+            "--handoff-id", handoff_id,
+        ]
+        proc = subprocess.Popen(
+            argv,
+            cwd=str(self.config.crawler_root.parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.state_store.update_handoff(handoff_id, {
+            "pid": proc.pid,
+            "started_at": int(time.time()),
+            "last_error": None,
+        })
+
+    def _drain_agent_results(self, summary: WorkerIterationSummary) -> None:
+        """扫描已完成的 handoff 并提交。"""
+        for entry in self.state_store.load_handoffs():
+            status = str(entry.get("status") or "")
+            handoff_id = str(entry.get("handoff_id") or "")
+
+            if status == "completed":
+                item_data = entry.get("item")
+                if not isinstance(item_data, dict):
+                    self.state_store.clear_handoff(handoff_id)
+                    continue
+                item = WorkItem.from_dict(item_data)
+                output_dir = Path(entry["output_dir"]) if entry.get("output_dir") else resolve_item_output_dir(item, output_root=self.runner.output_root)
+                records_path = output_dir / "records.jsonl"
+                records = read_jsonl_file(records_path) if records_path.exists() else []
+                if not records:
+                    self.state_store.clear_handoff(handoff_id)
+                    continue
+                if _records_have_pending_agent(records):
+                    self.state_store.update_handoff(handoff_id, {"status": "queued", "last_error": "pending_agent fields remain after child run"})
+                    continue
+                record = records[0]
+                report_result = entry.get("report_result")
+                try:
+                    _export_and_submit_core_submissions_for_task(
+                        self.client,
+                        output_dir,
+                        record,
+                        item,
+                        report_result=report_result if isinstance(report_result, dict) else None,
+                    )
+                    self.state_store.clear_handoff(handoff_id)
+                    summary.submitted_items += 1
+                    summary.messages.append(f"handoff submitted: {handoff_id}")
+                except PlatformApiError as api_exc:
+                    if api_exc.code == "address_not_registered":
+                        summary.errors.append("Wallet address not registered for handoff submission.")
+                        self.state_store.clear_handoff(handoff_id)
+                        continue
+                    self.state_store.update_handoff(handoff_id, {"status": "failed", "last_error": str(api_exc)})
+                    summary.errors.append(f"handoff submit failed for {handoff_id}: {api_exc}")
+                except httpx.HTTPStatusError as exc:
+                    item_for_rl = WorkItem.from_dict(item_data)
+                    if exc.response.status_code == 429 and item_for_rl.dataset_id:
+                        retry_after = _extract_retry_after_seconds(exc, default=self.config.auth_retry_interval_seconds)
+                        self.state_store.mark_dataset_cooldown(item_for_rl.dataset_id, retry_after_seconds=retry_after, reason="429 Rate Limited")
+                        self.state_store.update_handoff(handoff_id, {"status": "queued"})
+                    else:
+                        self.state_store.update_handoff(handoff_id, {"status": "failed", "last_error": str(exc)})
+                    summary.errors.append(f"handoff submit HTTP error for {handoff_id}: {exc}")
+                except Exception as exc:
+                    self.state_store.update_handoff(handoff_id, {"status": "failed", "last_error": str(exc)})
+                    summary.errors.append(f"handoff submit failed for {handoff_id}: {exc}")
+
+            elif status == "running":
+                # 检查子进程产物是否已经写回
+                output_dir_str = entry.get("output_dir")
+                if output_dir_str:
+                    result_path = Path(output_dir_str) / "agent_result.json"
+                    if result_path.exists():
+                        result_data = read_json_file(result_path)
+                        if isinstance(result_data, dict):
+                            child_status = str(result_data.get("status") or "failed")
+                            if child_status == "completed":
+                                self.state_store.update_handoff(handoff_id, {"status": "completed", "pid": None})
+                            elif child_status == "pending_enrichment":
+                                self.state_store.update_handoff(handoff_id, {
+                                    "status": "queued",
+                                    "pid": None,
+                                    "last_error": result_data.get("error") or "pending_agent fields remain after child run",
+                                })
+                            else:
+                                self.state_store.update_handoff(handoff_id, {
+                                    "status": "failed",
+                                    "pid": None,
+                                    "last_error": result_data.get("error") or "child agent reported failure",
+                                })
+                            continue
+                pid = int(entry.get("pid") or 0)
+                started_at = int(entry.get("started_at") or entry.get("updated_at") or 0)
+                stale_after = _handoff_stale_after_seconds()
+                if pid > 0 and not _pid_is_running(pid):
+                    self.state_store.update_handoff(handoff_id, {
+                        "status": "failed",
+                        "pid": None,
+                        "last_error": "child process exited before writing agent_result.json",
+                    })
+                elif started_at > 0 and int(time.time()) - started_at >= stale_after:
+                    self.state_store.update_handoff(handoff_id, {
+                        "status": "failed",
+                        "pid": None,
+                        "last_error": f"handoff runner exceeded stale timeout ({stale_after}s)",
+                    })
+
+            elif status == "failed":
+                attempts = int(entry.get("attempts") or 0)
+                if attempts < 3:
+                    self.state_store.update_handoff(handoff_id, {"status": "queued"})
+                # else: 保持 failed，等人工处理
 
     def _process_single_item_for_test(self, item: WorkItem, writer: RunArtifactWriter) -> str:
         command = self.crawl_mode_planner.choose_command(item)
@@ -1129,6 +1295,7 @@ class AgentWorker:
             payload["current_batch"] = current_batch
         if stop_reason:
             payload["stop_reason"] = stop_reason
+        payload["agent_handoff"] = self.state_store.handoff_stats()
         self._write_iteration_summary(payload)
         self._update_session_from_summary(payload)
         return payload
@@ -1553,9 +1720,53 @@ def _extract_retry_after_seconds(error: httpx.HTTPStatusError, *, default: int) 
         return max(1, default)
 
 
+def _handoff_stale_after_seconds() -> int:
+    configured = os.environ.get("HANDOFF_STALE_AFTER_SECONDS", "").strip()
+    if configured:
+        try:
+            return max(60, int(configured))
+        except ValueError:
+            pass
+    crawl_timeout = os.environ.get("HANDOFF_CRAWL_TIMEOUT", "").strip() or os.environ.get("CRAWL_TIMEOUT_SECONDS", "").strip()
+    try:
+        base_timeout = int(crawl_timeout) if crawl_timeout else 600
+    except ValueError:
+        base_timeout = 600
+    return max(120, base_timeout + 120)
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 def _clone_item(item: WorkItem, *, resume: bool, output_dir: Path | None = None) -> WorkItem:
     payload = item.to_dict()
     payload["resume"] = resume
     if output_dir is not None:
         payload["output_dir"] = str(output_dir)
     return WorkItem.from_dict(payload)
+
+
+def _records_have_pending_agent(records: list[dict[str, Any]]) -> bool:
+    """检查记录列表中是否仍有 pending_agent 状态的 enrichment 结果。"""
+    for record in records:
+        enrichment = record.get("enrichment")
+        if not isinstance(enrichment, dict):
+            continue
+        results = enrichment.get("enrichment_results")
+        if not isinstance(results, dict):
+            continue
+        for _group, result in results.items():
+            if isinstance(result, dict) and result.get("status") == "pending_agent":
+                return True
+    return False
