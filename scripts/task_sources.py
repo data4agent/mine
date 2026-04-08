@@ -347,7 +347,7 @@ class DatasetDiscoverySource:
                 continue
             for domain in _dataset_domains(dataset):
                 host = domain.strip().lower()
-                # arXiv: 用 API 直接获取最新论文 URL，跳过 HTML discovery
+                # arXiv: fetch paper URLs directly via API, skip HTML discovery
                 if host == "arxiv.org" or host.endswith(".arxiv.org"):
                     paper_urls = _arxiv_recent_papers(count=10)
                     for url in paper_urls:
@@ -492,7 +492,7 @@ def _is_content_url(url: str) -> bool:
             return True
         return False
 
-    # arXiv: 只保留论文详情页，列表页仅在 discovery 阶段作为种子
+    # arXiv: only paper detail pages; listing pages are discovery seeds only
     if host == "arxiv.org" or host.endswith(".arxiv.org"):
         return path.startswith("/abs/") or path.startswith("/pdf/")
 
@@ -537,7 +537,7 @@ def _dataset_domains(dataset: dict[str, Any]) -> list[str]:
 
 
 def _arxiv_recent_papers(count: int = 10) -> list[str]:
-    """通过 arXiv API 获取最新论文的 /abs/ URL。"""
+    """Fetch recent paper /abs/ URLs via the arXiv API."""
     import urllib.request
     import re as _re
 

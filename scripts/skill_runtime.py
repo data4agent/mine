@@ -182,8 +182,10 @@ def render_first_load_experience() -> str:
             "",
             f"{SYM_CHECK} Mine is ready.",
             "",
-            f"{SYM_BOX_H * 2} quick start {SYM_BOX_H * 24}",
-            f'  "mine start"     {SYM_ARROW} begin mining',
+            f"{SYM_BOX_H * 2} choose mode {SYM_BOX_H * 23}",
+            f'  "repeat"         {SYM_ARROW} claim repeat / refresh tasks',
+            f'  "validator"      {SYM_ARROW} validate submissions',
+            f'  "active"         {SYM_ARROW} proactive discovery and submission',
             f'  "mine status"    {SYM_ARROW} your stats',
             f'  "mine help"      {SYM_ARROW} all commands',
             SYM_DIVIDER,
@@ -875,26 +877,33 @@ INTENT_ACTIONS = {
         "confirm_first_run": False,
         "keywords": ["check", "verify", "check again", "dependencies", "ready"],
     },
-    "role_miner": {
-        "name": "choose_miner",
-        "description": "Choose miner role",
+    "role_repeat": {
+        "name": "choose_repeat_tasks",
+        "description": "Choose repeat task mode",
         "command": "agent-start",
         "confirm_first_run": False,
-        "keywords": ["miner", "mine", "crawl", "1"],
+        "keywords": ["repeat", "repeat tasks", "claim tasks", "refresh", "1"],
     },
     "role_validator": {
         "name": "choose_validator",
-        "description": "Choose validator role",
+        "description": "Choose validator mode",
         "command": "validator-start",
         "confirm_first_run": False,
         "keywords": ["validator", "validate", "evaluate", "2"],
     },
-    "switch_role": {
-        "name": "switch_role",
-        "description": "Switch between miner and validator",
+    "role_active": {
+        "name": "choose_active_discovery",
+        "description": "Choose active discovery mode",
+        "command": "agent-start",
+        "confirm_first_run": False,
+        "keywords": ["active", "discovery", "self crawl", "self-crawl", "proactive", "mine", "mining", "3"],
+    },
+    "switch_mode": {
+        "name": "switch_mode",
+        "description": "Switch working mode",
         "command": "first-load",
         "confirm_first_run": False,
-        "keywords": ["switch", "switch role", "change role"],
+        "keywords": ["switch", "switch role", "switch mode", "change role", "change mode"],
     },
     "V_start": {
         "name": "start_validator",
@@ -931,13 +940,15 @@ def classify_intent(user_input: str) -> dict[str, Any]:
     """
     text = user_input.lower().strip()
 
-    # Role selection (highest priority)
-    if text in {"1", "miner", "mine", "i want to mine", "crawl"}:
-        return _intent_result("role_miner", "high")
+    # Mode selection (highest priority)
+    if text in {"1", "repeat", "repeat tasks", "claim tasks", "i want repeat tasks"}:
+        return _intent_result("role_repeat", "high")
     if text in {"2", "validator", "validate", "i want to validate", "evaluate"}:
         return _intent_result("role_validator", "high")
-    if text in {"switch role", "switch", "change role"}:
-        return _intent_result("switch_role", "high")
+    if text in {"3", "active", "active discovery", "self crawl", "self-crawl", "proactive crawl", "mine"}:
+        return _intent_result("role_active", "high")
+    if text in {"switch role", "switch", "change role", "switch mode", "change mode"}:
+        return _intent_result("switch_mode", "high")
 
     # Validator direct matches
     if text in {"start validating", "validate start", "begin validating"}:
@@ -948,8 +959,16 @@ def classify_intent(user_input: str) -> dict[str, Any]:
         return _intent_result("V_stop", "high")
 
     # Miner direct matches
-    if text in {"start working", "start-working", "start mining", "start"}:
-        return _intent_result("A1", "high")
+    if text in {"start"}:
+        return {
+            "intent_id": None,
+            "action": None,
+            "confidence": "low",
+            "suggested_command": None,
+            "message": "which mode? say \"repeat\", \"validator\", or \"active\".",
+        }
+    if text in {"start working", "start-working", "start mining"}:
+        return _intent_result("role_active", "high")
     if text in {"check status", "check-status", "status"}:
         return _intent_result("Q1", "high")
     if text in {"list datasets", "list-datasets", "datasets"}:
@@ -981,7 +1000,7 @@ def classify_intent(user_input: str) -> dict[str, Any]:
         "action": None,
         "confidence": "low",
         "suggested_command": None,
-        "message": "which role? say \"miner\" or \"validator\". or try: start, status, stop, help.",
+        "message": "which mode? say \"repeat\", \"validator\", or \"active\". or try: status, stop, help.",
     }
 
 
@@ -1010,7 +1029,8 @@ def render_intent_help() -> str:
         "Available commands:",
         "",
         f"{SYM_BOX_H * 2} Miner Commands {SYM_BOX_H * 22}",
-        f"  start            {SYM_ARROW} Begin autonomous mining",
+        f"  repeat           {SYM_ARROW} Claim repeat / refresh tasks",
+        f"  active           {SYM_ARROW} Proactive discovery and submission",
         f"  status           {SYM_ARROW} Show mining stats and epoch progress",
         f"  stop             {SYM_ARROW} Stop mining and show session summary",
         f"  pause            {SYM_ARROW} Pause mining (saves state)",
@@ -1025,7 +1045,7 @@ def render_intent_help() -> str:
         f"  doctor           {SYM_ARROW} Run validator diagnostics",
         "",
         f"{SYM_BOX_H * 2} General {SYM_BOX_H * 29}",
-        f"  switch role      {SYM_ARROW} Switch between Miner and Validator",
+        f"  switch mode      {SYM_ARROW} Switch between Repeat / Validator / Active",
         f"  help             {SYM_ARROW} Show this command list",
         SYM_DIVIDER,
     ]
@@ -1191,7 +1211,7 @@ def _execute_intent(intent_id: str, command: str | None, worker: Any) -> str:
     if intent_id == "first_load":
         return render_first_load_experience()
 
-    if intent_id in {"role_miner", "role_validator", "switch_role"}:
+    if intent_id in {"role_repeat", "role_validator", "role_active", "switch_mode"}:
         return render_first_load_experience()
 
     if intent_id == "V_start":

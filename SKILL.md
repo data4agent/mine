@@ -42,6 +42,7 @@ This skill is designed for **agent execution** — all commands must be run by y
 execute commands yourself and present the results as natural-language summaries.
 
 Every command outputs JSON with:
+
 - `user_message` — show this to the user (natural language)
 - `user_actions` — action options to present (natural language labels)
 - `_internal` — for your eyes only, contains `action_map` mapping labels to commands
@@ -68,140 +69,156 @@ and execute it.
 
 ## Welcome Screen
 
-On first launch (no worker running), show this and **ask the user to choose a role**:
+On first launch (no worker running), or whenever the user says `start` without
+specifying a mode, **ask the user to choose a working mode first**:
 
 ```text
 mine - autonomous data mining
 
 crawl data. earn rewards. fully autonomous.
 
--- choose your role ----------------
-1. Miner      - crawl public data, earn $aMine
-2. Validator  - evaluate submissions, earn $aMine
+-- choose your mode ----------------
+1. Repeat Tasks      - claim platform repeat/refresh tasks
+2. Validator         - validate submissions, earn $aMine
+3. Active Discovery  - proactively crawl and submit data
 ------------------------------------
 
-which role? (1 or 2)
+which mode? (1, 2, or 3)
 ```
 
 **Do NOT skip this step.** The user must choose before any worker starts.
 
-- "mine", "miner", "start mining", "1" -> **Start Mining**
-- "validate", "validator", "start validating", "2" -> **Start Validator**
+- "repeat", "repeat tasks", "claim tasks", "1" → **Repeat Task Mode**
+- "validator", "validate", "start validating", "2" → **Validator Mode**
+- "active", "discovery", "self crawl", "mine", "start mining", "3" → **Active Discovery Mode**
 - If unclear, ask again
 
 ## Mining Architecture
 
 ### Task Sources
 
-Each worker iteration (`run_iteration`) collects tasks from three independent sources:
+Each worker iteration collects tasks from three independent sources:
 
-| Source | Class | Where tasks come from | Filtered by `selected_dataset_ids` |
-|--------|-------|----------------------|-----------------------------------|
-| **Backend Claim** | `BackendClaimSource` | Platform claim API (repeat-crawl / refresh) | No |
-| **Dataset Discovery** | `DatasetDiscoverySource` | Locally generated seed URLs from dataset `source_domains` | Yes |
-| **Resume** | `ResumeQueueSource` | Backlog / auth_pending from previously failed or paused tasks | No |
+| Source            | Class                    | Where tasks come from                       | Dataset-filtered |
+| ----------------- | ------------------------ | ------------------------------------------- | ---------------- |
+| Backend Claim     | `BackendClaimSource`     | Platform claim API (repeat-crawl / refresh) | No               |
+| Dataset Discovery | `DatasetDiscoverySource` | Seed URLs from dataset `source_domains`     | Yes              |
+| Resume            | `ResumeQueueSource`      | Backlog / auth_pending from prior failures  | No               |
 
-All three sources are **collected in parallel, merged, and deduplicated**. Up to `max_parallel` items enter the current iteration.
+All three are collected in parallel, merged, and deduplicated. Up to
+`max_parallel` items enter the current iteration.
 
-> **"no task available" means none of the three sources produced an executable task** — most
-> commonly because Backend Claim returned nothing and Discovery is in cooldown. This does
-> **not** mean your miner is banned.
+> "no task available" means none of the three sources produced an executable
+> task — most commonly because Backend Claim returned nothing and Discovery is
+> in cooldown. This does **not** mean your miner is banned.
 
-### Two-Phase Discovery Crawl
+### Discovery Behavior
 
-Dataset Discovery operates in **two phases**:
+Dataset Discovery is platform-specific:
 
-1. **discover-crawl** (discovery phase): crawl seed pages (e.g. arXiv listing pages, Amazon
-   bestseller pages), extract links, and enqueue `discovery_followup` tasks into the backlog.
-2. **run** (fetch phase): followup tasks are executed in subsequent iterations with the `run`
-   command, fetching structured data and submitting to the platform.
+1. **API-direct discovery** — some platforms fetch content URLs from an upstream
+   API and go straight to the `run` phase.
+2. **discover-crawl + run** — other platforms start from seed pages, extract
+   follow-up links, and execute them with `run`.
 
-Wikipedia is special: it calls the MediaWiki Random API for random article URLs directly,
-skipping the discover-crawl phase entirely.
+Current special cases:
+
+- **arXiv** — uses the arXiv API to fetch recent `/abs/...` paper URLs directly.
+  Listing pages are **never** sent into the submission pipeline.
+- **Wikipedia** — uses the MediaWiki Random API, skipping `discover-crawl`.
+- **Amazon** — may still use seed-page discovery followed by `discover-crawl`.
 
 ### API Call Chain
 
 ```text
 Discovery path:
-  GET  /api/core/v1/datasets            <- fetch dataset list and source_domains
-  GET  /api/core/v1/url/check           <- pre-flight dedup check
-  (local crawler fetches target site)
-  POST /api/core/v1/submissions         <- submit structured data
-  POST /api/mining/v1/pow-challenges/…  <- answer PoW challenge (probabilistic)
+  GET  /api/core/v1/datasets                          <- dataset list
+  GET  /api/core/v1/url/check                         <- dedup check
+  (local crawler fetches content URL)
+  POST /api/core/v1/submissions                       <- submit data
+  POST /api/mining/v1/pow-challenges/{id}/answer      <- PoW (probabilistic)
 
 Backend Claim path:
-  POST /api/mining/v1/repeat-crawl-tasks/claim  <- claim task from platform
+  POST /api/mining/v1/repeat-crawl-tasks/claim        <- claim task
   (local crawler fetches target site)
   POST /api/mining/v1/repeat-crawl-tasks/{id}/report  <- report result
-  POST /api/core/v1/submissions                       <- submit structured data
+  POST /api/core/v1/submissions                       <- submit data
 ```
 
-Both paths ultimately submit via **`POST /api/core/v1/submissions`**.
+Both paths ultimately submit via `POST /api/core/v1/submissions`.
 
 ### Dataset Selection
 
 - Platform returns only 1 dataset — auto-selected.
-- Platform returns multiple datasets with none selected — enters `selection_required`; user must choose before starting.
-- `selected_dataset_ids` only filters **Discovery / followup** source tasks; Backend Claim tasks are not affected.
+- Multiple datasets, none selected — enters `selection_required`; user must choose.
+- `selected_dataset_ids` only filters Discovery / followup tasks; Backend Claim
+  tasks are not affected.
 
 ### Credit Tier & Limits
 
-| Tier | `credit_score` | Backend Claim | Discovery Submissions |
-|------|---------------|---------------|----------------------|
-| novice | 0 | Platform may not assign tasks | Normal submission, but epoch settlement gate applies |
-| higher | > 0 | Normal assignment | Normal |
+| Tier   | `credit_score` | Backend Claim           | Discovery Submissions                     |
+| ------ | -------------- | ----------------------- | ----------------------------------------- |
+| novice | 0              | Platform may not assign | Normal, but epoch settlement gate applies |
+| higher | > 0            | Normal assignment       | Normal                                    |
 
-Epoch settlement gate: `task_count >= 80` and `avg_score >= 60` (see protocol v2.0).
-A novice miner's primary path is through **Discovery self-crawling** to accumulate submissions and scores.
+Epoch settlement gate: `task_count >= 80` and `avg_score >= 60` (protocol v2.0).
+A novice miner's primary path is **Active Discovery** to accumulate submissions.
 
 ## Miner Workflow
 
-### Start Mining
+Repeat Task Mode and Active Discovery Mode both launch the same miner worker.
+The difference is the **user's intent**:
 
-Step 1 — Check readiness (run in terminal, do not show command to user):
+- **Repeat Task Mode** — emphasize platform-claimed repeat/refresh tasks.
+- **Active Discovery Mode** — emphasize proactive dataset crawling and submission.
+
+The miner implementation collects Backend Claim, Dataset Discovery, and Resume
+sources in every iteration regardless of mode.
+
+### Start Miner Worker
+
+Step 1 — Check readiness:
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-status
 ```
 
-Parse the JSON output. If `ready` is false, execute the command from
-`_internal.action_map` to fix the issue. Tell the user what's happening
-in plain language.
+If `ready` is false, execute the fix command from `_internal.action_map`.
 
-Step 2 — Start worker (run in terminal):
+Step 2 — Start worker:
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-start
 ```
 
-If dataset selection is required (state = `selection_required`), present the
-dataset names from `user_message` to the user. After they choose, re-run with:
+If `selection_required`, present dataset names and re-run with the chosen ID:
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-start <datasetId>
 ```
 
-Step 3 — Confirm to user using `user_message` from the JSON output. Example:
+Step 3 — Confirm to the user. Example:
 
 ```text
 [1/3] wallet       0x1234...5678  ok
-[2/3] platform     connected  ok
+[2/3] platform     connected      ok
 [3/3] worker       started (session: abc12)  ok
 
 mining. say "mine status" to check progress.
 ```
 
-### Check Status
+Adapt the confirmation message to the chosen mode:
 
-Run in terminal and show `user_message` to user:
+- **Repeat Task Mode** — "claiming repeat/refresh tasks when available."
+- **Active Discovery Mode** — "proactively crawling datasets and submitting."
+
+### Check Status
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-control status
 ```
 
 ### Stop / Pause / Resume
-
-Run the appropriate command based on user intent:
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py agent-control stop
@@ -229,9 +246,8 @@ cd {baseDir} && python scripts/run_tool.py doctor
 cd {baseDir} && python scripts/run_tool.py validator-start
 ```
 
-Auto-installs dependencies, submits validator application, and connects via WebSocket.
-If the application status is `pending_review`, the validator cannot start until approved.
-Re-run the start command after approval.
+Auto-installs dependencies, submits validator application, and connects via
+WebSocket. If the application status is `pending_review`, re-run after approval.
 
 ### Check Status / Stop
 
@@ -240,7 +256,7 @@ cd {baseDir} && python scripts/run_tool.py validator-control status
 cd {baseDir} && python scripts/run_tool.py validator-control stop
 ```
 
-### Diagnose
+### Diagnose Validator
 
 ```bash
 cd {baseDir} && python scripts/run_tool.py validator-doctor
@@ -248,80 +264,80 @@ cd {baseDir} && python scripts/run_tool.py validator-doctor
 
 ## Debugging Background Workers
 
-Background mining/validation workers write all output (including errors) to log files.
-The `agent-control status` command automatically surfaces recent errors from the log.
-If you need more detail, the log path is in the `_internal.log_path` field of the status response:
+Background workers write output to log files. `agent-control status` surfaces
+recent errors automatically. For more detail, read the log at
+`_internal.log_path`:
 
 ```bash
 cd {baseDir} && tail -50 output/agent-runs/<session_id>.log
 ```
 
-Always check `agent-control status` first — it shows recent errors without needing to read the log directly.
-
 ## Error Recovery
 
-If any command returns a `401` or authentication error:
+If any command returns `401` or an authentication error:
 
-1. Run `python scripts/run_tool.py doctor` to diagnose
-2. Follow the fix instructions in the output
-3. Common causes: expired wallet session, missing AWP registration
+1. Run `python scripts/run_tool.py doctor` to diagnose.
+2. Follow the fix instructions in the output.
+3. Common causes: expired wallet session, missing AWP registration.
 
 If the error is `address_not_registered` or `registration_required`:
 
-1. The wallet needs to be registered on-chain before mining can start
-2. Tell the user to **install and use the AWP Skill** to complete registration
-3. If the AWP Skill is not installed, guide the user to install it first
-4. After registration completes, retry `python scripts/run_tool.py agent-start`
+1. The wallet must be registered on-chain first.
+2. Tell the user to **install and use the AWP Skill** for registration.
+3. After registration, retry `agent-start`.
 
-**Do NOT** tell users to register on a website or manually call any registration API.
-The AWP Skill handles the entire on-chain registration flow automatically.
+**Do NOT** tell users to register on a website or call registration APIs manually.
 
-If you see `missing_auth_headers` or `signer_mismatch`, it means something
-bypassed `run_tool.py`. Stop and use the commands listed above instead.
-
-**Never attempt to fix auth by making HTTP calls, adding headers, or reading
-signing code.** The `doctor` command handles all auth diagnostics.
+If you see `signer_mismatch`, it usually means EIP-712 signature parameters
+are wrong. The `doctor` command handles diagnostics. Never attempt to fix auth
+by making HTTP calls, adding headers, or reading signing code.
 
 ## Intent Routing
 
-| User says | Action to take |
-|-----------|---------------|
-| "start" / "go online" | Run `agent-start` or `validator-start` (depends on role) |
-| "status" / "how am I doing" | Run `agent-control status` or `validator-control status` |
-| "stop" | Run `agent-control stop` or `validator-control stop` |
-| "pause" | Run `agent-control pause` (miner only) |
-| "resume" | Run `agent-control resume` (miner only) |
-| "datasets" / "what can I mine" | Run `list-datasets` |
-| "diagnose" / "doctor" / "fix" | Run `doctor` or `validator-doctor` |
-| "help" | Tell the user what actions are available in natural language |
-| "switch role" | Re-show Welcome Screen |
-| "check connectivity" / "heartbeat" | Run `doctor` (never direct HTTP) |
+| User says | Action |
+| --- | --- |
+| "start" / "go online" | Ask which mode: Repeat Tasks / Validator / Active Discovery |
+| "repeat" / "claim tasks" | Run miner workflow via `agent-start` |
+| "active" / "discovery" / "self crawl" | Run miner workflow via `agent-start` |
+| "validator" / "start validating" | Run `validator-start` |
+| "status" / "how am I doing" | `agent-control status` or `validator-control status` |
+| "stop" | `agent-control stop` or `validator-control stop` |
+| "pause" | `agent-control pause` (miner only) |
+| "resume" | `agent-control resume` (miner only) |
+| "datasets" / "what can I mine" | `list-datasets` |
+| "diagnose" / "doctor" / "fix" | `doctor` or `validator-doctor` |
+| "help" | List available actions in natural language |
+| "switch mode" / "switch role" | Re-show Welcome Screen |
 | "401 error" / "auth error" | Run `doctor` (see Error Recovery) |
 
 ## Sub-Agent Guidelines
 
-- **One mining worker per session** — do not spawn multiple concurrent miners
-- Use `agent-control status` to poll progress
-- Use `agent-control stop` to terminate
-- All platform interaction goes through `run_tool.py` — this applies to sub-agents too
+- **One mining worker per session** — do not spawn multiple concurrent miners.
+- Use `agent-control status` to poll progress.
+- Use `agent-control stop` to terminate.
+- All platform interaction goes through `run_tool.py` — sub-agents included.
 
 ## Configuration
 
-No environment variables needed. Everything is auto-detected.
+No environment variables needed by default. Everything is auto-detected.
+
+EIP-712 signature parameters are fetched from the platform automatically.
+Do **not** override them in `.env` unless you know the exact values — a wrong
+`EIP712_VERIFYING_CONTRACT` causes `signer_mismatch` 401 errors.
 
 Runtime overrides (optional, via `.env` or shell):
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PLATFORM_BASE_URL` | `https://api.minework.net` | Platform API endpoint |
-| `MINER_ID` | `mine-agent` | Miner identifier |
-| `WORKER_MAX_PARALLEL` | `3` | Concurrent crawl workers |
+| Variable              | Default                    | Description              |
+| --------------------- | -------------------------- | ------------------------ |
+| `PLATFORM_BASE_URL`   | `https://api.minework.net` | Platform API endpoint    |
+| `MINER_ID`            | `mine-agent`               | Miner identifier         |
+| `WORKER_MAX_PARALLEL` | `3`                        | Concurrent crawl workers |
 
 For validator settings, see `docs/ENVIRONMENT.md`.
 
 ## Advanced
 
-Read these docs only when needed for the specific topic:
+Read these docs only when needed:
 
 - [Browser session & login](./docs/BROWSER_SESSION.md)
 - [Internal commands & rules](./docs/INTERNAL_COMMANDS.md)
